@@ -554,56 +554,56 @@ function renderHome() {
 
 function calculateLeaderboard() {
     // 0. Filter by Active Competition (if any)
-    const activeComp = state.competitions.find(function(c) { return c.active; });
+    const activeComp = state.competitions.find(function (c) { return c.active; });
 
     // 1. Calculate Student Totals
-    const studentTotals = state.students.map(function(student) {
+    const studentTotals = state.students.map(function (student) {
         // Filter scores for this student
-        const myScores = state.scores.filter(function(s) {
+        const myScores = state.scores.filter(function (s) {
             if (s.studentId !== student.id) return false;
             if (activeComp) return s.competitionId === activeComp.id;
             return true; // No active comp = show all
         });
-        const total = myScores.reduce(function(sum, score) { return sum + parseInt(score.points); }, 0);
+        const total = myScores.reduce(function (sum, score) { return sum + parseInt(score.points); }, 0);
         var sClone = Object.assign({}, student);
         sClone.totalScore = total;
         return sClone;
-    }).sort(function(a, b) { return b.totalScore - a.totalScore; });
+    }).sort(function (a, b) { return b.totalScore - a.totalScore; });
 
     updateTop3UI(studentTotals.slice(0, 3));
 
     // 2. Calculate Group Totals (Fetching Freshly for Home)
     const gq = window.firebaseOps.query(window.firebaseOps.collection(window.db, "groups"));
-    window.firebaseOps.getDocs(gq).then(function(snap) {
+    window.firebaseOps.getDocs(gq).then(function (snap) {
         const allGroups = [];
-        snap.forEach(function(d) {
+        snap.forEach(function (d) {
             var data = d.data();
             data.id = d.id;
             allGroups.push(data);
         });
 
-        const validGroups = allGroups.filter(function(g) {
+        const validGroups = allGroups.filter(function (g) {
             if (g.level && g.level !== state.currentLevel) return false;
             if (activeComp) return g.competitionId === activeComp.id;
             return true;
         });
 
-        const groupTotals = validGroups.map(function(group) {
+        const groupTotals = validGroups.map(function (group) {
             if (!group.members) {
                 var gClone = Object.assign({}, group);
                 gClone.totalScore = 0;
                 return gClone;
             }
             var gTotal = 0;
-            group.members.forEach(function(mId) {
-                var sItem = studentTotals.find(function(s) { return s.id === mId; });
+            group.members.forEach(function (mId) {
+                var sItem = studentTotals.find(function (s) { return s.id === mId; });
                 var sScore = sItem ? sItem.totalScore : 0;
                 gTotal += sScore;
             });
             var gFinal = Object.assign({}, group);
             gFinal.totalScore = gTotal;
             return gFinal;
-        }).sort(function(a, b) { return b.totalScore - a.totalScore; });
+        }).sort(function (a, b) { return b.totalScore - a.totalScore; });
 
         updateTopGroupsUI(groupTotals.slice(0, 5));
     });
@@ -1809,14 +1809,134 @@ async function viewGroupStudents(groupId) {
     const groupTotal = Object.values(studentScores).reduce((a, b) => a + b, 0);
     html += `
                                             </div>
-                                            <div class="mt-4 p-3 bg-teal-50 dark:bg-teal-900/30 rounded-xl text-center">
-                                                <span class="text-sm text-teal-700 dark:text-teal-300">مجموع نقاط المجموعة:</span>
-                                                <span class="text-2xl font-bold text-teal-600 dark:text-teal-400 mr-2">${groupTotal}</span>
+                                            </div>
+                                            <div class="mt-4 p-3 bg-teal-50 dark:bg-teal-900/30 rounded-xl flex items-center justify-between">
+                                                <div>
+                                                    <span class="text-sm text-teal-700 dark:text-teal-300 block">مجموع نقاط المجموعة:</span>
+                                                    <span class="text-2xl font-bold text-teal-600 dark:text-teal-400">${groupTotal}</span>
+                                                </div>
+                                                ${state.isTeacher ? `
+                                                <button onclick="generateGroupWeeklyReport('${group.id}')" class="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:bg-teal-700 transition flex items-center gap-2">
+                                                    <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+                                                    تقرير الأسبوع
+                                                </button>
+                                                ` : ''}
                                             </div>
                                             `;
 
     container.innerHTML = html;
     lucide.createIcons();
+}
+
+async function generateGroupWeeklyReport(groupId) {
+    const group = state.groups.find(g => g.id === groupId);
+    if (!group) return;
+
+    const comp = state.competitions.find(c => c.id === currentManageCompId);
+    if (!comp) return; // Should not happen if inside viewGroup
+
+    showToast("جاري إعداد التقرير...", "info");
+
+    try {
+        // 1. Calculate Date Range (Sun - Thu)
+        const today = new Date();
+        const dayOfWeek = today.getDay();
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - dayOfWeek);
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        const daysPassed = 5; // Fixed for full week report
+        const dateStrings = [];
+        for (let i = 0; i < daysPassed; i++) {
+            const d = new Date(startOfWeek);
+            d.setDate(startOfWeek.getDate() + i);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            dateStrings.push(`${year}-${month}-${day}`);
+        }
+
+        // 2. Fetch Scores for all members
+        const memberIds = group.members || [];
+        if (memberIds.length === 0) {
+            showToast("المجموعة فارغة", "error");
+            return;
+        }
+
+        const scoresQuery = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "scores"),
+            window.firebaseOps.where("competitionId", "==", comp.id),
+            // We can't use 'in' for both studentId (array) and date (array) usually.
+            // Better to fetch all scores for this competition/date and filter by memberIds client-side
+            window.firebaseOps.where("date", "in", dateStrings)
+        );
+
+        const snap = await window.firebaseOps.getDocs(scoresQuery);
+        const scores = [];
+        snap.forEach(d => {
+            const data = d.data();
+            if (memberIds.includes(data.studentId)) {
+                scores.push(data);
+            }
+        });
+
+        // 3. Calculate Stats
+        let totalPositiveEarned = 0;
+        let totalAbsenceDeduction = 0;
+        let absenceCount = 0;
+        let addedPoints = 0; // If you have 'bonus' criteria, track here. Assuming all positive are 'earned' for now.
+
+        scores.forEach(s => {
+            const p = parseInt(s.points) || 0;
+            if (s.criteriaId === 'ABSENCE_RECORD') {
+                totalAbsenceDeduction += p; // p is negative
+                absenceCount++;
+            } else {
+                if (p > 0) totalPositiveEarned += p;
+                else totalAbsenceDeduction += p; // Negative criteria also deducted
+            }
+        });
+
+        // Calculate Possible Points (Original)
+        // Sum of all positive criteria points * days * student count
+        let dailyPossiblePerStudent = 0;
+        if (comp.criteria) {
+            comp.criteria.forEach(c => {
+                dailyPossiblePerStudent += (parseInt(c.positivePoints) || 0);
+            });
+        }
+        const totalPossible = dailyPossiblePerStudent * daysPassed * memberIds.length;
+
+        const netTotal = totalPositiveEarned + totalAbsenceDeduction;
+
+        // 4. Construct Message
+        let reportText = `📊 *تقرير الأسبوع (مجموعة ${group.name})* 📊\n`;
+        reportText += `📅 التاريخ: ${dateStrings[0]} إلى ${dateStrings[4]}\n`;
+        reportText += `👥 عدد الطلاب: ${memberIds.length}\n`;
+        reportText += `------------------\n`;
+
+        reportText += `🎯 النقاط المستحقة (الأصلية): ${totalPossible}\n`;
+        reportText += `✅ النقاط المكتسبة: ${totalPositiveEarned}\n`;
+
+        if (absenceCount > 0) {
+            reportText += `⚠️ الغياب: ${absenceCount} حالة (${totalAbsenceDeduction} نقطة)\n`;
+        }
+
+        // If we had bonus logic: reportText += `➕ نقاط إضافية: ${addedPoints}\n`;
+
+        reportText += `------------------\n`;
+        reportText += `✨ *المجموع الصافي: ${netTotal}* ✨\n`;
+
+        reportText += `\nشاكرين جهودكم 🌹`;
+
+        // 5. Open WhatsApp (Generic)
+        const url = `https://wa.me/?text=${encodeURIComponent(reportText)}`;
+        window.open(url, '_blank');
+
+    } catch (e) {
+        console.error(e);
+        showToast("خطأ في إنشاء التقرير", "error");
+    }
 }
 
 function addNewGroup() {
