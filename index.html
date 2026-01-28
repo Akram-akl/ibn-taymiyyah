@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0d9488">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="مسابقات ابن تيمية">
+    <title>مسابقات ابن تيمية</title>
+    <script>
+        // Diagnostic script - Runs before anything else
+        (function () {
+            window.onerror = function (msg, url, line, col, error) {
+                var div = document.createElement('div');
+                div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:red;color:white;z-index:99999;padding:10px;font-size:12px;direction:ltr;';
+                div.innerHTML = '<b>System Error:</b> ' + msg + '<br>Line: ' + line + ' at ' + url;
+                document.body.appendChild(div);
+                return false;
+            };
+            try {
+                eval('const testConst = 1;');
+                eval('let testLet = 1;');
+                eval('() => {}');
+                eval('`test`');
+            } catch (e) {
+                alert('عذراً، متصفحك قديم جداً ولا يدعم تشغيل التطبيق بكامل مميزاته. يرجى استخدام متصفح حديث مثل Chrome.\n' + e.message);
+            }
+        })();
+    </script>
+
+    <!-- App Icons -->
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <link rel="icon" type="image/png" href="./apple-touch-icon.png">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Tajawal', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="./css/styles.css?v=3.1">
+
+
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./js/supabase.js?v=1.0"></script>
+</head>
+
+
+<body
+    class="bg-gray-50 text-gray-900 transition-colors duration-300 min-h-screen bg-pattern dark:bg-gray-900 dark:text-gray-100">
+
+    <!-- App Container -->
+    <div id="app"
+        class="max-w-md mx-auto h-screen relative shadow-2xl bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm flex flex-col overflow-hidden">
+
+        <!-- AUTH OVERLAY (Initial State) -->
+        <div id="auth-overlay" class="fixed inset-0 z-[100] bg-teal-800 flex items-center justify-center p-6 hidden">
+            <!-- Background Texture -->
+            <div
+                class="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48ZyBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMSI+PHBhdGggZD0iTTAgMGg0djRIMHptMCAzNmg0djRIMHptMzYgMGg0djRIMzZ6TTM2IDBoNHY0aC00eiIvPjwvZz48L2c+PC9zdmc+')]">
+            </div>
+
+            <div class="bg-white dark:bg-gray-900 rounded-3xl w-full max-w-sm shadow-2xl relative z-10 overflow-hidden">
+                <div
+                    class="h-32 bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center relative overflow-hidden">
+                    <div
+                        class="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/arabesque.png')]">
+                    </div>
+                    <i data-lucide="award" class="w-16 h-16 text-white drop-shadow-lg"></i>
+                </div>
+
+                <div class="p-8">
+                    <h2 class="text-2xl font-bold text-center mb-2">مسابقات ابن تيمية</h2>
+                    <p class="text-center text-gray-500 text-sm mb-8">منصة التحفيظ والمسابقات القرآنية</p>
+
+                    <!-- Step 1: Role Selection -->
+                    <div id="auth-options-panel" class="space-y-4">
+                        <button onclick="handleLogin('student')"
+                            class="w-full flex items-center p-4 rounded-xl border-2 border-gray-100 dark:border-gray-700 hover:border-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition group">
+                            <div
+                                class="w-12 h-12 bg-teal-100 dark:bg-teal-900 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition">
+                                🎓</div>
+                            <div class="mr-4 text-right">
+                                <div class="font-bold text-lg">أنا طالب</div>
+                                <div class="text-xs text-gray-400">الدخول لمتابعة نقاطي</div>
+                            </div>
+                            <i data-lucide="chevron-left" class="mr-auto text-gray-300"></i>
+                        </button>
+
+                        <button onclick="handleLogin('teacher')"
+                            class="w-full flex items-center p-4 rounded-xl border-2 border-gray-100 dark:border-gray-700 hover:border-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition group">
+                            <div
+                                class="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition">
+                                👨‍🏫</div>
+                            <div class="mr-4 text-right">
+                                <div class="font-bold text-lg">أنا معلم</div>
+                                <div class="text-xs text-gray-400">إدارة الطلاب والمسابقات</div>
+                            </div>
+                            <i data-lucide="chevron-left" class="mr-auto text-gray-300"></i>
+                        </button>
+
+                        <button onclick="handleLogin('parent')"
+                            class="w-full flex items-center p-4 rounded-xl border-2 border-gray-100 dark:border-gray-700 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition group">
+                            <div
+                                class="w-12 h-12 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition">
+                                👨‍👩‍👧‍👦</div>
+                            <div class="mr-4 text-right">
+                                <div class="font-bold text-lg">ولي أمر</div>
+                                <div class="text-xs text-gray-400">متابعة أداء أبنائي</div>
+                            </div>
+                            <i data-lucide="chevron-left" class="mr-auto text-gray-300"></i>
+                        </button>
+                    </div>
+
+                    <!-- Step 2: Student Login -->
+                    <div id="student-login-panel" class="hidden animate-fade-in">
+                        <button onclick="backToAuthHome()"
+                            class="flex items-center text-gray-400 hover:text-gray-600 mb-6 text-sm">
+                            <i data-lucide="arrow-right" class="w-4 h-4 ml-1"></i>
+                            رجوع
+                        </button>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-bold mb-2">اختر المرحلة</label>
+                                <select id="student-level-select" aria-label="Select Level"
+                                    class="w-full bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 appearance-none focus:outline-none focus:border-teal-500">
+                                    <option value="" disabled selected>-- اختر --</option>
+                                    <option value="secondary">المرحلة الثانوية 🏢</option>
+                                    <option value="middle">المرحلة المتوسطة 🏫</option>
+                                    <option value="upper_elem">الابتدائية العليا 🎒</option>
+                                    <option value="lower_elem">الابتدائية الأولية 🧸</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-bold mb-2">كلمة مرور الطالب</label>
+                                <input type="password" id="student-password-input"
+                                    class="w-full bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-center text-lg focus:outline-none focus:border-teal-500"
+                                    placeholder="****" inputmode="numeric">
+                            </div>
+
+                            <button onclick="performStudentLogin()"
+                                class="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-lg mt-4 transition">
+                                تسجيل الدخول
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Teacher Login -->
+                    <div id="teacher-login-panel" class="hidden animate-fade-in">
+                        <button onclick="backToAuthHome()"
+                            class="flex items-center text-gray-400 hover:text-gray-600 mb-6 text-sm">
+                            <i data-lucide="arrow-right" class="w-4 h-4 ml-1"></i>
+                            رجوع
+                        </button>
+
+                        <div id="teacher-password-section" class="space-y-4">
+                            <div class="text-center mb-6">
+                                <p class="text-sm text-gray-500">اختر المرحلة ثم ادخل كلمة المرور</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-bold mb-2">اختر المرحلة</label>
+                                <select id="teacher-level-select" title="اختر المرحلة" aria-label="اختر المرحلة"
+                                    class="w-full bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 appearance-none focus:outline-none focus:border-purple-500">
+                                    <option value="" disabled selected>-- اختر المرحلة --</option>
+                                    <option value="secondary">المرحلة الثانوية 🏢</option>
+                                    <option value="middle">المرحلة المتوسطة 🏫</option>
+                                    <option value="upper_elem">الابتدائية العليا 🎒</option>
+                                    <option value="lower_elem">الابتدائية الأولية 🧸</option>
+                                </select>
+                            </div>
+
+                            <input type="password" id="teacher-password-input"
+                                class="w-full bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-center text-2xl tracking-widest focus:outline-none focus:border-purple-500"
+                                placeholder="******" inputmode="numeric">
+
+                            <button onclick="performTeacherLogin()"
+                                class="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-lg mt-4 transition">
+                                تحقق
+                            </button>
+                        </div>
+
+                        <!-- Step 3: Teacher Level Selection (Only if Master Pass) -->
+                        <div id="teacher-level-selection" class="hidden space-y-4">
+                            <h3 class="font-bold text-center mb-4">اختر المرحلة للإدارة</h3>
+                            <div id="teacher-level-grid" class="grid grid-cols-2 gap-3">
+                                <!-- Injected via JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Parent Login Panel -->
+                    <div id="parent-login-panel" class="hidden animate-fade-in">
+                        <button onclick="backToAuthHome()"
+                            class="flex items-center text-gray-400 hover:text-gray-600 mb-6 text-sm">
+                            <i data-lucide="arrow-right" class="w-4 h-4 ml-1"></i>
+                            رجوع
+                        </button>
+
+                        <div class="space-y-4">
+                            <div class="text-center mb-6">
+                                <div
+                                    class="w-20 h-20 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center text-4xl mx-auto mb-4">
+                                    👨‍👩‍👧‍👦</div>
+                                <p class="text-sm text-gray-500">أدخل رقم جوالك المسجل لدى المعلم<br>لمتابعة أداء أبنائك
+                                </p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-bold mb-2">رقم الجوال</label>
+                                <input type="tel" id="parent-phone-input" dir="ltr"
+                                    class="w-full bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-center text-lg focus:outline-none focus:border-amber-500"
+                                    placeholder="05xxxxxxxx أو 966xxxxxxx" inputmode="tel">
+                                <p class="text-xs text-gray-400 mt-1 text-center">الأرقام السعودية: أدخل 05 أو
+                                    966<br>الأرقام الدولية: أدخلها كما هي</p>
+                            </div>
+
+                            <button onclick="performParentLogin()"
+                                class="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-lg mt-4 transition">
+                                🔍 البحث عن أبنائي
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="fixed bottom-4 text-teal-200/50 text-[10px]">v4.3.0</div>
+        </div>
+
+        <!-- APP CONTENT WRAPPER -->
+        <div id="app-content-wrapper" class="flex-1 flex flex-col hidden overflow-hidden">
+            <!-- Hidden by default until login -->
+
+            <!-- Header - Fixed at top -->
+            <header
+                class="bg-teal-700 text-white p-4 shadow-lg flex justify-between items-center rounded-b-2xl shrink-0"
+                style="padding-top: max(env(safe-area-inset-top, 20px), 20px);">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="award" class="w-8 h-8 text-yellow-300"></i>
+                    <div>
+                        <h1 class="font-bold text-lg leading-tight">مسابقات ابن تيمية</h1>
+                        <p class="text-teal-200 text-xs" id="current-mode-label">وضع الطالب</p>
+                    </div>
+                </div>
+                <div id="level-badge" class="hidden sm:block bg-teal-800 px-3 py-1 rounded-full text-xs font-bold mr-2">
+                    <!-- Level Name Injected JS -->
+                </div>
+                <div class="flex-1"></div>
+                <!-- Logic changed: button now handles logout/status, binding in app.js -->
+                <button id="mode-btn" class="p-2 bg-teal-800 rounded-full hover:bg-teal-600 transition"
+                    title="تسجيل الخروج">
+                    <i data-lucide="shield" class="w-5 h-5"></i>
+                </button>
+            </header>
+
+            <!-- Main Content Area - Scrollable -->
+            <main id="main-content" class="flex-1 p-4 pb-24 overflow-y-auto">
+                <!-- Loading State -->
+                <div id="loading" class="flex flex-col items-center justify-center h-64 text-teal-600">
+                    <i data-lucide="loader-2" class="w-10 h-10 animate-spin mb-2"></i>
+                    <p>جارٍ التحميل...</p>
+                </div>
+
+                <!-- Content will be injected here via JS -->
+                <div id="view-container" class="hidden animate-fade-in">
+                    <!-- Views -->
+                </div>
+            </main>
+
+            <!-- Bottom Navigation -->
+            <nav
+                class="fixed bottom-0 w-full max-w-md bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 pb-safe z-40 rounded-t-2xl shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+                <div class="flex justify-around items-center p-2">
+                    <button onclick="router.navigate('home')"
+                        class="nav-item flex flex-col items-center p-2 text-teal-600 dark:text-teal-400 transition"
+                        data-target="home">
+                        <i data-lucide="home" class="w-6 h-6 mb-1"></i>
+                        <span class="text-xs font-medium">الرئيسية</span>
+                    </button>
+                    <button onclick="router.navigate('competitions')"
+                        class="nav-item flex flex-col items-center p-2 text-gray-400 hover:text-teal-600 transition"
+                        data-target="competitions">
+                        <i data-lucide="trophy" class="w-6 h-6 mb-1"></i>
+                        <span class="text-xs font-medium">المسابقات</span>
+                    </button>
+                    <button onclick="router.navigate('students')"
+                        class="nav-item flex flex-col items-center p-2 text-gray-400 hover:text-teal-600 transition"
+                        data-target="students">
+                        <i data-lucide="users" class="w-6 h-6 mb-1"></i>
+                        <span class="text-xs font-medium">الطلاب</span>
+                    </button>
+                    <button onclick="router.navigate('settings')"
+                        class="nav-item flex flex-col items-center p-2 text-gray-400 hover:text-teal-600 transition"
+                        data-target="settings">
+                        <i data-lucide="settings" class="w-6 h-6 mb-1"></i>
+                        <span class="text-xs font-medium">الإعدادات</span>
+                    </button>
+                </div>
+            </nav>
+        </div>
+
+
+        <!-- Inner Modals (Student, Competition, etc) -->
+        <!-- Multi-purpose Password Modal -->
+        <div id="password-modal"
+            class="fixed inset-0 bg-black/60 z-[90] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+            <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                <h3 class="font-bold text-lg mb-4 text-center">🔐 التحقق من الهوية</h3>
+                <p id="password-modal-msg" class="text-gray-500 text-sm text-center mb-4">يرجى إدخال كلمة المرور
+                    للمتابعة</p>
+                <input type="password" id="modal-password-input"
+                    class="w-full bg-gray-50 border rounded-xl px-4 py-3 text-center text-lg mb-4" placeholder="******">
+                <div class="flex gap-2">
+                    <button onclick="resolvePasswordModal(null)"
+                        class="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700">إلغاء</button>
+                    <button onclick="submitPasswordModal()"
+                        class="flex-1 py-3 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700">تأكيد</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+
+
+    </div>
+
+    <!-- Toast Notification (Moved to root for Z-Index) -->
+    <div id="toast"
+        class="fixed top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg z-[9999] hidden transition-all duration-300 flex items-center gap-3 min-w-[200px] justify-center text-white bg-gray-800">
+        <i data-lucide="info" class="w-5 h-5"></i>
+        <span id="toast-msg">تمت العملية بنجاح</span>
+    </div>
+
+    <!-- Application Logic -->
+    <script src="./js/app.js?v=4.3.0"></script>
+
+</body>
+
+</html>
