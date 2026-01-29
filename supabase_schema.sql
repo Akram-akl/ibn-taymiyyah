@@ -1,8 +1,6 @@
 -- =====================================================
 -- Supabase Schema for Ibn Taymiyyah Competitions App
 -- =====================================================
--- Run this SQL in your Supabase SQL Editor (Dashboard > SQL Editor)
--- =====================================================
 
 -- 1. Students Table
 CREATE TABLE IF NOT EXISTS students (
@@ -29,9 +27,22 @@ CREATE TABLE IF NOT EXISTS competitions (
     criteria JSONB DEFAULT '[]'::jsonb,
     absent_excuse INTEGER DEFAULT 1,
     absent_no_excuse INTEGER DEFAULT 4,
+    activity_points INTEGER DEFAULT 0, -- NEW: Default Activity Points
+    activity_absent_points INTEGER DEFAULT 0, -- NEW: Penalty for absence on activity day
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- NEW: If activity_points doesn't exist (incremental update)
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='competitions' AND column_name='activity_points') THEN
+        ALTER TABLE competitions ADD COLUMN activity_points INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='competitions' AND column_name='activity_absent_points') THEN
+        ALTER TABLE competitions ADD COLUMN activity_absent_points INTEGER DEFAULT 0;
+    END IF;
+END $$;
 
 -- 3. Groups Table
 CREATE TABLE IF NOT EXISTS groups (
@@ -73,8 +84,18 @@ CREATE TABLE IF NOT EXISTS teachers (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 6. Activity Days Table (NEW)
+CREATE TABLE IF NOT EXISTS activity_days (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    competition_id UUID REFERENCES competitions(id) ON DELETE CASCADE,
+    date TEXT NOT NULL, -- YYYY-MM-DD
+    points INTEGER NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- =====================================================
--- Enable Row Level Security (RLS) - IMPORTANT for public access
+-- Enable Row Level Security (RLS)
 -- =====================================================
 
 ALTER TABLE students ENABLE ROW LEVEL SECURITY;
@@ -82,60 +103,85 @@ ALTER TABLE competitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teachers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_days ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
--- Create Policies for Public Access (using anon key)
--- These allow read/write for all users with the anon key
+-- Create Policies (Using DROP IF EXISTS for idempotency)
 -- =====================================================
 
--- Students Policies
+-- Students
+DROP POLICY IF EXISTS "Allow public read students" ON students;
+DROP POLICY IF EXISTS "Allow public insert students" ON students;
+DROP POLICY IF EXISTS "Allow public update students" ON students;
+DROP POLICY IF EXISTS "Allow public delete students" ON students;
 CREATE POLICY "Allow public read students" ON students FOR SELECT USING (true);
 CREATE POLICY "Allow public insert students" ON students FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update students" ON students FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete students" ON students FOR DELETE USING (true);
 
--- Competitions Policies
+-- Competitions
+DROP POLICY IF EXISTS "Allow public read competitions" ON competitions;
+DROP POLICY IF EXISTS "Allow public insert competitions" ON competitions;
+DROP POLICY IF EXISTS "Allow public update competitions" ON competitions;
+DROP POLICY IF EXISTS "Allow public delete competitions" ON competitions;
 CREATE POLICY "Allow public read competitions" ON competitions FOR SELECT USING (true);
 CREATE POLICY "Allow public insert competitions" ON competitions FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update competitions" ON competitions FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete competitions" ON competitions FOR DELETE USING (true);
 
--- Groups Policies
+-- Groups
+DROP POLICY IF EXISTS "Allow public read groups" ON groups;
+DROP POLICY IF EXISTS "Allow public insert groups" ON groups;
+DROP POLICY IF EXISTS "Allow public update groups" ON groups;
+DROP POLICY IF EXISTS "Allow public delete groups" ON groups;
 CREATE POLICY "Allow public read groups" ON groups FOR SELECT USING (true);
 CREATE POLICY "Allow public insert groups" ON groups FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update groups" ON groups FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete groups" ON groups FOR DELETE USING (true);
 
--- Scores Policies
+-- Scores
+DROP POLICY IF EXISTS "Allow public read scores" ON scores;
+DROP POLICY IF EXISTS "Allow public insert scores" ON scores;
+DROP POLICY IF EXISTS "Allow public update scores" ON scores;
+DROP POLICY IF EXISTS "Allow public delete scores" ON scores;
 CREATE POLICY "Allow public read scores" ON scores FOR SELECT USING (true);
 CREATE POLICY "Allow public insert scores" ON scores FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update scores" ON scores FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete scores" ON scores FOR DELETE USING (true);
 
--- Teachers Policies
+-- Teachers
+DROP POLICY IF EXISTS "Allow public read teachers" ON teachers;
+DROP POLICY IF EXISTS "Allow public insert teachers" ON teachers;
+DROP POLICY IF EXISTS "Allow public update teachers" ON teachers;
+DROP POLICY IF EXISTS "Allow public delete teachers" ON teachers;
 CREATE POLICY "Allow public read teachers" ON teachers FOR SELECT USING (true);
 CREATE POLICY "Allow public insert teachers" ON teachers FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update teachers" ON teachers FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete teachers" ON teachers FOR DELETE USING (true);
 
--- =====================================================
--- Enable Realtime for all tables (for live updates)
--- =====================================================
-ALTER PUBLICATION supabase_realtime ADD TABLE students;
-ALTER PUBLICATION supabase_realtime ADD TABLE competitions;
-ALTER PUBLICATION supabase_realtime ADD TABLE groups;
-ALTER PUBLICATION supabase_realtime ADD TABLE scores;
-ALTER PUBLICATION supabase_realtime ADD TABLE teachers;
+-- Activity Days
+DROP POLICY IF EXISTS "Allow public read activity_days" ON activity_days;
+DROP POLICY IF EXISTS "Allow public insert activity_days" ON activity_days;
+DROP POLICY IF EXISTS "Allow public update activity_days" ON activity_days;
+DROP POLICY IF EXISTS "Allow public delete activity_days" ON activity_days;
+CREATE POLICY "Allow public read activity_days" ON activity_days FOR SELECT USING (true);
+CREATE POLICY "Allow public insert activity_days" ON activity_days FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update activity_days" ON activity_days FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete activity_days" ON activity_days FOR DELETE USING (true);
 
 -- =====================================================
--- Create Indexes for Performance
+-- Enable Realtime
 -- =====================================================
-CREATE INDEX IF NOT EXISTS idx_students_level ON students(level);
-CREATE INDEX IF NOT EXISTS idx_students_parent_phone ON students(parent_phone);
-CREATE INDEX IF NOT EXISTS idx_competitions_level ON competitions(level);
-CREATE INDEX IF NOT EXISTS idx_groups_competition_id ON groups(competition_id);
-CREATE INDEX IF NOT EXISTS idx_groups_level ON groups(level);
-CREATE INDEX IF NOT EXISTS idx_scores_student_id ON scores(student_id);
-CREATE INDEX IF NOT EXISTS idx_scores_competition_id ON scores(competition_id);
-CREATE INDEX IF NOT EXISTS idx_scores_date ON scores(date);
-CREATE INDEX IF NOT EXISTS idx_teachers_level ON teachers(level);
+-- Using DO block to avoid errors if already in publication
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'activity_days') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE activity_days;
+    END IF;
+END $$;
+
+-- =====================================================
+-- Create Indexes
+-- =====================================================
+CREATE INDEX IF NOT EXISTS idx_activity_days_competition_id ON activity_days(competition_id);
+CREATE INDEX IF NOT EXISTS idx_activity_days_date ON activity_days(date);

@@ -831,6 +831,11 @@ function renderStudents() {
     // Ensure modals are in body
     ensureGlobalModals();
 
+    // Performance: If we have cached data, show it immediately
+    if (state.students && state.students.length > 0) {
+        updateStudentsListUI();
+    }
+
     // Listener
     if (studentsUnsubscribe) {
         studentsUnsubscribe();
@@ -1364,6 +1369,23 @@ function getCompetitionModalsHTML() {
                                                     </div>
                                                 </div>
                                             </div>
+                                            
+                                            <div class="mb-4 bg-purple-50 dark:bg-purple-900/10 p-3 rounded-xl border border-purple-100 dark:border-purple-800">
+                                                <h4 class="font-bold text-sm text-purple-800 dark:text-purple-300 mb-3 flex items-center gap-2">
+                                                    <i data-lucide="zap" class="w-4 h-4"></i>
+                                                    إعدادات يوم النشاط
+                                                </h4>
+                                                <div class="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1">نقاط الحضور</label>
+                                                        <input type="number" id="comp-activity-points" class="w-full bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 rounded-lg px-3 py-2 text-center text-sm" value="">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1 text-red-600">نقاط الخصم (غائب)</label>
+                                                        <input type="number" id="comp-activity-absent-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-center text-sm text-red-600" value="">
+                                                    </div>
+                                                </div>
+                                            </div>
 
                                             <button type="submit" id="save-competition-btn" class="w-full bg-teal-600 text-white py-3 rounded-xl font-bold hover:bg-teal-700 transition">حفظ المسابقة</button>
                                     </form>
@@ -1533,6 +1555,33 @@ function getGradingModalsHTML() {
                                                 </div>
                                                 <p id="rate-date-display" class="text-center text-sm text-gray-500 mb-4 font-bold bg-gray-100 dark:bg-gray-700 py-1 rounded-lg"></p>
                                                 <div id="criteria-buttons-grid" class="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto"></div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Activity Day Modals -->
+                                        <div id="activity-check-modal" class="fixed inset-0 bg-black/60 z-[120] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+                                            <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[85vh]">
+                                                <h3 class="font-bold text-lg mb-2">تسجيل يوم نشاط 🏃</h3>
+                                                <p class="text-xs text-gray-500 mb-4">حدد الطلاب الغائبين ليتم استثناؤهم من النقاط:</p>
+                                                <div id="activity-students-list" class="flex-1 overflow-y-auto mb-4 border rounded-xl divide-y dark:divide-gray-700"></div>
+                                                <div class="flex gap-2">
+                                                    <button onclick="closeModal('activity-check-modal')" class="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 font-medium">إلغاء</button>
+                                                    <button onclick="submitActivityDay()" class="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 shadow-lg">تأكيد الرصد</button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div id="activity-absent-modal" class="fixed inset-0 bg-black/60 z-[130] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+                                            <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col">
+                                                <div class="text-center mb-6">
+                                                    <div class="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                                                        <i data-lucide="check-circle" class="w-8 h-8"></i>
+                                                    </div>
+                                                    <h3 class="font-bold text-lg">تم رصد يوم النشاط!</h3>
+                                                    <p class="text-sm text-gray-500">تم تسجيل الغياب، يمكنك مراسلة أولياء الأمور:</p>
+                                                </div>
+                                                <div id="activity-absent-whatsapp-list" class="space-y-3 mb-6"></div>
+                                                <button onclick="closeModal('activity-absent-modal')" class="w-full py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 rounded-xl font-bold">إغلاق</button>
                                             </div>
                                         </div>
                                         `;
@@ -1880,11 +1929,24 @@ async function generateGroupWeeklyReport(groupId) {
             }
         });
 
+        // NEW: Fetch Activity Days Log
+        const activityQuery = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "activity_days"),
+            window.firebaseOps.where("competitionId", "==", comp.id),
+            window.firebaseOps.where("date", "in", dateStrings)
+        );
+        const activitySnap = await window.firebaseOps.getDocs(activityQuery);
+        const activityLog = {}; // date -> points
+        activitySnap.forEach(d => {
+            const data = d.data();
+            activityLog[data.date] = data.points;
+        });
+
         // 3. Calculate Stats
         let totalPositiveEarned = 0;
         let totalAbsenceDeduction = 0;
         let absenceCount = 0;
-        let addedPoints = 0; // If you have 'bonus' criteria, track here. Assuming all positive are 'earned' for now.
+        let activityDaysTaken = 0;
 
         scores.forEach(s => {
             const p = parseInt(s.points) || 0;
@@ -1898,14 +1960,24 @@ async function generateGroupWeeklyReport(groupId) {
         });
 
         // Calculate Possible Points (Original)
-        // Sum of all positive criteria points * days * student count
-        let dailyPossiblePerStudent = 0;
+        let dailyStandardPossible = 0;
         if (comp.criteria) {
             comp.criteria.forEach(c => {
-                dailyPossiblePerStudent += (parseInt(c.positivePoints) || 0);
+                dailyStandardPossible += (parseInt(c.positivePoints) || 0);
             });
         }
-        const totalPossible = dailyPossiblePerStudent * daysPassed * memberIds.length;
+
+        let totalPossible = 0;
+        dateStrings.forEach(dateStr => {
+            if (activityLog[dateStr]) {
+                // This was an Activity Day
+                totalPossible += activityLog[dateStr] * memberIds.length;
+                activityDaysTaken++;
+            } else {
+                // Normal Day
+                totalPossible += dailyStandardPossible * memberIds.length;
+            }
+        });
 
         const netTotal = totalPositiveEarned + totalAbsenceDeduction;
 
@@ -1913,6 +1985,9 @@ async function generateGroupWeeklyReport(groupId) {
         let reportText = `📊 *تقرير الأسبوع (مجموعة ${group.name})* 📊\n`;
         reportText += `📅 التاريخ: ${dateStrings[0]} إلى ${dateStrings[4]}\n`;
         reportText += `👥 عدد الطلاب: ${memberIds.length}\n`;
+        if (activityDaysTaken > 0) {
+            reportText += `🎪 تم إقامة نشاط في هذا الأسبوع\n`;
+        }
         reportText += `------------------\n`;
 
         reportText += `🎯 النقاط المستحقة (الأصلية): ${totalPossible}\n`;
@@ -2274,12 +2349,18 @@ function openGroupGrading(groupId) {
         }
 
         let html = `
-                                                <div class="sticky top-0 bg-white dark:bg-gray-800 py-2 mb-3 border-b">
-                                                    <button onclick="openGradingSession('${currentGradingCompId}')" class="text-teal-600 font-bold text-sm flex items-center gap-1">
-                                                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
-                                                        العودة للمجموعات
+                                                <div class="sticky top-0 bg-white dark:bg-gray-800 py-2 mb-3 border-b flex justify-between items-center">
+                                                    <div>
+                                                        <button onclick="openGradingSession('${currentGradingCompId}')" class="text-teal-600 font-bold text-sm flex items-center gap-1">
+                                                            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                                                            العودة
+                                                        </button>
+                                                        <h4 class="font-bold mt-1">${group.name}</h4>
+                                                    </div>
+                                                    <button onclick="openActivityCheckModal('${groupId}')" class="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-purple-700 transition flex items-center gap-1">
+                                                        <i data-lucide="zap" class="w-3 h-3"></i>
+                                                        يوم نشاط
                                                     </button>
-                                                    <h4 class="font-bold mt-1">${group.name}</h4>
                                                 </div>
                                                 <div class="space-y-2">
                                                     `;
@@ -2437,6 +2518,148 @@ async function submitScore(criteriaId, points, criteriaName, type) {
 }
 
 // Student Edit Security Check
+let currentActivityGroupId = null;
+
+async function openActivityCheckModal(groupId) {
+    currentActivityGroupId = groupId;
+    const group = state.groups.find(g => g.id === groupId);
+    if (!group) return;
+
+    const list = $('#activity-students-list');
+    list.innerHTML = `<div class="p-4 text-center"><i data-lucide="loader-2" class="animate-spin w-5 h-5 mx-auto"></i></div>`;
+    lucide.createIcons();
+
+    // Fetch group members if not in state
+    let members = state.students.filter(s => group.members.includes(s.id));
+    if (members.length === 0) {
+        // Fallback fetch - already handled in openGroupGrading but just in case
+        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"), window.firebaseOps.where("level", "==", state.currentLevel));
+        const snap = await window.firebaseOps.getDocs(q);
+        const all = []; snap.forEach(d => { var x = d.data(); x.id = d.id; all.push(x); });
+        state.students = all;
+        members = all.filter(s => group.members.includes(s.id));
+    }
+
+    list.innerHTML = members.map(s => `
+        <label class="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition">
+            <span class="font-bold text-sm">${s.name}</span>
+            <input type="checkbox" value="${s.id}" class="activity-absent-checkbox w-5 h-5 text-purple-600 rounded-lg border-gray-300">
+        </label>
+    `).join('');
+
+    toggleModal('activity-check-modal', true);
+}
+
+async function submitActivityDay() {
+    const comp = state.competitions.find(c => c.id === currentGradingCompId);
+    const group = state.groups.find(g => g.id === currentActivityGroupId);
+    const dateVal = $('#grading-date').value;
+
+    if (!comp || !group || !dateVal) {
+        showToast("خطأ في البيانات أو التاريخ", "error");
+        return;
+    }
+
+    const activityPoints = comp.activityPoints || 0;
+    const rawActivityAbsentPoints = comp.activityAbsentPoints || 0;
+    // Force negative for deduction consistency
+    const activityAbsentPoints = rawActivityAbsentPoints > 0 ? -rawActivityAbsentPoints : rawActivityAbsentPoints;
+    const absents = Array.from($$('.activity-absent-checkbox:checked')).map(cb => cb.value);
+    const members = group.members || [];
+
+    const confirmBtn = $$('#activity-check-modal button')[1];
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i data-lucide="loader-2" class="animate-spin w-4 h-4 mx-auto"></i>';
+        lucide.createIcons();
+    }
+
+    try {
+        // 0. Check if Activity Day already exists for this date and competition
+        const duplicateCheckQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "activity_days"),
+            window.firebaseOps.where("competitionId", "==", comp.id),
+            window.firebaseOps.where("date", "==", dateVal)
+        );
+        const duplicateCheckSnap = await window.firebaseOps.getDocs(duplicateCheckQ);
+        if (!duplicateCheckSnap.empty) {
+            showToast("تم تسجيل نشاط لهذا اليوم مسبقاً في هذه المسابقة", "error");
+            return;
+        }
+
+        // 1. Log the Activity Day
+        await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "activity_days"), {
+            competitionId: comp.id,
+            date: dateVal,
+            points: activityPoints
+        });
+
+        // 2. Save Scores using Sequential Batch for stability
+        const batch = window.firebaseOps.writeBatch(window.db);
+
+        members.forEach(sid => {
+            const isAbsent = absents.includes(sid);
+            const scoreData = {
+                studentId: sid,
+                competitionId: comp.id,
+                groupId: group.id,
+                criteriaId: isAbsent ? 'ABSENCE_RECORD' : 'ACTIVITY_DAY',
+                criteriaName: isAbsent ? 'غياب يوم نشاط' : 'حضور يوم نشاط',
+                points: isAbsent ? activityAbsentPoints : activityPoints,
+                type: isAbsent ? 'absence' : 'activity',
+                level: state.currentLevel,
+                date: dateVal,
+                updatedAt: new Date(),
+                timestamp: Date.now(),
+                createdAt: new Date()
+            };
+
+            // Note: writeBatch.set in our wrapper always does addDoc
+            batch.set(window.firebaseOps.doc(window.db, "scores", "temp_" + sid), scoreData);
+        });
+
+        await batch.commit();
+
+        closeModal('activity-check-modal');
+        showToast("تم رصد درجات النشاط بنجاح", "success");
+
+        // 3. Show WhatsApp list for absentees
+        const absentStudents = state.students.filter(s => absents.includes(s.id));
+        if (absentStudents.length > 0) {
+            const waList = $('#activity-absent-whatsapp-list');
+            waList.innerHTML = absentStudents.map(s => {
+                const phone = s.studentNumber || '';
+                const msg = `نحيطكم علماً بغياب الطالب (${s.name}) عن يوم النشاط المقام اليوم في مسابقة ${comp.name}.`;
+                const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+
+                return `
+                    <div class="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30">
+                        <span class="font-bold text-sm text-gray-800 dark:text-gray-200">${s.name}</span>
+                        ${phone ? `
+                        <a href="${url}" target="_blank" class="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-green-700 transition">
+                            <i data-lucide="message-circle" class="w-3 h-3"></i>
+                            مراسلة
+                        </a>
+                        ` : '<span class="text-[10px] text-gray-400">لا يوجد رقم</span>'}
+                    </div>
+                `;
+            }).join('');
+
+            toggleModal('activity-absent-modal', true);
+            lucide.createIcons();
+        }
+
+    } catch (e) {
+        console.error("submitActivityDay error full:", e);
+        const errorMsg = e.message || "حدث خطأ في الاتصال بقاعدة البيانات";
+        showToast(errorMsg, "error");
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'تأكيد الرصد';
+        }
+    }
+}
 
 
 function toggleEmojiPicker(targetId) {
@@ -2510,8 +2733,21 @@ async function handleSaveStudent(e) {
         } else {
             data.createdAt = new Date();
             data.level = state.currentLevel;
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "students"), data);
+            const docRef = await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "students"), data);
             showToast("تم الإضافة");
+
+            // Optimistic Update: Add to local state immediately
+            data.id = docRef.id;
+            // Convert createdAt to something sort-compatible (Timestamp-like) just for UI
+            data.createdAt = { seconds: Date.now() / 1000 };
+            state.students.push(data);
+            // Sort
+            state.students.sort((a, b) => {
+                const aSec = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : 0;
+                const bSec = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : 0;
+                return bSec - aSec;
+            });
+            updateStudentsListUI();
         }
         closeModal('student-modal');
     } catch (err) { console.error(err); showToast("خطأ", "error"); }
@@ -2543,6 +2779,10 @@ async function openEditCompetition(id) {
         $('#competition-id').value = id;
         $('#competition-name').value = data.name || '';
         $('#competition-emoji').value = data.icon || '🏆';
+        $('#comp-absent-excuse').value = data.absentExcuse || 1;
+        $('#comp-absent-no-excuse').value = data.absentNoExcuse || 4;
+        $('#comp-activity-points').value = data.activityPoints || 0;
+        $('#comp-activity-absent-points').value = data.activityAbsentPoints || 0;
 
         const titleEl = document.querySelector('#competition-modal h3');
         if (titleEl) titleEl.textContent = 'تعديل المسابقة';
@@ -2563,52 +2803,7 @@ async function openEditCompetition(id) {
     }
 }
 
-function addCriteriaItem(name = '', pos = 1, neg = -1) {
-    const div = document.createElement('div');
-    div.className = 'flex gap-2 items-center';
-    div.innerHTML = `
-                                                <input type="text" value="${name}" placeholder="المعيار (مثال: حضور)" class="criteria-name flex-1 bg-gray-50 rounded-lg px-3 py-2 border" >
-                                                    <input type="number" value="${pos}" class="criteria-pos w-16 bg-green-50 text-green-700 rounded-lg px-2 py-2 border border-green-200 text-center" placeholder="+">
-                                                        <input type="number" value="${neg}" class="criteria-neg w-16 bg-red-50 text-red-700 rounded-lg px-2 py-2 border border-red-200 text-center" placeholder="-">
-                                                            <button type="button" onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-600"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                                            `;
-    $('#criteria-list').appendChild(div);
-    lucide.createIcons();
-}
-
-async function handleSaveCompetition(e) {
-    e.preventDefault();
-    const btn = $('#save-competition-btn');
-    btn.disabled = true;
-
-    const criteria = Array.from($$('#criteria-list > div')).map(el => ({
-        id: Math.random().toString(36).substr(2, 9),
-        name: el.querySelector('.criteria-name').value,
-        positivePoints: parseInt(el.querySelector('.criteria-pos').value) || 0,
-        negativePoints: parseInt(el.querySelector('.criteria-neg').value) || 0
-    }));
-
-    const data = {
-        name: $('#competition-name').value,
-        icon: $('#competition-emoji').value,
-        criteria,
-        updatedAt: new Date()
-    };
-
-    try {
-        const id = $('#competition-id').value;
-        if (id) {
-            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "competitions", id), data);
-        } else {
-            data.createdAt = new Date();
-            data.level = state.currentLevel; // IMPORTANT
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "competitions"), data);
-        }
-        closeModal('competition-modal');
-        showToast("تم الحفظ");
-    } catch (err) { console.error(err); showToast("خطأ", "error"); }
-    finally { btn.disabled = false; }
-}
+// Duplicates removed
 
 // Emoji Picker & Other Modals
 
@@ -2720,7 +2915,7 @@ window.addEventListener('popstate', (event) => {
 
 
 // === COMPETITION MANAGEMENT ===
-function addCriteriaItem(name = '', pos = 1, neg = 0) {
+function addCriteriaItem(name = '', pos = '', neg = '') {
     const container = document.getElementById('criteria-list');
     if (!container) return; // Guard
     const id = Date.now() + Math.random().toString(36).substr(2, 9);
@@ -2744,46 +2939,50 @@ function addCriteriaItem(name = '', pos = 1, neg = 0) {
 }
 
 async function handleSaveCompetition(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
     const btn = document.getElementById('save-competition-btn');
-    btn.disabled = true;
-    btn.textContent = 'جاري الحفظ...';
-
-    const id = document.getElementById('competition-id').value;
-    const name = document.getElementById('competition-name').value;
-    const icon = document.getElementById('competition-emoji').value;
-    const absentExcuse = parseInt(document.getElementById('comp-absent-excuse').value) || 1;
-    const absentNoExcuse = parseInt(document.getElementById('comp-absent-no-excuse').value) || 4;
-
-    // Collect Criteria
-    const criteriaVals = [];
-    document.querySelectorAll('#criteria-list > div').forEach(div => {
-        criteriaVals.push({
-            id: Date.now() + Math.random().toString(36).substr(2, 9),
-            name: div.querySelector('.criteria-name').value,
-            positivePoints: parseInt(div.querySelector('.criteria-pos').value) || 0,
-            negativePoints: parseInt(div.querySelector('.criteria-neg').value) || 0
-        });
-    });
-
-    if (criteriaVals.length === 0) {
-        showToast("يجب إضافة معيار واحد على الأقل", "error");
-        btn.disabled = false;
-        btn.textContent = 'حفظ المسابقة';
-        return;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'جاري الحفظ...';
     }
 
-    const data = {
-        name,
-        icon,
-        criteria: criteriaVals,
-        absentExcuse,
-        absentNoExcuse,
-        level: state.currentLevel,
-        updatedAt: new Date()
-    };
-
     try {
+        const id = document.getElementById('competition-id').value;
+        const name = document.getElementById('competition-name').value;
+        const icon = document.getElementById('competition-emoji').value;
+        const absentExcuse = parseInt(document.getElementById('comp-absent-excuse').value) || 1;
+        const absentNoExcuse = parseInt(document.getElementById('comp-absent-no-excuse').value) || 4;
+        const activityPoints = parseInt(document.getElementById('comp-activity-points').value) || 0;
+        const activityAbsentPoints = parseInt(document.getElementById('comp-activity-absent-points').value) || 0;
+
+        // Collect Criteria
+        const criteriaVals = [];
+        document.querySelectorAll('#criteria-list > div').forEach(div => {
+            criteriaVals.push({
+                id: Date.now() + Math.random().toString(36).substr(2, 9),
+                name: div.querySelector('.criteria-name').value,
+                positivePoints: parseInt(div.querySelector('.criteria-pos').value) || 0,
+                negativePoints: parseInt(div.querySelector('.criteria-neg').value) || 0
+            });
+        });
+
+        if (criteriaVals.length === 0) {
+            showToast("يجب إضافة معيار واحد على الأقل", "error");
+            return; // Finally will run to reset button
+        }
+
+        const data = {
+            name,
+            icon,
+            criteria: criteriaVals,
+            absentExcuse,
+            absentNoExcuse,
+            activityPoints,
+            activityAbsentPoints,
+            level: state.currentLevel,
+            updatedAt: new Date()
+        };
+
         if (id) {
             await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "competitions", id), data);
             showToast("تم تحديث المسابقة");
@@ -2794,10 +2993,13 @@ async function handleSaveCompetition(e) {
         }
         closeModal('competition-modal');
     } catch (err) {
-        console.error(err);
-        showToast("خطأ في الحفظ", "error");
-        btn.disabled = false;
-        btn.textContent = 'حفظ المسابقة';
+        console.error("Save Error:", err);
+        showToast("خطأ في الاتصال أو الحفظ", "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'حفظ المسابقة';
+        }
     }
 }
 
@@ -2965,14 +3167,36 @@ async function generateWeeklyReport() {
         const scores = [];
         snap.forEach(d => scores.push(d.data()));
 
+        // NEW: Fetch Activity Days Log
+        const activityQuery = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "activity_days"),
+            window.firebaseOps.where("competitionId", "==", comp.id),
+            window.firebaseOps.where("date", "in", dateStrings)
+        );
+        const activitySnap = await window.firebaseOps.getDocs(activityQuery);
+        const activityLog = {}; // date -> points
+        let activityDaysTaken = 0;
+        let totalActivityPossible = 0;
+        activitySnap.forEach(d => {
+            const data = d.data();
+            activityLog[data.date] = data.points;
+            activityDaysTaken++;
+            totalActivityPossible += (parseInt(data.points) || 0);
+        });
+
         // Calculate Totals per Criteria
-        let reportText = `📊 *تقرير الأسبوع الماضى* 📊\n`;
+        let reportText = `📊 *تقرير الأسبوع الماضي* 📊\n`;
         reportText += `👤 الطالب: ${student.name}\n`;
         reportText += `📅 الأسبوع: ${dateStrings[0]} إلى ${dateStrings[dateStrings.length - 1]}\n`;
+        if (activityDaysTaken > 0) {
+            reportText += `🎪 تم إقامة نشاط (${activityDaysTaken} يوم)\n`;
+        }
         reportText += `------------------\n`;
 
         let totalEarned = 0;
         let totalPossible = 0;
+
+        const normalDaysCount = daysPassed - activityDaysTaken;
 
         if (comp.criteria) {
             comp.criteria.forEach(c => {
@@ -2980,9 +3204,8 @@ async function generateWeeklyReport() {
                 const cScores = scores.filter(s => s.criteriaId === c.id);
                 const earned = cScores.reduce((sum, s) => sum + s.points, 0);
 
-                // Possible: Criteria Points * Days Passed
-                // Assuming Positive Points is the target.
-                const possible = (parseInt(c.positivePoints) || 0) * daysPassed;
+                // Possible: Criteria Points * Normal Days
+                const possible = (parseInt(c.positivePoints) || 0) * normalDaysCount;
 
                 reportText += `🔹 ${c.name}: ${earned} / ${possible}\n`;
 
@@ -2991,7 +3214,16 @@ async function generateWeeklyReport() {
             });
         }
 
-        // Add Absence Deductions if any (Negative scores not in criteria list usually, or handled separately)
+        // Add Activity Points if any
+        if (activityDaysTaken > 0) {
+            const activityScores = scores.filter(s => s.criteriaId === 'ACTIVITY_DAY');
+            const activityEarned = activityScores.reduce((sum, s) => sum + s.points, 0);
+            reportText += `🏃 نقاط النشاط: ${activityEarned} / ${totalActivityPossible}\n`;
+            totalEarned += activityEarned;
+            totalPossible += totalActivityPossible;
+        }
+
+        // Add Absence Deductions if any
         const absences = scores.filter(s => s.criteriaId === 'ABSENCE_RECORD');
         let absentDays = [];
         if (absences.length > 0) {
