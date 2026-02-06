@@ -1536,7 +1536,7 @@ function getGradingModalsHTML() {
                                                             <div class="bg-white dark:bg-gray-600 p-2 rounded-lg shadow-sm border">📅</div>
                                                             <div class="flex-1">
                                                                 <p class="text-xs text-gray-500 mb-1">تاريخ الرصد</p>
-                                                                <input type="date" id="grading-date" class="w-full bg-transparent font-bold text-gray-700 dark:text-gray-200 outline-none" onchange="refreshGradingStatus()">
+                                                                <input type="date" id="grading-date" class="w-full bg-transparent font-bold text-gray-700 dark:text-gray-200 outline-none">
                                                             </div>
                                                         </div>
                                                     </div>
