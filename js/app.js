@@ -1058,18 +1058,7 @@ function renderSettings() {
              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
                  <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="wrench" class="w-5 h-5 text-teal-600"></i> أدوات</h3>
                  <div class="grid grid-cols-2 gap-3">
-                     <button onclick="exportStudentsCSV()" class="flex flex-col items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800 hover:bg-green-100 transition">
-                         <i data-lucide="download" class="w-5 h-5 text-green-600"></i>
-                         <span class="text-xs font-bold text-green-700 dark:text-green-400">تصدير الطلاب</span>
-                     </button>
-                     <button onclick="exportScoresCSV()" class="flex flex-col items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 hover:bg-blue-100 transition">
-                         <i data-lucide="file-spreadsheet" class="w-5 h-5 text-blue-600"></i>
-                         <span class="text-xs font-bold text-blue-700 dark:text-blue-400">تصدير الدرجات</span>
-                     </button>
-                     <button onclick="openStatsModal()" class="col-span-2 flex items-center justify-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800 hover:bg-amber-100 transition">
-                         <i data-lucide="bar-chart-3" class="w-5 h-5 text-amber-600"></i>
-                         <span class="text-xs font-bold text-amber-700 dark:text-amber-400">الإحصائيات</span>
-                     </button>
+
                      <button onclick="openReportsModal()" class="col-span-2 flex items-center justify-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-800 hover:bg-red-100 transition">
                          <i data-lucide="file-text" class="w-5 h-5 text-red-600"></i>
                          <span class="text-xs font-bold text-red-700 dark:text-red-400">إنشاء تقرير المجموعات (PDF)</span>
@@ -1078,9 +1067,9 @@ function renderSettings() {
              </div>
              ` : ''}
 
-             <div class="text-center text-xs text-gray-400 mt-8">
+             <div class="text-center text-xs text-gray-400 mt-8 mb-4">
                  <p>مسابقات ابن تيمية - إصدار v4.3.0</p>
-                 <p>جميع الحقوق محفوظة</p>
+                 <p class="opacity-50 mt-1 font-light">تم إنشاء هذا التطبيق بواسطة أكرم عقل</p>
              </div>
         </div>
     `;
@@ -1385,7 +1374,7 @@ function getCompetitionModalsHTML() {
     // Similar to student modal but for competitions + groups
     return `
                             <div id="competition-modal" class="fixed inset-0 bg-black/50 z-[100] hidden flex items-center justify-center p-0 sm:p-4 backdrop-blur-sm">
-                                <div class="bg-white dark:bg-gray-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6 shadow-2xl h-[90vh] sm:h-auto overflow-y-auto">
+                                <div class="bg-white dark:bg-gray-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6 shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col">
                                     <div class="flex justify-between items-center mb-6">
                                         <h3 class="text-lg font-bold">إنشاء مسابقة جديدة</h3>
                                         <button onclick="closeModal('competition-modal')"><i data-lucide="x"></i></button>
@@ -1463,7 +1452,7 @@ function getCompetitionModalsHTML() {
 
                             <!-- Add/Edit Group Modal -->
                             <div id="edit-group-modal" class="fixed inset-0 bg-black/60 z-[100] hidden flex items-center justify-center p-4">
-                                <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
+                                <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl max-h-[90vh] overflow-y-auto flex flex-col">
                                     <div class="flex justify-between items-center mb-4">
                                         <h3 id="group-modal-title" class="font-bold text-lg">إضافة مجموعة</h3>
                                         <button onclick="closeModal('edit-group-modal')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x"></i></button>
@@ -2321,7 +2310,7 @@ function openGradingSession(compId, keepDate = false) {
         <div class="mb-4">
             <button onclick="openActivityCheckModal('ALL')" class="w-full bg-purple-600 text-white px-4 py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-purple-700 transition flex items-center justify-center gap-2">
                 <i data-lucide="zap" class="w-5 h-5"></i>
-                تسجيل يوم نشاط للمسابقة (لجميع المجموعات)
+                يوم نشاط
             </button>
         </div>
         <div class="space-y-3">`;
@@ -3545,86 +3534,18 @@ async function openStudentReport(studentId) {
         ? `<img src="${student.icon}" class="w-full h-full object-cover rounded-full">`
         : (student.icon || '👤');
 
-    // Calendar Generate
+    // Save data globally for calendar interaction
+    window._currentStudentData = student;
+    window._currentStudentScores = scores;
+    
     const todayDate = new Date();
-    const currentYear = todayDate.getFullYear();
-    const currentMonth = todayDate.getMonth();
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+    window._currentCalendarYear = todayDate.getFullYear();
+    window._currentCalendarMonth = todayDate.getMonth();
     
-    const scoresByDate = {};
-    scores.forEach(s => {
-        if (!s.date) return;
-        if (!scoresByDate[s.date]) scoresByDate[s.date] = { points: 0, criteria: [] };
-        scoresByDate[s.date].points += (parseInt(s.points) || 0);
-        scoresByDate[s.date].criteria.push(s.criteriaName || (s.criteriaId === 'ABSENCE_RECORD' ? 'غياب' : 'أخرى'));
-    });
-    
-    let calendarDaysHTML = '';
-    const weekdays = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
-    let calendarHeaderHTML = weekdays.map(d => `<div class="text-center text-xs font-bold text-gray-400 py-1">${d}</div>`).join('');
-    
-    for(let i = 0; i < firstDay; i++) {
-        calendarDaysHTML += `<div class="p-2 opacity-0"></div>`;
-    }
-    
-    for(let i = 1; i <= daysInMonth; i++) {
-        const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-        const dayData = scoresByDate[dateStr];
-        let dayClass = 'bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
-        let dayContent = `<span class="text-xs font-bold text-gray-400">${i}</span>`;
-        
-        if (dayData) {
-            const isAbsence = dayData.criteria.some(c => c && c.indexOf('غياب') !== -1);
-            if (isAbsence) {
-                dayClass = 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
-                dayContent = `
-                    <span class="text-xs font-bold text-red-700 dark:text-red-400">${i}</span>
-                    <span class="text-[10px] mt-0.5 cursor-pointer" title="${dayData.criteria.join(', ')}">❌</span>
-                `;
-            } else if (dayData.points > 0) {
-                dayClass = 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
-                dayContent = `
-                    <span class="text-xs font-bold text-green-700 dark:text-green-400">${i}</span>
-                    <span class="text-[10px] font-bold text-green-600 mt-0.5" title="${dayData.criteria.join(', ')}">+${dayData.points}</span>
-                `;
-            } else if (dayData.points < 0) {
-                dayClass = 'bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
-                dayContent = `
-                    <span class="text-xs font-bold text-orange-700 dark:text-orange-400">${i}</span>
-                    <span class="text-[10px] font-bold text-orange-600 mt-0.5" title="${dayData.criteria.join(', ')}">${dayData.points}</span>
-                `;
-            }
-        } else if (dateStr === todayDate.toISOString().split('T')[0]) {
-             dayClass = 'bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-400 dark:border-blue-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center relative';
-             dayContent = `<span class="text-xs font-bold text-blue-700 dark:text-blue-400">${i}</span>`;
-        }
-        
-        calendarDaysHTML += `<div class="${dayClass}">${dayContent}</div>`;
-    }
-
-    const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
-    const monthName = monthNames[currentMonth];
-
+    // Will be generated dynamically via renderStudentCalendar
     const calendarHTML = `
-        <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="font-bold flex items-center gap-2"><i data-lucide="calendar" class="w-4 h-4 text-blue-600"></i> التقويم الشعري</h3>
-                <span class="text-xs font-bold text-gray-500 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">${monthName} ${currentYear}</span>
-            </div>
-            <div class="space-y-1">
-                <div class="grid grid-cols-7 gap-1">
-                    ${calendarHeaderHTML}
-                </div>
-                <div class="grid grid-cols-7 gap-1 mt-1">
-                    ${calendarDaysHTML}
-                </div>
-                <div class="flex items-center gap-3 mt-4 justify-center text-[10px] text-gray-500">
-                    <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-500"></span> إضافة</div>
-                    <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-orange-500"></span> خصم</div>
-                    <div class="flex items-center gap-1"><span class="w-3 h-3 flex items-center justify-center text-[8px]">❌</span> غياب</div>
-                </div>
-            </div>
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border" id="student-calendar-container">
+            <div class="text-center py-4 text-gray-500 text-sm">جاري تحميل التقويم...</div>
         </div>
     `;
 
@@ -3741,6 +3662,111 @@ async function openStudentReport(studentId) {
 
             <!-- Contact Teacher -->
             ${contactHTML}
+        </div>
+    `;
+    lucide.createIcons();
+    
+    // Render initial calendar
+    setTimeout(() => {
+        window.renderStudentCalendar(window._currentCalendarYear, window._currentCalendarMonth);
+    }, 100);
+}
+
+// ----------------------------------------
+// Dynamic Calendar Logic
+// ----------------------------------------
+window.changeCalendarMonth = (offset) => {
+    window._currentCalendarMonth += offset;
+    if (window._currentCalendarMonth > 11) {
+        window._currentCalendarMonth = 0;
+        window._currentCalendarYear++;
+    } else if (window._currentCalendarMonth < 0) {
+        window._currentCalendarMonth = 11;
+        window._currentCalendarYear--;
+    }
+    window.renderStudentCalendar(window._currentCalendarYear, window._currentCalendarMonth);
+};
+
+window.renderStudentCalendar = (year, month) => {
+    const container = document.getElementById('student-calendar-container');
+    if (!container) return;
+    
+    const scores = window._currentStudentScores || [];
+    const todayDate = new Date();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDay = new Date(year, month, 1).getDay();
+    
+    const scoresByDate = {};
+    scores.forEach(s => {
+        if (!s.date) return;
+        if (!scoresByDate[s.date]) scoresByDate[s.date] = { points: 0, criteria: [] };
+        scoresByDate[s.date].points += (parseInt(s.points) || 0);
+        scoresByDate[s.date].criteria.push(s.criteriaName || (s.criteriaId === 'ABSENCE_RECORD' ? 'غياب' : 'أخرى'));
+    });
+    
+    let calendarDaysHTML = '';
+    const weekdays = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
+    let calendarHeaderHTML = weekdays.map(d => `<div class="text-center text-xs font-bold text-gray-400 py-1">${d}</div>`).join('');
+    
+    for(let i = 0; i < firstDay; i++) {
+        calendarDaysHTML += `<div class="p-2 opacity-0"></div>`;
+    }
+    
+    for(let i = 1; i <= daysInMonth; i++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        const dayData = scoresByDate[dateStr];
+        let dayClass = 'bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
+        let dayContent = `<span class="text-xs font-bold text-gray-400">${i}</span>`;
+        
+        if (dayData) {
+            const isAbsence = dayData.criteria.some(c => c && c.indexOf('غياب') !== -1);
+            if (isAbsence) {
+                dayClass = 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
+                dayContent = `
+                    <span class="text-xs font-bold text-red-700 dark:text-red-400">${i}</span>
+                    <span class="text-[10px] mt-0.5 cursor-pointer" title="${dayData.criteria.join(', ')}">❌</span>
+                `;
+            } else if (dayData.points > 0) {
+                dayClass = 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
+                dayContent = `
+                    <span class="text-xs font-bold text-green-700 dark:text-green-400">${i}</span>
+                    <span class="text-[10px] font-bold text-green-600 mt-0.5" title="${dayData.criteria.join(', ')}">+${dayData.points}</span>
+                `;
+            } else if (dayData.points < 0) {
+                dayClass = 'bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
+                dayContent = `
+                    <span class="text-xs font-bold text-orange-700 dark:text-orange-400">${i}</span>
+                    <span class="text-[10px] font-bold text-orange-600 mt-0.5" title="${dayData.criteria.join(', ')}">${dayData.points}</span>
+                `;
+            }
+        } else if (dateStr === todayDate.toISOString().split('T')[0]) {
+             dayClass = 'bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-400 dark:border-blue-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center relative';
+             dayContent = `<span class="text-xs font-bold text-blue-700 dark:text-blue-400">${i}</span>`;
+        }
+        
+        calendarDaysHTML += `<div class="${dayClass}">${dayContent}</div>`;
+    }
+
+    const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+    const monthName = monthNames[month];
+
+    container.innerHTML = `
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-bold flex items-center gap-2"><i data-lucide="calendar" class="w-4 h-4 text-blue-600"></i> التقويم الشهري</h3>
+            <div class="flex items-center gap-2">
+                <button onclick="changeCalendarMonth(-1)" class="w-6 h-6 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-teal-100 text-teal-600 transition"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                <span class="text-xs font-bold text-gray-500 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">${monthName} ${year}</span>
+                <button onclick="changeCalendarMonth(1)" class="w-6 h-6 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-teal-100 text-teal-600 transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+            </div>
+        </div>
+        <div class="space-y-1">
+            <div class="grid grid-cols-7 gap-1">${calendarHeaderHTML}</div>
+            <div class="grid grid-cols-7 gap-1 mt-1">${calendarDaysHTML}</div>
+            <div class="flex items-center gap-3 mt-4 justify-center text-[10px] text-gray-500">
+                <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-500"></span> إضافة</div>
+                <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-orange-500"></span> خصم</div>
+                <div class="flex items-center gap-1"><span class="w-3 h-3 flex items-center justify-center text-[8px]">❌</span> غياب</div>
+            </div>
         </div>
     `;
     lucide.createIcons();
@@ -4801,41 +4827,55 @@ async function generatePDFReport() {
         const sSnap = await window.firebaseOps.getDocs(
             window.firebaseOps.query(
                 window.firebaseOps.collection(window.db, "scores"),
-                window.firebaseOps.where("competitionId", "==", compId),
-                window.firebaseOps.where("date", "in", dateRange)
+                window.firebaseOps.where("competitionId", "==", compId)
             )
         );
         
         const gsSnap = await window.firebaseOps.getDocs(
             window.firebaseOps.query(
                 window.firebaseOps.collection(window.db, "group_scores"),
-                window.firebaseOps.where("competitionId", "==", compId),
-                window.firebaseOps.where("date", "in", dateRange)
+                window.firebaseOps.where("competitionId", "==", compId)
             )
         ).catch(() => ({ forEach: () => {} }));
 
-        const studentScoresMap = {};
+        const studentStatsMap = {};
         sSnap.forEach(d => {
             const sc = d.data();
-            studentScoresMap[sc.studentId] = (studentScoresMap[sc.studentId] || 0) + (parseInt(sc.points) || 0);
+            if (sc.date >= startDate && sc.date <= endDate) {
+                if (!studentStatsMap[sc.studentId]) studentStatsMap[sc.studentId] = { points: 0, positive: 0, negative: 0, excused: 0, unexcused: 0 };
+                const pts = parseInt(sc.points) || 0;
+                studentStatsMap[sc.studentId].points += pts;
+                if (pts > 0) studentStatsMap[sc.studentId].positive += pts;
+                else if (pts < 0) studentStatsMap[sc.studentId].negative += Math.abs(pts);
+                
+                const cName = sc.criteriaName || (sc.criteriaId === 'ABSENCE_RECORD' ? 'غياب' : '');
+                if (cName.indexOf('بعذر') !== -1) {
+                    studentStatsMap[sc.studentId].excused++;
+                } else if (cName.indexOf('بدون عذر') !== -1 || cName.indexOf('غياب') !== -1 || sc.criteriaId === 'ABSENCE_RECORD') {
+                    studentStatsMap[sc.studentId].unexcused++;
+                }
+            }
         });
 
         const groupScoresMap = {};
         gsSnap.forEach(d => {
             const gs = d.data();
-            groupScoresMap[gs.groupId] = (groupScoresMap[gs.groupId] || 0) + (parseInt(gs.points) || 0);
+            if (gs.date >= startDate && gs.date <= endDate) {
+                groupScoresMap[gs.groupId] = (groupScoresMap[gs.groupId] || 0) + (parseInt(gs.points) || 0);
+            }
         });
 
         // Create HTML content for the PDF
         const container = document.createElement('div');
-        // A wrapper with guaranteed white background and fixed width suitable for A4 portrait
+        // A wrapper with guaranteed white background and fixed width suitable for A4 landscape
         container.innerHTML = `
-            <div id="pdf-report-content" style="width: 800px; padding: 40px; background: white; color: #1f2937; font-family: sans-serif; direction: rtl; text-align: right;">
+            <div id="pdf-report-content" style="width: 1040px; padding: 30px; background: white; color: #1f2937; font-family: sans-serif; direction: rtl; text-align: right;">
                 
                 <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #0d9488; padding-bottom: 20px;">
                     <h1 style="font-size: 26px; color: #0d9488; margin: 0; font-weight: bold;">مسابقات ابن تيمية</h1>
-                    <h2 style="font-size: 20px; color: #374151; margin: 10px 0 5px 0;">تقرير المجموعات المفصل</h2>
-                    <p style="font-size: 14px; color: #6b7280; margin: 0;">المسابقة: ${compName} | الفترة: ${startDate} إلى ${endDate}</p>
+                    <h2 style="font-size: 20px; color: #374151; margin: 10px 0 5px 0;">تقرير المجموعات التفصيلي</h2>
+                    <p style="font-size: 14px; color: #6b7280; margin: 0;">هذا التقرير الشامل يوضح درجات الطلاب في "${compName}" والمشاركات والغيابات مع حساب صافي النقاط للمجموعات بناءاً على إحصائيات هذه الفترة.</p>
+                    <p style="font-size: 14px; color: #6b7280; margin: 5px 0 0 0;">الفترة المشمولة: من ${startDate} إلى ${endDate}</p>
                 </div>
 
                 ${groups.length === 0 ? '<p style="text-align: center; color: #9ca3af; font-size: 18px;">لا توجد مجموعات مسجلة.</p>' : ''}
@@ -4850,21 +4890,25 @@ async function generatePDFReport() {
                             membersRows = g.members.map((mId, idx) => {
                                 const st = state.students.find(s => s.id === mId);
                                 if (st) {
-                                    const score = studentScoresMap[mId] || 0;
-                                    membersSum += score;
+                                    const stats = studentStatsMap[mId] || { points: 0, positive: 0, negative: 0, excused: 0, unexcused: 0 };
+                                    membersSum += stats.points;
                                     return `
                                         <tr style="background: ${idx % 2 === 0 ? '#f9fafb' : '#ffffff'};">
                                             <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center;">${idx + 1}</td>
                                             <td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold;">${st.name}</td>
                                             <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center;" dir="ltr">${st.studentNumber || '-'}</td>
-                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; color: ${score >= 0 ? '#059669' : '#dc2626'};">${score}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; color: #dc2626; font-weight: bold;">${stats.unexcused > 0 ? stats.unexcused : '-'}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; color: #d97706; font-weight: bold;">${stats.excused > 0 ? stats.excused : '-'}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; color: #059669; font-weight: bold;" dir="ltr">${stats.positive > 0 ? '+' : ''}${stats.positive > 0 ? stats.positive : '-'}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; color: #dc2626; font-weight: bold;" dir="ltr">${stats.negative > 0 ? '-' : ''}${stats.negative > 0 ? stats.negative : '-'}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; color: ${stats.points >= 0 ? '#059669' : '#dc2626'};" dir="ltr">${stats.points > 0 ? '+' : ''}${stats.points}</td>
                                         </tr>
                                     `;
                                 }
                                 return '';
                             }).join('');
                         } else {
-                            membersRows = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: #9ca3af; border: 1px solid #e5e7eb;">لا يوجد طلاب</td></tr>';
+                            membersRows = '<tr><td colspan="8" style="padding: 10px; text-align: center; color: #9ca3af; border: 1px solid #e5e7eb;">لا يوجد طلاب</td></tr>';
                         }
 
                         const netTotal = membersSum + gBonus;
@@ -4885,7 +4929,7 @@ async function generatePDFReport() {
                             <!-- Group Specific Score -->
                             ${gBonus !== 0 ? `
                             <div style="padding: 10px 15px; background: ${gBonus > 0 ? '#ecfdf5' : '#fef2f2'}; border-bottom: 1px solid #e5e7eb; border-left: 4px solid ${gBonus > 0 ? '#10b981' : '#ef4444'}; font-weight: bold; font-size: 14px; text-align: right; display: flex; justify-content: space-between;">
-                                <span>نقاط المجموعة المستقلة (بونص/خصم):</span>
+                                <span>النقاط الإضافية للمجموعة المستقلة:</span>
                                 <span style="color: ${gBonus > 0 ? '#059669' : '#dc2626'};" dir="ltr">${gBonus > 0 ? '+' : ''}${gBonus}</span>
                             </div>
                             ` : ''}
@@ -4893,16 +4937,20 @@ async function generatePDFReport() {
                             <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 14px;">
                                 <thead>
                                     <tr style="background: #e5e7eb;">
-                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 50px; text-align: center;">م</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 40px; text-align: center;">م</th>
                                         <th style="padding: 10px; border: 1px solid #d1d5db;">اسم الطالب</th>
-                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 140px; text-align: center;">جوال الولي</th>
-                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 100px; text-align: center;">النقاط</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 140px; text-align: center;">جوال ولي الأمر</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 50px; text-align: center; color: #b91c1c;">بدون عذر</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 50px; text-align: center; color: #d97706;">بعذر</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 60px; text-align: center; color: #047857;">موجب</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 60px; text-align: center; color: #b91c1c;">سالب</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 80px; text-align: center;">الصافي</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     ${membersRows}
                                     <tr style="background: #fdfce8;">
-                                        <td colspan="3" style="padding: 10px; border: 1px solid #d1d5db; font-weight: bold; text-align: left;">مجموع نقاط الطلاب فقط:</td>
+                                        <td colspan="7" style="padding: 10px; border: 1px solid #d1d5db; font-weight: bold; text-align: left;">مجموع نقاط الطلاب فقط:</td>
                                         <td style="padding: 10px; border: 1px solid #d1d5db; text-align: center; font-weight: bold; color: #b45309;">${membersSum}</td>
                                     </tr>
                                 </tbody>
@@ -4921,13 +4969,13 @@ async function generatePDFReport() {
         document.body.appendChild(container);
         const element = document.getElementById('pdf-report-content');
 
-        // html2pdf options
+        // html2pdf options (Landscape)
         const opt = {
-            margin:       [10, 10, 10, 10],     // [top, left, bottom, right]
+            margin:       [10, 10, 10, 10],
             filename:     `تقرير_${compName}_${startDate}.pdf`,
             image:        { type: 'jpeg', quality: 0.98 },
             html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
-            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
         };
 
         await window.html2pdf().set(opt).from(element).save();
@@ -4937,6 +4985,468 @@ async function generatePDFReport() {
     } catch (e) {
         console.error("PDF Generate Error:", e);
         showToast("حدث خطأ أثناء إعداد التقرير", "error");
+    }
+}
+
+// =====================================================
+// FEATURE #13: PDF Exports & Advanced Stats
+// =====================================================
+async function exportStudentsPDF() {
+    const students = state.students.filter(s => s.level === state.currentLevel);
+    if (students.length === 0) {
+        showToast("لا يوجد طلاب للتصدير", "error");
+        return;
+    }
+
+    try {
+        showToast("جاري التجهيز... الرجاء الانتظار", "success");
+
+        const grouped = {};
+        const activeGroups = state.groups.filter(g => g.level === state.currentLevel);
+        
+        activeGroups.forEach(g => {
+            grouped[g.id] = { name: g.name, students: [] };
+        });
+
+        students.forEach(s => {
+            if (s.groupId && grouped[s.groupId]) {
+                grouped[s.groupId].students.push(s);
+            } else {
+                if (!grouped['none']) grouped['none'] = { name: 'بدون مجموعة', students: [] };
+                grouped['none'].students.push(s);
+            }
+        });
+
+        const levelName = state.levels.find(l => l.id === state.currentLevel)?.name || state.currentLevel;
+
+        const container = document.createElement('div');
+        container.innerHTML = `
+            <div id="pdf-students-content" style="width: 1040px; padding: 30px; background: white; color: #1f2937; font-family: sans-serif; direction: rtl; text-align: right;">
+                <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #0d9488; padding-bottom: 20px;">
+                    <h1 style="font-size: 26px; color: #0d9488; margin: 0; font-weight: bold;">مسابقات ابن تيمية</h1>
+                    <h2 style="font-size: 20px; color: #374151; margin: 10px 0 5px 0;">سجل بيانات الطلاب الشامل</h2>
+                    <p style="font-size: 14px; color: #6b7280; margin: 0;">المستوى: ${levelName} | إجمالي الطلاب: ${students.length}</p>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 30px;">
+                    ${Object.values(grouped).filter(g => g.students.length > 0).map(g => `
+                        <div style="border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; page-break-inside: avoid;">
+                            <div style="background: #f3f4f6; padding: 15px; border-bottom: 2px solid #9ca3af; display: flex; justify-content: space-between; align-items: center;">
+                                <h3 style="margin: 0; font-size: 20px; font-weight: bold;">مجموعة: ${g.name}</h3>
+                                <div style="font-size: 16px; font-weight: bold; color: #0d9488;">العدد: ${g.students.length}</div>
+                            </div>
+                            <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 14px;">
+                                <thead>
+                                    <tr style="background: #e5e7eb;">
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 50px; text-align: center;">م</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db;">اسم الطالب</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 140px; text-align: center;">رقم الهوية / الجوال</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 100px; text-align: center;">آخر تفاعل</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db;">كلمة المرور</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${g.students.map((st, idx) => `
+                                        <tr style="background: ${idx % 2 === 0 ? '#f9fafb' : '#ffffff'};">
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center;">${idx + 1}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold;">${st.name}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center;" dir="ltr">${st.studentNumber || '-'}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center;" dir="ltr">${st.lastActive ? new Date(st.lastActive).toLocaleDateString() : '-'}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; color: #dc2626;" dir="ltr">${st.password || '-'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `).join('')}
+                </div>
+                <div style="margin-top: 40px; text-align: left; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 10px;">
+                    تم التوليد في: ${new Date().toLocaleString('ar-SA')}
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(container);
+        const element = document.getElementById('pdf-students-content');
+
+        const opt = {
+            margin:       [10, 10, 10, 10],
+            filename:     `الطلاب_${levelName}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+        };
+
+        await window.html2pdf().set(opt).from(element).save();
+        document.body.removeChild(container);
+
+        showToast("تم تصدير كشف الطلاب بنجاح", "success");
+    } catch(e) {
+        console.error(e);
+        showToast("خطأ أثناء إعداد الكشف", "error");
+    }
+}
+
+function openScoresReportsModal() {
+    let modal = document.getElementById('scores-report-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'scores-report-modal';
+        modal.dataset.dynamic = 'true';
+        document.body.appendChild(modal);
+    }
+
+    modal.className = 'fixed inset-0 bg-black/50 z-[160] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    
+    const today = new Date();
+    const lastWeek = new Date();
+    lastWeek.setDate(today.getDate() - 7);
+    const endStr = today.toISOString().split('T')[0];
+    const startStr = lastWeek.toISOString().split('T')[0];
+
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center mb-6 border-b pb-4 border-gray-100 dark:border-gray-700">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i data-lucide="file-spreadsheet" class="w-5 h-5 text-blue-600"></i>
+                    سجل الدرجات الشامل (PDF)
+                </h3>
+                <button onclick="closeModal('scores-report-modal')" class="text-gray-400 hover:text-gray-600 p-1 bg-gray-50 dark:bg-gray-700 rounded-full">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-bold mb-2">من تاريخ</label>
+                        <input type="date" id="score-report-start-date" value="${startStr}" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-3 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-2">إلى تاريخ</label>
+                        <input type="date" id="score-report-end-date" value="${endStr}" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-3 text-sm">
+                    </div>
+                </div>
+
+                <div class="flex gap-3 pt-4">
+                    <button type="button" onclick="closeModal('scores-report-modal')" class="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 font-medium transition">إلغاء</button>
+                    <button onclick="exportScoresPDF()" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg transition flex justify-center items-center gap-2">
+                        <i data-lucide="download" class="w-5 h-5"></i>
+                        تحميل سجل مفصل
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    lucide.createIcons();
+    toggleModal('scores-report-modal', true);
+}
+
+async function exportScoresPDF() {
+    const startDate = document.getElementById('score-report-start-date').value;
+    const endDate = document.getElementById('score-report-end-date').value;
+
+    if (!startDate || !endDate) return showToast("الرجاء تحديد الفترة", "error");
+    if (startDate > endDate) return showToast("تاريخ البداية يجب أن يكون قبل تاريخ النهاية", "error");
+
+    const dateRange = [];
+    let curr = new Date(startDate);
+    const end = new Date(endDate);
+    while (curr <= end) {
+        dateRange.push(curr.toISOString().split('T')[0]);
+        curr.setDate(curr.getDate() + 1);
+    }
+
+    try {
+        showToast("جاري إعداد السجل...", "success");
+        closeModal('scores-report-modal');
+
+        const students = state.students.filter(s => s.level === state.currentLevel);
+        const levelName = state.levels.find(l => l.id === state.currentLevel)?.name || state.currentLevel;
+
+        const sSnap = await window.firebaseOps.getDocs(
+            window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "scores"),
+                window.firebaseOps.where("date", ">=", startDate),
+                window.firebaseOps.where("date", "<=", endDate)
+            )
+        );
+
+        const logs = [];
+        sSnap.forEach(d => {
+            const row = d.data();
+            const student = students.find(s => s.id === row.studentId);
+            if (student) {
+                logs.push({ ...row, studentName: student.name, group: state.groups.find(g => g.id === student.groupId)?.name || '-' });
+            }
+        });
+
+        logs.sort((a, b) => new Date(a.date) - new Date(b.date) || a.studentName.localeCompare(b.studentName));
+
+        const container = document.createElement('div');
+        let tableRows = '';
+        
+        if (logs.length === 0) {
+            tableRows = '<tr><td colspan="6" style="padding: 20px; text-align: center; color: #9ca3af; border: 1px solid #e5e7eb;">لا توجد درجات مسجلة في هذه الفترة</td></tr>';
+        } else {
+            tableRows = logs.map((log, idx) => `
+                <tr style="background: ${idx % 2 === 0 ? '#f9fafb' : '#ffffff'};">
+                    <td style="padding: 8px; border: 1px solid #e5e7eb; text-align: center;">${idx + 1}</td>
+                    <td style="padding: 8px; border: 1px solid #e5e7eb; text-align: center;" dir="ltr">${log.date}</td>
+                    <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: bold;">${log.studentName}</td>
+                    <td style="padding: 8px; border: 1px solid #e5e7eb; color: #4b5563;">${log.group}</td>
+                    <td style="padding: 8px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; color: ${log.points >= 0 ? '#059669' : '#dc2626'};" dir="ltr">${log.points > 0 ? '+' : ''}${log.points}</td>
+                    <td style="padding: 8px; border: 1px solid #e5e7eb;">${log.criteriaName || (log.criteriaId === 'ABSENCE_RECORD' ? 'غياب' : 'أخرى')}</td>
+                </tr>
+            `).join('');
+        }
+
+        container.innerHTML = `
+            <div id="pdf-scores-content" style="width: 1040px; padding: 30px; background: white; color: #1f2937; font-family: sans-serif; direction: rtl; text-align: right;">
+                <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #0d9488; padding-bottom: 20px;">
+                    <h1 style="font-size: 26px; color: #0d9488; margin: 0; font-weight: bold;">مسابقات ابن تيمية</h1>
+                    <h2 style="font-size: 20px; color: #374151; margin: 10px 0 5px 0;">السجل التفصيلي للدرجات والمشاركات</h2>
+                    <p style="font-size: 14px; color: #6b7280; margin: 0;">المستوى: ${levelName} | الفترة: ${startDate} إلى ${endDate} | عدد الحركات: ${logs.length}</p>
+                </div>
+                
+                <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 13px;">
+                    <thead>
+                        <tr style="background: #e5e7eb;">
+                            <th style="padding: 10px; border: 1px solid #d1d5db; width: 40px; text-align: center;">م</th>
+                            <th style="padding: 10px; border: 1px solid #d1d5db; width: 100px; text-align: center;">التاريخ</th>
+                            <th style="padding: 10px; border: 1px solid #d1d5db; width: 220px;">اسم الطالب</th>
+                            <th style="padding: 10px; border: 1px solid #d1d5db; width: 160px;">المجموعة</th>
+                            <th style="padding: 10px; border: 1px solid #d1d5db; width: 60px; text-align: center;">النقاط</th>
+                            <th style="padding: 10px; border: 1px solid #d1d5db;">المعيار / السبب</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+                <div style="margin-top: 40px; text-align: left; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 10px;">
+                    تم التوليد في: ${new Date().toLocaleString('ar-SA')}
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(container);
+        const element = document.getElementById('pdf-scores-content');
+
+        const opt = {
+            margin:       [10, 10, 10, 10],
+            filename:     `سجل_الدرجات_${startDate}_${endDate}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+        };
+
+        await window.html2pdf().set(opt).from(element).save();
+        document.body.removeChild(container);
+
+        showToast("تم تصدير سجل الدرجات بنجاح", "success");
+    } catch(e) {
+        console.error(e);
+        showToast("خطأ أثناء إعداد التصدير", "error");
+    }
+}
+
+// ----------------------------------------
+// STATS MODAL (Advanced)
+// ----------------------------------------
+function openStatsModal() {
+    let modal = document.getElementById('stats-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'stats-modal';
+        modal.dataset.dynamic = 'true';
+        document.body.appendChild(modal);
+    }
+
+    modal.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    
+    const today = new Date();
+    const lastWeek = new Date();
+    lastWeek.setDate(today.getDate() - 30);
+    const endStr = today.toISOString().split('T')[0];
+    const startStr = lastWeek.toISOString().split('T')[0];
+
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center mb-6 border-b pb-4 border-gray-100 dark:border-gray-700">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i data-lucide="bar-chart-3" class="w-6 h-6 text-amber-600"></i>
+                    المركز التحليلي والإحصائيات
+                </h3>
+                <button onclick="closeModal('stats-modal')" class="text-gray-400 hover:text-gray-600 p-1 bg-gray-50 dark:bg-gray-700 rounded-full">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- Date Filter & Group Filter -->
+            <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl flex flex-wrap gap-3 mb-6 items-end">
+                <div class="flex-1 min-w-[120px]">
+                    <label class="block text-xs font-bold mb-1 text-gray-500">من تاريخ</label>
+                    <input type="date" id="stats-start-date" value="${startStr}" class="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div class="flex-1 min-w-[120px]">
+                    <label class="block text-xs font-bold mb-1 text-gray-500">إلى تاريخ</label>
+                    <input type="date" id="stats-end-date" value="${endStr}" class="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div class="flex-1 min-w-[150px]">
+                    <label class="block text-xs font-bold mb-1 text-gray-500">المجموعة</label>
+                    <select id="stats-group-select" class="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm">
+                        <option value="all">جميع المجموعات (عام)</option>
+                        ${state.groups.filter(g => g.level === state.currentLevel).map(g => `<option value="${g.id}">${g.name}</option>`).join('')}
+                    </select>
+                </div>
+                <button onclick="calculateAndRenderStats()" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition h-[38px] flex items-center shadow-sm">
+                    تحديث القراءة
+                </button>
+            </div>
+
+            <div id="stats-results-container" class="overflow-y-auto space-y-4 pb-4">
+                <div class="text-center py-10 text-gray-400">
+                    <i data-lucide="loader-2" class="w-8 h-8 mx-auto mb-2 animate-spin"></i>
+                    جاري حساب البيانات...
+                </div>
+            </div>
+        </div>
+    `;
+
+    lucide.createIcons();
+    toggleModal('stats-modal', true);
+    
+    // Automatically calculate stats on open
+    setTimeout(() => { calculateAndRenderStats(); }, 100);
+}
+
+async function calculateAndRenderStats() {
+    const startDate = document.getElementById('stats-start-date').value;
+    const endDate = document.getElementById('stats-end-date').value;
+    const groupId = document.getElementById('stats-group-select') ? document.getElementById('stats-group-select').value : 'all';
+    const container = document.getElementById('stats-results-container');
+
+    if (!startDate || !endDate) return showToast("الرجاء تحديد التواريخ", "error");
+
+    const dateRange = [];
+    let curr = new Date(startDate);
+    const end = new Date(endDate);
+    while (curr <= end) {
+        dateRange.push(curr.toISOString().split('T')[0]);
+        curr.setDate(curr.getDate() + 1);
+    }
+
+    try {
+        container.innerHTML = `<div class="text-center py-10 text-gray-400"><i data-lucide="loader-2" class="w-8 h-8 mx-auto mb-2 animate-spin"></i> استخراج البيانات...</div>`;
+        lucide.createIcons();
+
+        // 1. Fetch Students
+        let students = state.students.filter(s => s.level === state.currentLevel);
+        if (groupId !== 'all') {
+            students = students.filter(s => String(s.groupId) === String(groupId));
+        }
+        const stIds = students.map(s => s.id);
+        
+        if (stIds.length === 0) {
+            container.innerHTML = `<div class="text-center text-gray-400 p-8 border border-dashed rounded-xl border-gray-200">لا يوجد طلاب مطابقين للبحث.</div>`;
+            return;
+        }
+
+        // 2. Fetch Scores for Date Range
+        const sSnap = await window.firebaseOps.getDocs(
+            window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "scores"),
+                window.firebaseOps.where("date", ">=", startDate),
+                window.firebaseOps.where("date", "<=", endDate)
+            )
+        );
+
+        let totalScoresRows = 0;
+        let posPoints = 0;
+        let negPoints = 0;
+        let absencesCount = 0;
+        let excusesCount = 0;
+        let criteriaUsage = {};
+
+        sSnap.forEach(d => {
+            const sc = d.data();
+            // Only count if student is in the current level
+            if (stIds.includes(sc.studentId)) {
+                totalScoresRows++;
+                const pts = parseInt(sc.points) || 0;
+                
+                if (pts > 0) posPoints += pts;
+                else if (pts < 0) negPoints += Math.abs(pts);
+
+                const cName = sc.criteriaName || (sc.criteriaId === 'ABSENCE_RECORD' ? 'غياب' : 'عام');
+                
+                if (cName.indexOf('بدون عذر') !== -1 || sc.criteriaId === 'ABSENCE_RECORD') absencesCount++;
+                if (cName.indexOf('بعذر') !== -1) excusesCount++;
+
+                if (!criteriaUsage[cName]) criteriaUsage[cName] = { count: 0, points: 0 };
+                criteriaUsage[cName].count++;
+                criteriaUsage[cName].points += pts;
+            }
+        });
+
+        // HTML Setup
+        const sortedCriteria = Object.entries(criteriaUsage).sort((a, b) => b[1].count - a[1].count);
+
+        container.innerHTML = `
+            <!-- Overview Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl p-4 text-center">
+                    <p class="text-3xl font-bold text-blue-600 mb-1">${totalScoresRows}</p>
+                    <p class="text-xs text-blue-800 dark:text-blue-300">إجمالي الحركات (تقييمات)</p>
+                </div>
+                <div class="bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800 rounded-xl p-4 text-center">
+                    <p class="text-3xl font-bold text-green-600 mb-1">+${posPoints}</p>
+                    <p class="text-xs text-green-800 dark:text-green-300">مجموع النقاط المكتسبة</p>
+                </div>
+                <div class="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-xl p-4 text-center">
+                    <p class="text-3xl font-bold text-red-600 mb-1">-${negPoints}</p>
+                    <p class="text-xs text-red-800 dark:text-red-300">مجموع الخصومات</p>
+                </div>
+                <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800 rounded-xl p-4 text-center">
+                    <p class="text-3xl font-bold text-orange-600 mb-1">${absencesCount}</p>
+                    <p class="text-xs text-orange-800 dark:text-orange-300">إجمالي أيام الغياب</p>
+                </div>
+            </div>
+
+            <!-- Details Section -->
+            <div class="mt-6 border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden">
+                <div class="bg-gray-50 dark:bg-gray-800 p-3 border-b border-gray-100 dark:border-gray-700">
+                    <h4 class="font-bold text-sm flex items-center gap-2"><i data-lucide="bar-chart" class="w-4 h-4 text-amber-500"></i> تفصيل تفاعل المعايير خلال الفترة</h4>
+                </div>
+                <div class="p-0">
+                    <table class="w-full text-right text-sm">
+                        <thead class="bg-gray-50 dark:bg-gray-800 text-gray-500 border-b border-gray-200 dark:border-gray-700">
+                            <tr>
+                                <th class="p-3 font-medium">اسم المعيار</th>
+                                <th class="p-3 font-medium text-center">مرات الاستخدام</th>
+                                <th class="p-3 font-medium text-center">صافي النقاط</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                            ${sortedCriteria.length > 0 ? sortedCriteria.map(([name, data]) => `
+                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                                    <td class="p-3 font-bold">${name}</td>
+                                    <td class="p-3 text-center"><span class="bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 py-1 px-3 rounded-full text-xs font-bold">${data.count}</span></td>
+                                    <td class="p-3 text-center font-bold ${data.points >= 0 ? 'text-green-600' : 'text-red-600'}" dir="ltr">${data.points > 0 ? '+' : ''}${data.points}</td>
+                                </tr>
+                            `).join('') : `<tr><td colspan="3" class="p-6 text-center text-gray-400">لا يوجد حركات في هذه الفترة</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        lucide.createIcons();
+
+    } catch (e) {
+        console.error("Stats Error:", e);
+        container.innerHTML = `<div class="text-center py-6 text-red-500">حدث خطأ أثناء الاتصال بقاعدة البيانات. تأكد من استقرار الإنترنت.</div>`;
     }
 }
 
