@@ -2452,7 +2452,7 @@ function openRateStudent(studentId) {
                                                 </div>
                                                 `).join('');
 
-    // زر الغياب الإضافي + زر التقرير الأسبوعي
+    // زر الغياب الإضافي + زر التقرير الأسبوعي + زر نقاط مخصصة
     grid.innerHTML += `
         <div class="col-span-1 mt-4 grid grid-cols-2 gap-3 w-full">
             <button onclick="openAbsenceOptions()" class="bg-orange-50 text-orange-700 border border-orange-200 py-3 rounded-xl font-bold hover:bg-orange-100 transition flex items-center justify-center gap-2">
@@ -2462,6 +2462,12 @@ function openRateStudent(studentId) {
              <button onclick="generateWeeklyReport()" class="bg-blue-50 text-blue-700 border border-blue-200 py-3 rounded-xl font-bold hover:bg-blue-100 transition flex items-center justify-center gap-2">
                 <i data-lucide="file-text" class="w-4 h-4"></i>
                 <span>تقرير أسبوعي</span>
+            </button>
+        </div>
+        <div class="col-span-1 mt-1 w-full">
+            <button onclick="openCustomPointsModal()" class="w-full py-3 bg-teal-50 hover:bg-teal-100 dark:bg-teal-900/30 dark:hover:bg-teal-900/50 text-teal-700 dark:text-teal-300 rounded-xl font-bold transition flex items-center justify-center gap-2 border border-teal-200 dark:border-teal-800 shadow-sm">
+                <i data-lucide="sparkles" class="w-5 h-5"></i>
+                إضافة نقاط مخصصة (إيجابي / سلبي)
             </button>
         </div>
     `;
@@ -4282,4 +4288,110 @@ const OfflineCache = {
         }
     };
 })();
+
+// =====================================================
+// FEATURE #10: Custom Ad-hoc Points
+// =====================================================
+function openCustomPointsModal() {
+    closeModal('rate-student-modal');
+
+    let modal = document.getElementById('custom-points-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'custom-points-modal';
+        modal.dataset.dynamic = 'true';
+        document.body.appendChild(modal);
+    }
+
+    modal.className = 'fixed inset-0 bg-black/50 z-[200] hidden flex items-center justify-center p-4 backdrop-blur-sm';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center mb-6 border-b pb-4 border-gray-100 dark:border-gray-700">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-teal-600"></i>
+                    نقاط مخصصة
+                </h3>
+                <button onclick="closeModal('custom-points-modal')" class="text-gray-400 hover:text-gray-600 p-1 bg-gray-50 dark:bg-gray-700 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            
+            <form onsubmit="submitCustomPoints(event)" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold mb-2">سبب التقييم</label>
+                    <input type="text" id="custom-points-reason" required placeholder="مثال: مشاركة متميزة، سلوك سيء..." 
+                        class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 focus:outline-none focus:border-teal-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold mb-2">عدد النقاط</label>
+                    <input type="number" id="custom-points-value" required placeholder="10" 
+                        class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-center text-2xl font-bold focus:outline-none focus:border-teal-500" dir="ltr">
+                    <p class="text-xs text-gray-500 mt-2 text-center">أدخل رقماً موجباً للزيادة (5) أو سالباً للخصم (-3)</p>
+                </div>
+
+                <div class="flex gap-3 pt-4">
+                    <button type="button" onclick="closeModal('custom-points-modal')" class="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 font-medium transition">إلغاء</button>
+                    <button type="submit" class="flex-1 py-3 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 shadow-lg transition">تأكيد الرصد</button>
+                </div>
+            </form>
+        </div>
+    `;
+    lucide.createIcons();
+    toggleModal('custom-points-modal', true);
+}
+
+async function submitCustomPoints(e) {
+    e.preventDefault();
+    const reasonStr = document.getElementById('custom-points-reason').value;
+    const pointsStr = document.getElementById('custom-points-value').value;
+    const points = parseInt(pointsStr);
+    
+    if(!reasonStr || isNaN(points)) {
+        showToast("الرجاء التحقق من البيانات المطلوبة", "error");
+        return;
+    }
+
+    const studentId = currentRateStudentId; 
+    const compId = currentGradingCompId;
+    const dateVal = document.getElementById('grading-date') ? document.getElementById('grading-date').value : new Date().toISOString().split('T')[0];
+
+    if(!studentId || !compId) {
+        showToast("خطأ: لم يتم تحديد الطالب أو المسابقة", "error");
+        return;
+    }
+
+    const btn = e.submitter;
+    const prevText = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto"></i>';
+    btn.disabled = true;
+    lucide.createIcons();
+
+    try {
+        const scoreData = {
+            studentId: studentId,
+            competitionId: compId,
+            criteriaId: 'CUSTOM_' + Date.now().toString(),
+            criteriaName: 'تقييم مخصص: ' + reasonStr,
+            points: points,
+            type: points > 0 ? 'custom_positive' : 'custom_negative',
+            level: state.currentLevel,
+            date: dateVal,
+            updatedAt: new Date(),
+            timestamp: Date.now(),
+            createdAt: new Date()
+        };
+
+        // Note: 'addDoc' automatically caches offline too based on our wrapper
+        await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), scoreData);
+        showToast(`تم رصد ${points > 0 ? '+' : ''}${points} نقطة بنجاح`, points > 0 ? "success" : "error");
+        
+        closeModal('custom-points-modal');
+    } catch(err) {
+        console.error("Custom points error:", err);
+        showToast("حدث خطأ أثناء الرصد", "error");
+    } finally {
+        btn.innerHTML = prevText;
+        btn.disabled = false;
+    }
+}
+
 
