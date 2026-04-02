@@ -1,9 +1,9 @@
 // --- Constants ---
 const LEVELS = {
-    'secondary': { name: 'المرحلة الثانوية', emoji: '<i data-lucide="building-2" class="w-6 h-6 inline-block text-blue-500"></i>', teacherPass: '1001', studentPass: '10010' },
-    'middle': { name: 'المرحلة المتوسطة', emoji: '<i data-lucide="school" class="w-6 h-6 inline-block text-amber-500"></i>', teacherPass: '2002', studentPass: '20020' },
-    'upper_elem': { name: 'الابتدائية العليا', emoji: '<i data-lucide="backpack" class="w-6 h-6 inline-block text-red-500"></i>', teacherPass: '3003', studentPass: '30030' },
-    'lower_elem': { name: 'الابتدائية الأولية', emoji: '<i data-lucide="hexagon" class="w-6 h-6 inline-block text-indigo-500"></i>', teacherPass: '4004', studentPass: '40040' }
+    'secondary': { name: 'المرحلة الثانوية', emoji: '🏢', teacherPass: '1001', studentPass: '10010' },
+    'middle': { name: 'المرحلة المتوسطة', emoji: '🏫', teacherPass: '2002', studentPass: '20020' },
+    'upper_elem': { name: 'الابتدائية العليا', emoji: '🎒', teacherPass: '3003', studentPass: '30030' },
+    'lower_elem': { name: 'الابتدائية الأولية', emoji: '🧸', teacherPass: '4004', studentPass: '40040' }
 };
 
 const MASTER_TEACHER_PASS = "123456"; // Can access selector
@@ -24,7 +24,7 @@ const state = {
     studentPassword: null // For student mode authentication persistence
 };
 
-// --- Supabase Realtime Listeners ---
+// --- Firestore Listeners ---
 let studentsUnsubscribe = null;
 let competitionsUnsubscribe = null;
 let activeGroupsUnsubscribe = null;
@@ -696,15 +696,25 @@ function renderCompetitions() {
             </div>
         </div>
         </div>
+        
+        <!-- Fix confirmResetScores and confirmNuclearWipe definitions -->
+        <script>
+        // These are global functions called by onclick in renderSettings
+        </script>
     `;
 
     // Ensure modals are in body
     ensureGlobalModals();
 
-    // Supabase Listener
+    // Firestore Listener
     if (competitionsUnsubscribe) {
         competitionsUnsubscribe();
         competitionsUnsubscribe = null;
+    }
+
+    // Firestore Listener
+    if (competitionsUnsubscribe) {
+        competitionsUnsubscribe();
     }
 
     const q = window.firebaseOps.query(
@@ -721,11 +731,11 @@ function renderCompetitions() {
                 comps.push(data);
             }
         });
-        // Client-side Sort (Supabase returns ISO strings)
+        // Client-side Sort
         comps.sort(function (a, b) {
-            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return bTime - aTime;
+            const aSec = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : 0;
+            const bSec = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : 0;
+            return bSec - aSec;
         });
         state.competitions = comps;
         updateCompetitionsListUI();
@@ -808,14 +818,6 @@ function renderStudents() {
                 ` : ''}
             </div>
 
-            <!-- Search Bar -->
-            <div class="relative mb-2">
-                <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2"></i>
-                <input type="text" id="student-search-input" oninput="filterStudents(this.value)" 
-                    class="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl pr-10 pl-4 py-2.5 text-sm focus:outline-none focus:border-teal-500 transition" 
-                    placeholder="بحث بالاسم أو رقم الجوال...">
-            </div>
-
             <div id="students-list" class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden min-h-[100px] relative">
                 <div class="flex flex-col items-center justify-center py-8 text-gray-400">
                      <i data-lucide="loader-2" class="w-6 h-6 animate-spin mb-2"></i>
@@ -853,11 +855,11 @@ function renderStudents() {
             data.id = doc.id;
             students.push(data);
         });
-        // Client-side Sort (Supabase returns ISO strings for created_at)
+        // Client-side Sort
         students.sort((a, b) => {
-            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return bTime - aTime;
+            const aSec = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : 0;
+            const bSec = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : 0;
+            return bSec - aSec;
         });
         state.students = students;
         updateStudentsListUI();
@@ -1019,30 +1021,9 @@ function renderSettings() {
              </div>
 
              ${teacherInfoHTML}
-
-             ${state.isTeacher ? `
-             <!-- Export & Tools -->
-             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
-                 <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="wrench" class="w-5 h-5 text-teal-600"></i> أدوات</h3>
-                 <div class="grid grid-cols-2 gap-3">
-                     <button onclick="exportStudentsCSV()" class="flex flex-col items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800 hover:bg-green-100 transition">
-                         <i data-lucide="download" class="w-5 h-5 text-green-600"></i>
-                         <span class="text-xs font-bold text-green-700 dark:text-green-400">تصدير الطلاب</span>
-                     </button>
-                     <button onclick="exportScoresCSV()" class="flex flex-col items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 hover:bg-blue-100 transition">
-                         <i data-lucide="file-spreadsheet" class="w-5 h-5 text-blue-600"></i>
-                         <span class="text-xs font-bold text-blue-700 dark:text-blue-400">تصدير الدرجات</span>
-                     </button>
-                     <button onclick="openStatsModal()" class="col-span-2 flex items-center justify-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800 hover:bg-amber-100 transition">
-                         <i data-lucide="bar-chart-3" class="w-5 h-5 text-amber-600"></i>
-                         <span class="text-xs font-bold text-amber-700 dark:text-amber-400">الإحصائيات</span>
-                     </button>
-                 </div>
-             </div>
-             ` : ''}
-
+             
              <div class="text-center text-xs text-gray-400 mt-8">
-                 <p>مسابقات ابن تيمية - إصدار v4.3.0</p>
+                 <p>مسابقات ابن تيمية - إصدار v4.2.0</p>
                  <p>جميع الحقوق محفوظة</p>
              </div>
         </div>
@@ -2758,13 +2739,13 @@ async function handleSaveStudent(e) {
             // Optimistic Update: Add to local state immediately
             data.id = docRef.id;
             // Convert createdAt to something sort-compatible (Timestamp-like) just for UI
-            data.createdAt = new Date().toISOString();
+            data.createdAt = { seconds: Date.now() / 1000 };
             state.students.push(data);
             // Sort
             state.students.sort((a, b) => {
-                const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                return bTime - aTime;
+                const aSec = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : 0;
+                const bSec = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : 0;
+                return bSec - aSec;
             });
             updateStudentsListUI();
         }
@@ -2879,9 +2860,9 @@ function startGlobalDataSync() {
             comps.push(data);
         });
         comps.sort(function (a, b) {
-            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return bTime - aTime;
+            const aSec = (a.createdAt && a.createdAt.seconds) ? a.createdAt.seconds : 0;
+            const bSec = (b.createdAt && b.createdAt.seconds) ? b.createdAt.seconds : 0;
+            return bSec - aSec;
         });
         state.competitions = comps;
         // If we are on competitions view, update UI
@@ -2911,12 +2892,8 @@ window.addEventListener('popstate', (event) => {
     const modals = document.querySelectorAll('[id$="-modal"]:not(.hidden)');
     if (modals.length > 0) {
         modals.forEach(m => {
-            // Only remove dynamically created modals, hide static ones
-            if (m.dataset.dynamic === 'true') {
-                m.remove();
-            } else {
-                m.classList.add('hidden');
-            }
+            m.classList.add('hidden');
+            m.remove(); // Also remove dynamically created modals
         });
         // Push current state back to prevent further back navigation issues
         history.pushState({ view: state.currentView }, '', `#${state.currentView}`);
@@ -3518,7 +3495,7 @@ async function openStudentReport(studentId) {
                     <div>
                         <h1 class="text-xl font-bold">${student.name}</h1>
                         <p class="text-teal-100 text-sm">${level.emoji} ${level.name}</p>
-                        <p class="text-teal-100 text-xs mt-1 flex items-center gap-1"><i data-lucide="users" class="w-3 h-3"></i> المجموعة: ${groupName}</p>
+                        <p class="text-teal-100 text-xs mt-1">🛡️ الحلقة: ${groupName}</p>
                     </div>
                 </div>
             </div>
@@ -3645,12 +3622,8 @@ function openTeacherSelectionModal() {
 function showAbsenceDates(type) {
     const records = type === 'excuse' ? window._absenceRecordsWithExcuse : window._absenceRecordsNoExcuse;
     const title = type === 'excuse' ? 'أيام الغياب بعذر' : 'أيام الغياب بدون عذر';
+    const color = type === 'excuse' ? 'teal' : 'red';
     const emoji = type === 'excuse' ? '✅' : '❌';
-
-    // Use pre-built Tailwind classes instead of dynamic interpolation
-    const bgCard = type === 'excuse' ? 'bg-teal-50 dark:bg-teal-900/20 border-teal-100 dark:border-teal-800' : 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800';
-    const bgBadge = type === 'excuse' ? 'bg-teal-100 dark:bg-teal-900 text-teal-600 dark:text-teal-400' : 'bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400';
-    const textColor = type === 'excuse' ? 'text-teal-600 dark:text-teal-400' : 'text-red-600 dark:text-red-400';
 
     if (!records || records.length === 0) {
         showToast("لا يوجد أيام غياب مسجلة", "error");
@@ -3662,7 +3635,6 @@ function showAbsenceDates(type) {
     if (!modal) {
         modal = document.createElement('div');
         modal.id = 'absence-dates-modal';
-        modal.dataset.dynamic = 'true';
         document.body.appendChild(modal);
     }
 
@@ -3685,14 +3657,14 @@ function showAbsenceDates(type) {
                 <p class="text-sm text-gray-500 mb-3">إجمالي: ${records.length} يوم</p>
                 <div class="space-y-2">
                     ${records.map((r, i) => `
-                    <div class="flex items-center justify-between p-3 ${bgCard} rounded-xl border">
+                    <div class="flex items-center justify-between p-3 bg-${color}-50 dark:bg-${color}-900/20 rounded-xl border border-${color}-100 dark:border-${color}-800">
                         <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 ${bgBadge} rounded-lg flex items-center justify-center font-bold text-sm">${i + 1}</div>
+                            <div class="w-8 h-8 bg-${color}-100 dark:bg-${color}-900 rounded-lg flex items-center justify-center text-${color}-600 dark:text-${color}-400 font-bold text-sm">${i + 1}</div>
                             <div>
                                 <p class="font-bold text-gray-800 dark:text-gray-100">${r.date}</p>
                             </div>
                         </div>
-                        <span class="${textColor} font-bold">${r.points} نقطة</span>
+                        <span class="text-${color}-600 dark:text-${color}-400 font-bold">${r.points} نقطة</span>
                     </div>
                     `).join('')}
                 </div>
@@ -3757,529 +3729,3 @@ async function deleteGroup(groupId) {
         }
     };
 }
-
-// =====================================================
-// FEATURE #7: Student Search/Filter
-// =====================================================
-function filterStudents(query) {
-    if (!query || query.trim() === '') {
-        updateStudentsListUI();
-        return;
-    }
-    const q = query.trim().toLowerCase();
-    const filtered = state.students.filter(s => {
-        const nameMatch = s.name && s.name.toLowerCase().includes(q);
-        const numMatch = s.studentNumber && s.studentNumber.includes(q);
-        return nameMatch || numMatch;
-    });
-    updateStudentsListUI(filtered);
-}
-
-// Override updateStudentsListUI to accept optional filtered list
-const _originalUpdateStudentsListUI = updateStudentsListUI;
-updateStudentsListUI = function (filteredList) {
-    const list = $('#students-list');
-    if (!list) return;
-
-    const students = filteredList || state.students;
-
-    if (students.length === 0 && filteredList) {
-        list.innerHTML = `
-            <div class="flex flex-col items-center justify-center py-12 text-gray-400">
-                <i data-lucide="search-x" class="w-12 h-12 mb-3 opacity-20"></i>
-                <p class="text-sm font-medium">لا توجد نتائج</p>
-            </div>
-        `;
-        lucide.createIcons();
-        return;
-    }
-
-    if (students.length === 0) {
-        list.innerHTML = `
-            <div class="flex flex-col items-center justify-center py-12 text-gray-400">
-                <i data-lucide="users" class="w-12 h-12 mb-3 opacity-20"></i>
-                <p class="text-sm font-medium">لا يوجد طلاب حتى الآن</p>
-                ${state.isTeacher ? '<p class="text-xs mt-1">اضغط على "جديد" لإضافة طلاب</p>' : ''}
-            </div>
-        `;
-        lucide.createIcons();
-        return;
-    }
-
-    list.innerHTML = students.map(student => {
-        const isImg = student.icon && student.icon.startsWith('data:image');
-        const iconHtml = isImg
-            ? `<img src="${student.icon}" class="w-full h-full object-cover">`
-            : (student.icon || '👤');
-
-        return `
-        <div class="p-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition group border-b border-gray-100 dark:border-gray-700 last:border-0">
-            <div onclick="openEditStudent('${student.id}')" class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xl shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden cursor-pointer shrink-0">
-                ${iconHtml}
-            </div>
-            <div class="flex-1 min-w-0" onclick="openEditStudent('${student.id}')" style="cursor:pointer">
-                <h4 class="font-bold text-gray-800 dark:text-gray-100 truncate">${student.name}</h4>
-                <div class="flex flex-wrap gap-1 text-xs text-gray-500 mt-0.5">
-                    ${(state.isTeacher && student.studentNumber) ? `<span class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px] text-gray-500 tracking-wider">${student.studentNumber}</span>` : ''}
-                    ${student.password ? '<span class="text-green-500">🔐</span>' : '<span class="text-orange-400">⚠️ بدون كلمة مرور</span>'}
-                </div>
-            </div>
-            <div class="flex gap-1 shrink-0">
-                <button onclick="event.stopPropagation(); openEditStudent('${student.id}')" class="p-2 text-gray-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded-lg transition" title="تعديل">
-                    <i data-lucide="edit-2" class="w-4 h-4"></i>
-                </button>
-                ${state.isTeacher ? `
-                <button onclick="event.stopPropagation(); confirmDeleteStudent('${student.id}')" class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="حذف">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                </button>
-                ` : ''}
-            </div>
-        </div>
-    `}).join('');
-    lucide.createIcons();
-};
-
-// =====================================================
-// FEATURE #1: Export Data (CSV)
-// =====================================================
-
-function downloadCSV(filename, csvContent) {
-    // Add BOM for Arabic support in Excel
-    const bom = '\uFEFF';
-    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(link.href);
-}
-
-async function exportStudentsCSV() {
-    showToast("جاري تجهيز ملف الطلاب...");
-    try {
-        const q = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "students"),
-            window.firebaseOps.where("level", "==", state.currentLevel)
-        );
-        const snap = await window.firebaseOps.getDocs(q);
-        const students = [];
-        snap.forEach(doc => {
-            const d = doc.data();
-            d.id = doc.id;
-            students.push(d);
-        });
-
-        if (students.length === 0) {
-            showToast("لا يوجد طلاب للتصدير", "error");
-            return;
-        }
-
-        const levelName = LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : state.currentLevel;
-        let csv = 'الاسم,رقم الجوال,المرحلة,خطة الحفظ,خطة المراجعة,تاريخ الإضافة\n';
-
-        students.forEach(s => {
-            const createdDate = s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : '';
-            csv += `"${s.name || ''}","${s.studentNumber || ''}","${levelName}","${s.memorizationPlan || ''}","${s.reviewPlan || ''}","${createdDate}"\n`;
-        });
-
-        const date = new Date().toISOString().split('T')[0];
-        downloadCSV(`students_${state.currentLevel}_${date}.csv`, csv);
-        showToast(`تم تصدير ${students.length} طالب`);
-    } catch (e) {
-        console.error(e);
-        showToast("خطأ في التصدير", "error");
-    }
-}
-
-async function exportScoresCSV() {
-    showToast("جاري تجهيز ملف الدرجات...");
-    try {
-        // Fetch scores filtered by level through students
-        const studentsQ = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "students"),
-            window.firebaseOps.where("level", "==", state.currentLevel)
-        );
-        const studentsSnap = await window.firebaseOps.getDocs(studentsQ);
-        const studentMap = {};
-        studentsSnap.forEach(doc => {
-            const d = doc.data();
-            studentMap[doc.id] = d.name || 'غير معروف';
-        });
-
-        const studentIds = Object.keys(studentMap);
-        if (studentIds.length === 0) {
-            showToast("لا يوجد طلاب", "error");
-            return;
-        }
-
-        // Fetch all scores (we'll filter client-side)
-        const scoresQ = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "scores")
-        );
-        const scoresSnap = await window.firebaseOps.getDocs(scoresQ);
-        const scores = [];
-        scoresSnap.forEach(doc => {
-            const d = doc.data();
-            if (studentIds.includes(d.studentId)) {
-                scores.push(d);
-            }
-        });
-
-        if (scores.length === 0) {
-            showToast("لا يوجد درجات للتصدير", "error");
-            return;
-        }
-
-        const levelName = LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : state.currentLevel;
-        let csv = 'اسم الطالب,المعيار,النقاط,النوع,التاريخ\n';
-
-        scores.forEach(s => {
-            const studentName = studentMap[s.studentId] || 'غير معروف';
-            csv += `"${studentName}","${s.criteriaName || ''}","${s.points || 0}","${s.type || ''}","${s.date || ''}"\n`;
-        });
-
-        const date = new Date().toISOString().split('T')[0];
-        downloadCSV(`scores_${state.currentLevel}_${date}.csv`, csv);
-        showToast(`تم تصدير ${scores.length} درجة`);
-    } catch (e) {
-        console.error(e);
-        showToast("خطأ في التصدير", "error");
-    }
-}
-
-// Audit log removed by user request
-
-// =====================================================
-// FEATURE #5: Statistics with Canvas Charts
-// =====================================================
-
-async function openStatsModal() {
-    let modal = document.getElementById('stats-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'stats-modal';
-        modal.dataset.dynamic = 'true';
-        document.body.appendChild(modal);
-    }
-
-    modal.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm';
-    modal.innerHTML = `
-        <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg shadow-2xl max-h-[85vh] flex flex-col">
-            <div class="p-4 border-b flex justify-between items-center shrink-0">
-                <h3 class="font-bold text-lg flex items-center gap-2">
-                    <i data-lucide="bar-chart-3" class="w-5 h-5 text-amber-600"></i>
-                    إحصائيات المرحلة
-                </h3>
-                <button onclick="document.getElementById('stats-modal').remove()" class="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
-            </div>
-            <div id="stats-content" class="p-4 flex-1 overflow-y-auto">
-                <div class="text-center py-8"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto"></i></div>
-            </div>
-        </div>
-    `;
-    lucide.createIcons();
-
-    try {
-        // Fetch students
-        const studentsQ = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "students"),
-            window.firebaseOps.where("level", "==", state.currentLevel)
-        );
-        const studentsSnap = await window.firebaseOps.getDocs(studentsQ);
-        const students = [];
-        studentsSnap.forEach(doc => { const d = doc.data(); d.id = doc.id; students.push(d); });
-
-        // Fetch scores
-        const scoresQ = window.firebaseOps.query(window.firebaseOps.collection(window.db, "scores"));
-        const scoresSnap = await window.firebaseOps.getDocs(scoresQ);
-        const allScores = [];
-        scoresSnap.forEach(doc => { allScores.push(doc.data()); });
-
-        const studentIds = students.map(s => s.id);
-        const scores = allScores.filter(s => studentIds.includes(s.studentId));
-
-        // Calculate stats
-        const totalStudents = students.length;
-        const totalScoreRecords = scores.length;
-        const totalPoints = scores.reduce((sum, s) => sum + (s.points || 0), 0);
-        const absences = scores.filter(s => s.criteriaId === 'ABSENCE_RECORD').length;
-
-        // Student totals for chart
-        const studentTotals = {};
-        scores.forEach(s => {
-            studentTotals[s.studentId] = (studentTotals[s.studentId] || 0) + (s.points || 0);
-        });
-
-        // Top 10 students
-        const ranked = students.map(s => ({ name: s.name, total: studentTotals[s.id] || 0 }))
-            .sort((a, b) => b.total - a.total)
-            .slice(0, 10);
-
-        // Daily activity (last 14 days)
-        const dailyData = {};
-        const today = new Date();
-        for (let i = 13; i >= 0; i--) {
-            const d = new Date(today);
-            d.setDate(d.getDate() - i);
-            const key = d.toISOString().split('T')[0];
-            dailyData[key] = 0;
-        }
-        scores.forEach(s => {
-            if (s.date && dailyData.hasOwnProperty(s.date) && s.points > 0) {
-                dailyData[s.date] += s.points;
-            }
-        });
-
-        const levelName = LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '';
-        const container = document.getElementById('stats-content');
-
-        container.innerHTML = `
-            <!-- Summary Cards -->
-            <div class="grid grid-cols-2 gap-3 mb-6">
-                <div class="bg-teal-50 dark:bg-teal-900/20 rounded-xl p-3 text-center border border-teal-100 dark:border-teal-800">
-                    <p class="text-2xl font-bold text-teal-600">${totalStudents}</p>
-                    <p class="text-xs text-teal-700 dark:text-teal-400">طالب</p>
-                </div>
-                <div class="bg-green-50 dark:bg-green-900/20 rounded-xl p-3 text-center border border-green-100 dark:border-green-800">
-                    <p class="text-2xl font-bold text-green-600">${totalPoints}</p>
-                    <p class="text-xs text-green-700 dark:text-green-400">إجمالي النقاط</p>
-                </div>
-                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 text-center border border-blue-100 dark:border-blue-800">
-                    <p class="text-2xl font-bold text-blue-600">${totalScoreRecords}</p>
-                    <p class="text-xs text-blue-700 dark:text-blue-400">تقييم مسجل</p>
-                </div>
-                <div class="bg-orange-50 dark:bg-orange-900/20 rounded-xl p-3 text-center border border-orange-100 dark:border-orange-800">
-                    <p class="text-2xl font-bold text-orange-600">${absences}</p>
-                    <p class="text-xs text-orange-700 dark:text-orange-400">حالة غياب</p>
-                </div>
-            </div>
-
-            <!-- Top Students Chart -->
-            <div class="bg-white dark:bg-gray-700/50 rounded-xl p-4 border mb-4">
-                <h4 class="font-bold text-sm mb-3 flex items-center gap-2">
-                    <span>🏆</span> أعلى 10 طلاب نقاطاً
-                </h4>
-                <canvas id="students-chart" width="400" height="250"></canvas>
-            </div>
-
-            <!-- Daily Activity Chart -->
-            <div class="bg-white dark:bg-gray-700/50 rounded-xl p-4 border">
-                <h4 class="font-bold text-sm mb-3 flex items-center gap-2">
-                    <span>📈</span> النشاط اليومي (آخر 14 يوم)
-                </h4>
-                <canvas id="daily-chart" width="400" height="200"></canvas>
-            </div>
-        `;
-
-        // Draw Charts
-        setTimeout(() => {
-            drawBarChart('students-chart', ranked.map(s => s.name), ranked.map(s => s.total), '#0d9488');
-            drawBarChart('daily-chart', Object.keys(dailyData).map(d => d.slice(5)), Object.values(dailyData), '#f59e0b');
-        }, 100);
-
-    } catch (e) {
-        console.error(e);
-        document.getElementById('stats-content').innerHTML = '<p class="text-center text-red-500 py-8">خطأ في تحميل الإحصائيات</p>';
-    }
-}
-
-function drawBarChart(canvasId, labels, values, color) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-
-    const w = rect.width;
-    const h = rect.height;
-    const padding = { top: 10, right: 10, bottom: 40, left: 40 };
-    const chartW = w - padding.left - padding.right;
-    const chartH = h - padding.top - padding.bottom;
-
-    const maxVal = Math.max(...values, 1);
-    const barWidth = chartW / labels.length * 0.7;
-    const gap = chartW / labels.length * 0.3;
-
-    const isDark = document.documentElement.classList.contains('dark');
-    const textColor = isDark ? '#9ca3af' : '#6b7280';
-    const gridColor = isDark ? '#374151' : '#e5e7eb';
-
-    // Clear
-    ctx.clearRect(0, 0, w, h);
-
-    // Grid lines
-    ctx.strokeStyle = gridColor;
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i <= 4; i++) {
-        const y = padding.top + chartH - (chartH / 4) * i;
-        ctx.beginPath();
-        ctx.moveTo(padding.left, y);
-        ctx.lineTo(w - padding.right, y);
-        ctx.stroke();
-
-        // Y-axis label
-        ctx.fillStyle = textColor;
-        ctx.font = '10px Tajawal, sans-serif';
-        ctx.textAlign = 'right';
-        ctx.fillText(Math.round(maxVal / 4 * i), padding.left - 5, y + 3);
-    }
-
-    // Bars
-    labels.forEach((label, i) => {
-        const x = padding.left + i * (barWidth + gap) + gap / 2;
-        const barH = (values[i] / maxVal) * chartH;
-        const y = padding.top + chartH - barH;
-
-        // Bar gradient
-        const gradient = ctx.createLinearGradient(x, y, x, y + barH);
-        gradient.addColorStop(0, color);
-        gradient.addColorStop(1, color + '99');
-        ctx.fillStyle = gradient;
-
-        // Rounded top corners
-        const radius = Math.min(4, barWidth / 2);
-        ctx.beginPath();
-        ctx.moveTo(x, y + barH);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.lineTo(x + barWidth - radius, y);
-        ctx.quadraticCurveTo(x + barWidth, y, x + barWidth, y + radius);
-        ctx.lineTo(x + barWidth, y + barH);
-        ctx.fill();
-
-        // Value on top
-        ctx.fillStyle = textColor;
-        ctx.font = 'bold 10px Tajawal, sans-serif';
-        ctx.textAlign = 'center';
-        if (values[i] > 0) {
-            ctx.fillText(values[i], x + barWidth / 2, y - 4);
-        }
-
-        // X-axis label
-        ctx.fillStyle = textColor;
-        ctx.font = '9px Tajawal, sans-serif';
-        ctx.textAlign = 'center';
-        // Truncate label
-        const maxLabelLen = Math.max(3, Math.floor(barWidth / 6));
-        const truncated = label.length > maxLabelLen ? label.substring(0, maxLabelLen) + '..' : label;
-        ctx.fillText(truncated, x + barWidth / 2, h - padding.bottom + 15);
-    });
-}
-
-// =====================================================
-// FEATURE #9: Offline Mode (IndexedDB Cache)
-// =====================================================
-
-const OfflineCache = {
-    DB_NAME: 'ibnTaymiyyahCache',
-    DB_VERSION: 1,
-    STORE_NAME: 'dataCache',
-
-    async openDB() {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
-            request.onupgradeneeded = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-                    db.createObjectStore(this.STORE_NAME, { keyPath: 'key' });
-                }
-            };
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    },
-
-    async save(key, data) {
-        try {
-            const db = await this.openDB();
-            const tx = db.transaction(this.STORE_NAME, 'readwrite');
-            const store = tx.objectStore(this.STORE_NAME);
-            store.put({ key, data, timestamp: Date.now() });
-            return new Promise((resolve, reject) => {
-                tx.oncomplete = resolve;
-                tx.onerror = reject;
-            });
-        } catch (e) {
-            console.warn('OfflineCache save error:', e);
-        }
-    },
-
-    async load(key, maxAgeMs = 1000 * 60 * 60) {
-        // maxAgeMs: default 1 hour
-        try {
-            const db = await this.openDB();
-            const tx = db.transaction(this.STORE_NAME, 'readonly');
-            const store = tx.objectStore(this.STORE_NAME);
-            const request = store.get(key);
-            return new Promise((resolve) => {
-                request.onsuccess = () => {
-                    const result = request.result;
-                    if (result && (Date.now() - result.timestamp) < maxAgeMs) {
-                        resolve(result.data);
-                    } else {
-                        resolve(null);
-                    }
-                };
-                request.onerror = () => resolve(null);
-            });
-        } catch (e) {
-            console.warn('OfflineCache load error:', e);
-            return null;
-        }
-    },
-
-    async clear() {
-        try {
-            const db = await this.openDB();
-            const tx = db.transaction(this.STORE_NAME, 'readwrite');
-            tx.objectStore(this.STORE_NAME).clear();
-        } catch (e) {
-            console.warn('OfflineCache clear error:', e);
-        }
-    }
-};
-
-// Cache data after successful fetches
-(function enableOfflineCache() {
-    const origGetDocs = window.firebaseOps.getDocs;
-
-    window.firebaseOps.getDocs = async function (queryOrCollection) {
-        const tableName = queryOrCollection._table;
-        const cacheKey = `getDocs_${tableName}_${JSON.stringify(queryOrCollection._constraints || [])}`;
-
-        try {
-            const result = await origGetDocs.call(this, queryOrCollection);
-            // Cache the raw data for offline use
-            const rawDocs = [];
-            result.forEach(doc => { rawDocs.push({ id: doc.id, data: doc.data() }); });
-            OfflineCache.save(cacheKey, rawDocs);
-            return result;
-        } catch (e) {
-            // Offline - try to load from cache
-            console.warn('getDocs failed, trying offline cache:', e.message);
-            const cached = await OfflineCache.load(cacheKey, 1000 * 60 * 60 * 24); // 24 hour cache for offline
-            if (cached) {
-                showToast("وضع عدم الاتصال - بيانات مخزنة مؤقتاً", "info");
-                const docs = cached.map(item => ({
-                    id: item.id,
-                    data: () => item.data,
-                    ref: { _table: tableName, _id: item.id, _type: 'doc' }
-                }));
-                return {
-                    empty: docs.length === 0,
-                    docs: docs,
-                    forEach: (cb) => docs.forEach(cb),
-                    size: docs.length
-                };
-            }
-            throw e; // No cache available, rethrow
-        }
-    };
-})();
-

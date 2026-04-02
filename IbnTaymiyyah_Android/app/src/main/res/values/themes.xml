@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.IbnTaymiyyahCompetitions" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Brand Colors -->
+        <item name="colorPrimary">#0D9488</item> <!-- Teal 600 -->
+        <item name="colorPrimaryVariant">#0F766E</item> <!-- Teal 700 -->
+        <item name="colorOnPrimary">@android:color/white</item>
+        <!-- Status Bar -->
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+    </style>
+</resources>

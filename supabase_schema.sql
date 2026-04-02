@@ -201,3 +201,11 @@ END $$;
 -- =====================================================
 CREATE INDEX IF NOT EXISTS idx_activity_days_competition_id ON activity_days(competition_id);
 CREATE INDEX IF NOT EXISTS idx_activity_days_date ON activity_days(date);
+CREATE INDEX IF NOT EXISTS idx_scores_student_id ON scores(student_id);
+CREATE INDEX IF NOT EXISTS idx_scores_competition_id ON scores(competition_id);
+CREATE INDEX IF NOT EXISTS idx_scores_date ON scores(date);
+CREATE INDEX IF NOT EXISTS idx_students_level ON students(level);
+CREATE INDEX IF NOT EXISTS idx_students_parent_phone ON students(parent_phone);
+CREATE INDEX IF NOT EXISTS idx_groups_competition_id ON groups(competition_id);
+CREATE INDEX IF NOT EXISTS idx_teachers_level ON teachers(level);
+

@@ -24,6 +24,17 @@ header {
     /* Make sure background is solid teal-700 to cover scrolling content */
 }
 
+/* Ensure body doesn't overlap header initially */
+body {
+    font-family: 'Tajawal', sans-serif;
+    background-color: #f3f4f6;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+}
+
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
     width: 6px;
