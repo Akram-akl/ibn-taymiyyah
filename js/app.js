@@ -1058,10 +1058,17 @@ function renderSettings() {
              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
                  <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="wrench" class="w-5 h-5 text-teal-600"></i> أدوات</h3>
                  <div class="grid grid-cols-2 gap-3">
-
                      <button onclick="openReportsModal()" class="col-span-2 flex items-center justify-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-800 hover:bg-red-100 transition">
                          <i data-lucide="file-text" class="w-5 h-5 text-red-600"></i>
                          <span class="text-xs font-bold text-red-700 dark:text-red-400">إنشاء تقرير المجموعات (PDF)</span>
+                     </button>
+                     <button onclick="openExcelExportModal()" class="col-span-1 flex items-center justify-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800 hover:bg-green-100 transition">
+                         <i data-lucide="sheet" class="w-5 h-5 text-green-600"></i>
+                         <span class="text-xs font-bold text-green-700 dark:text-green-400">ملف إكسل (XLSX)</span>
+                     </button>
+                     <button onclick="openBulkWhatsAppModal()" class="col-span-1 flex items-center justify-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 transition">
+                         <i data-lucide="message-circle" class="w-5 h-5 text-emerald-600"></i>
+                         <span class="text-xs font-bold text-emerald-700 dark:text-emerald-400">واتساب مجمع</span>
                      </button>
                  </div>
              </div>
@@ -4724,6 +4731,529 @@ async function submitGroupPoints(e) {
         btn.innerHTML = prevText;
         btn.disabled = false;
     }
+}
+
+// =====================================================
+// FEATURE: Excel Export Engine (SheetJS)
+// =====================================================
+function openExcelExportModal() {
+    let modal = document.getElementById('excel-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'excel-modal';
+        modal.dataset.dynamic = 'true';
+        document.body.appendChild(modal);
+    }
+    modal.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    const today = new Date();
+    const lastWeek = new Date();
+    lastWeek.setDate(today.getDate() - 7);
+    const endStr = today.toISOString().split('T')[0];
+    const startStr = lastWeek.toISOString().split('T')[0];
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center mb-6 border-b pb-4 border-gray-100 dark:border-gray-700">
+                <h3 class="font-bold text-lg flex items-center gap-2 text-green-600">
+                    <i data-lucide="sheet" class="w-5 h-5"></i>تصدير إكسل متكامل
+                </h3>
+                <button onclick="closeModal('excel-modal')" class="text-gray-400 hover:text-gray-600 p-1 bg-gray-50 dark:bg-gray-700 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold mb-2">المسابقة</label>
+                    <select id="excel-comp-select" class="w-full bg-gray-50 dark:bg-gray-700 border rounded-xl px-4 py-3">
+                        ${state.competitions.filter(c => !c.level || c.level === state.currentLevel).map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-bold mb-2">من تاريخ</label>
+                        <input type="date" id="excel-start-date" value="${startStr}" class="w-full bg-gray-50 dark:bg-gray-700 border rounded-xl px-3 py-3 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-2">إلى تاريخ</label>
+                        <input type="date" id="excel-end-date" value="${endStr}" class="w-full bg-gray-50 dark:bg-gray-700 border rounded-xl px-3 py-3 text-sm">
+                    </div>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button type="button" onclick="closeModal('excel-modal')" class="flex-1 py-3 rounded-xl bg-gray-100 dark:bg-gray-700 transition">إلغاء</button>
+                    <button onclick="generateExcelReport(this)" class="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold shadow-lg flex justify-center items-center gap-2"><i data-lucide="download" class="w-5 h-5"></i> تحميل</button>
+                </div>
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
+    toggleModal('excel-modal', true);
+}
+
+async function generateExcelReport(btn) {
+    if (!window.XLSX) { showToast("جاري تحميل المكتبة، يرجى المحاولة بعد قليل", "error"); return; }
+    const compId = $('#excel-comp-select').value;
+    const startDate = $('#excel-start-date').value;
+    const endDate = $('#excel-end-date').value;
+    const compName = $('#excel-comp-select').options[$('#excel-comp-select').selectedIndex].text;
+    if (!compId || !startDate || !endDate) { showToast('يرجى تعبئة جميع الحقول', 'error'); return; }
+
+    const prevHTML = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> إعداد...';
+    btn.disabled = true;
+    lucide.createIcons();
+
+    try {
+        const groups = state.groups.filter(g => g.competitionId === compId);
+        const sSnap = await window.firebaseOps.getDocs(window.firebaseOps.query(window.firebaseOps.collection(window.db, "scores"), window.firebaseOps.where("competitionId", "==", compId)));
+        const gsSnap = await window.firebaseOps.getDocs(window.firebaseOps.query(window.firebaseOps.collection(window.db, "group_scores"), window.firebaseOps.where("competitionId", "==", compId))).catch(() => ({ forEach: () => {} }));
+
+        const comp = state.competitions.find(c => c.id === compId);
+        const criteriaList = comp ? (comp.criteria || []) : [];
+
+        const studentStatsMap = {};
+        const historyData = [];
+
+        sSnap.forEach(d => {
+            const sc = d.data();
+            if (sc.date >= startDate && sc.date <= endDate) {
+                if (!studentStatsMap[sc.studentId]) {
+                    studentStatsMap[sc.studentId] = { points: 0, positive: 0, negative: 0, excused: 0, unexcused: 0, activity: 0, criteria: {} };
+                }
+                const pts = parseInt(sc.points) || 0;
+                studentStatsMap[sc.studentId].points += pts;
+                
+                if (sc.criteriaId) {
+                    if (!studentStatsMap[sc.studentId].criteria[sc.criteriaId]) studentStatsMap[sc.studentId].criteria[sc.criteriaId] = 0;
+                    studentStatsMap[sc.studentId].criteria[sc.criteriaId] += pts;
+                }
+
+                if (pts > 0 && sc.criteriaId !== 'ACTIVITY_DAY') studentStatsMap[sc.studentId].positive += pts;
+                else if (pts < 0 && sc.criteriaId !== 'ABSENCE_RECORD') studentStatsMap[sc.studentId].negative += Math.abs(pts);
+                
+                const cName = sc.criteriaName || (sc.criteriaId === 'ABSENCE_RECORD' ? 'غياب' : '');
+                if (cName.indexOf('بعذر') !== -1) studentStatsMap[sc.studentId].excused++;
+                else if (cName.indexOf('بدون عذر') !== -1 || cName.indexOf('غياب') !== -1 || sc.criteriaId === 'ABSENCE_RECORD') studentStatsMap[sc.studentId].unexcused++;
+
+                if (sc.criteriaId === 'ACTIVITY_DAY') studentStatsMap[sc.studentId].activity += pts;
+
+                const st = state.students.find(s => s.id === sc.studentId);
+                let timeStr = "";
+                if (sc.timestamp) {
+                     const dateObj = new Date(sc.timestamp);
+                     timeStr = dateObj.toLocaleTimeString('ar-SA');
+                }
+                historyData.push({ 
+                    "التاريخ": sc.date, 
+                    "الوقت": timeStr,
+                    "اسم الطالب": st ? st.name : "طالب محذوف", 
+                    "المعيار المقيم": cName, 
+                    "النقاط الممنوحة": pts 
+                });
+            }
+        });
+
+        // Sort history by date desc
+        historyData.reverse();
+
+        const groupScoresMap = {};
+        gsSnap.forEach(d => {
+            const gs = d.data();
+            if (gs.date >= startDate && gs.date <= endDate) groupScoresMap[gs.groupId] = (groupScoresMap[gs.groupId] || 0) + (parseInt(gs.points) || 0);
+        });
+
+        const groupSheetData = groups.map((g, index) => {
+            let membersSum = 0;
+            if (g.members) g.members.forEach(mId => membersSum += (studentStatsMap[mId] ? studentStatsMap[mId].points : 0));
+            const bonus = groupScoresMap[g.id] || 0;
+            return {
+                "الترتيب المركز": index + 1, "المجموعة": g.name,
+                "إجمالي الطلاب": g.members ? g.members.length : 0,
+                "مجموع مشاركات الطلاب الفردية": membersSum,
+                "نقاط سلوك/إدارة المجموعة (بونص)": bonus,
+                "النتيجة الصافية الكلية": membersSum + bonus
+            };
+        });
+        groupSheetData.sort((a, b) => b["النتيجة الصافية الكلية"] - a["النتيجة الصافية الكلية"]);
+        groupSheetData.forEach((row, i) => row["الترتيب المركز"] = i + 1);
+
+        const studentSheetData = [];
+        groups.forEach(g => {
+            if (g.members) {
+                g.members.forEach(mId => {
+                    const st = state.students.find(s => s.id === mId);
+                    if (st) {
+                        const stats = studentStatsMap[mId] || { points: 0, positive: 0, negative: 0, excused: 0, unexcused: 0, activity: 0, criteria: {} };
+                        
+                        let stRow = {
+                            "المجموعة": g.name, 
+                            "اسم الطـالب": st.name,
+                            "جوال ولي الأمر": st.studentNumber || ""
+                        };
+                        
+                        // Dynamic Columns per criteria
+                        criteriaList.forEach(c => {
+                             stRow[`${c.name} (نقطة)`] = stats.criteria[c.id] || 0;
+                        });
+                        
+                        stRow["متفرقات (موجب)"] = stats.positive;
+                        stRow["النشاط المكتسب"] = stats.activity;
+                        stRow["إجمالي الخصميات"] = stats.negative;
+                        stRow["غياب (بدون عذر) - الأيام"] = stats.unexcused;
+                        stRow["غياب (بعذر) - الأيام"] = stats.excused;
+                        stRow["إجمالي صافي النقاط النهائي"] = stats.points;
+                        
+                        studentSheetData.push(stRow);
+                    }
+                });
+            }
+        });
+
+        // ----------------------------------------------------
+        // Native HTML to XLS Export (No Library Needed)
+        // ----------------------------------------------------
+        let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
+        html += '<head><meta charset="utf-8"></head><body dir="rtl" style="font-family: Arial, sans-serif;">';
+        
+        // 1. Group Data
+        html += '<h2 style="color: #047857;">تقرير المجموعات</h2><table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; text-align: center;"><tr>';
+        if (groupSheetData.length > 0) {
+            Object.keys(groupSheetData[0]).forEach(k => html += `<th style="background:#e5e7eb; font-weight:bold;">${k}</th>`);
+            html += '</tr>';
+            groupSheetData.forEach(r => {
+                html += '<tr>';
+                Object.values(r).forEach(v => html += `<td>${v}</td>`);
+                html += '</tr>';
+            });
+        }
+        html += '</table><br><br><hr><br>';
+
+        // 2. Student Data
+        html += '<h2 style="color: #047857;">سجل الطلاب الفردي</h2><table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; text-align: center;"><tr>';
+        if (studentSheetData.length > 0) {
+            Object.keys(studentSheetData[0]).forEach(k => html += `<th style="background:#e5e7eb; font-weight:bold;">${k}</th>`);
+            html += '</tr>';
+            studentSheetData.forEach(r => {
+                html += '<tr>';
+                Object.values(r).forEach(v => html += `<td>${v}</td>`);
+                html += '</tr>';
+            });
+        }
+        html += '</table><br><br><hr><br>';
+
+        // 3. History Data
+        html += '<h2 style="color: #047857;">السجل التفصيلي للحركات</h2><table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; text-align: center;"><tr>';
+        if (historyData.length > 0) {
+            Object.keys(historyData[0]).forEach(k => html += `<th style="background:#e5e7eb; font-weight:bold;">${k}</th>`);
+            html += '</tr>';
+            historyData.forEach(r => {
+                html += '<tr>';
+                Object.values(r).forEach(v => html += `<td>${v}</td>`);
+                html += '</tr>';
+            });
+        }
+        html += '</table></body></html>';
+
+        // Convert to Blob and Trigger Download
+        const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `تقرير_${compName}.xls`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast("تم تنزيل ملف الإكسل بنجاح", "success");
+        closeModal('excel-modal');
+    } catch (err) {
+        console.error("Excel Error:", err);
+        showToast("خطأ أثناء تحضير السجلات", "error");
+    } finally {
+        btn.innerHTML = prevHTML; btn.disabled = false;
+    }
+}
+
+// =====================================================
+// FEATURE: Bulk WhatsApp Queue Generator
+// =====================================================
+let bulkWhatsAppQueue = [];
+let bulkWhatsAppCurrentIndex = 0;
+
+function openBulkWhatsAppModal() {
+    let modal = document.getElementById('bulk-wa-start-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'bulk-wa-start-modal';
+        modal.dataset.dynamic = 'true';
+        document.body.appendChild(modal);
+    }
+    modal.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    const today = new Date();
+    const lastWeek = new Date();
+    lastWeek.setDate(today.getDate() - 7);
+    const endStr = today.toISOString().split('T')[0];
+    const startStr = lastWeek.toISOString().split('T')[0];
+    
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center mb-6 border-b pb-4 border-gray-100 dark:border-gray-700">
+                <h3 class="font-bold text-lg flex items-center gap-2 text-emerald-600">
+                    <i data-lucide="message-circle" class="w-5 h-5"></i>إعداد المراسلة المجمعة
+                </h3>
+                <button onclick="closeModal('bulk-wa-start-modal')" class="text-gray-400 hover:text-gray-600 p-1 bg-gray-50 dark:bg-gray-700 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold mb-2">المسابقة المستهدفة</label>
+                    <select id="wa-comp-select" class="w-full bg-gray-50 dark:bg-gray-700 border rounded-xl px-4 py-3">
+                        ${state.competitions.filter(c => !c.level || c.level === state.currentLevel).map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-bold mb-2">من تاريخ</label>
+                        <input type="date" id="wa-start-date" value="${startStr}" class="w-full bg-gray-50 dark:bg-gray-700 border rounded-xl px-3 py-3 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-2">إلى تاريخ</label>
+                        <input type="date" id="wa-end-date" value="${endStr}" class="w-full bg-gray-50 dark:bg-gray-700 border rounded-xl px-3 py-3 text-sm">
+                    </div>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button type="button" onclick="closeModal('bulk-wa-start-modal')" class="flex-1 py-3 rounded-xl bg-gray-100 dark:bg-gray-700 transition">إلغاء</button>
+                    <button onclick="buildWhatsAppQueue(this)" class="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg flex justify-center items-center gap-2"><i data-lucide="list-checks" class="w-5 h-5"></i> تجهيز القائمة</button>
+                </div>
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
+    toggleModal('bulk-wa-start-modal', true);
+}
+
+async function buildWhatsAppQueue(btn) {
+    const compId = $('#wa-comp-select').value;
+    const startDate = $('#wa-start-date').value;
+    const endDate = $('#wa-end-date').value;
+    const compName = $('#wa-comp-select').options[$('#wa-comp-select').selectedIndex].text;
+    if (!compId || !startDate || !endDate) return showToast('يرجى تعبئة الحقول', 'error');
+
+    const prevHTML = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> جلب...';
+    btn.disabled = true;
+    lucide.createIcons();
+
+    try {
+        const groups = state.groups.filter(g => g.competitionId === compId);
+        const sSnap = await window.firebaseOps.getDocs(window.firebaseOps.query(window.firebaseOps.collection(window.db, "scores"), window.firebaseOps.where("competitionId", "==", compId)));
+        
+        const comp = state.competitions.find(c => c.id === compId);
+        if (!comp) throw new Error("Competition not found");
+
+        let d = new Date(startDate);
+        let e = new Date(endDate);
+        const dateStrings = [];
+        let totalDaysPassed = 0;
+        while (d <= e) {
+            if (d.getDay() !== 5 && d.getDay() !== 6) { // Sun-Thu Only
+                const ys = d.getFullYear();
+                const ms = String(d.getMonth() + 1).padStart(2, '0');
+                const ds = String(d.getDate()).padStart(2, '0');
+                dateStrings.push(`${ys}-${ms}-${ds}`);
+                totalDaysPassed++;
+            }
+            d.setDate(d.getDate() + 1);
+        }
+
+        const actSnap = await window.firebaseOps.getDocs(window.firebaseOps.query(window.firebaseOps.collection(window.db, "activity_days"), window.firebaseOps.where("competitionId", "==", compId)));
+        let activityDaysCount = 0;
+        let totalActivityPossible = 0;
+        actSnap.forEach(doc => {
+            const data = doc.data();
+            if (data.date >= startDate && data.date <= endDate && dateStrings.includes(data.date)) {
+                activityDaysCount++;
+                totalActivityPossible += parseInt(data.points) || 0;
+            }
+        });
+
+        const normalDaysCount = totalDaysPassed - activityDaysCount;
+
+        bulkWhatsAppQueue = [];
+        groups.forEach(g => {
+            if (g.members) {
+                g.members.forEach(mId => {
+                    const st = state.students.find(s => s.id === mId);
+                    if (st && st.studentNumber && st.studentNumber.trim() !== "") {
+                        let totalEarned = 0;
+                        let totalPossible = 0;
+                        
+                        let reportText = `📊 *تقرير الأسبوع الماضي* 📊\n`;
+                        reportText += `👤 الطالب: ${st.name}\n`;
+                        reportText += `📅 الفترة: ${startDate} إلى ${endDate}\n`;
+                        if (activityDaysCount > 0) reportText += `🎪 تم إقامة نشاط (${activityDaysCount} يوم)\n`;
+                        reportText += `------------------\n`;
+                        
+                        if (comp.criteria) {
+                             comp.criteria.forEach(c => {
+                                 let earned = 0;
+                                 sSnap.forEach(doc => {
+                                     let sc = doc.data();
+                                     if(sc.studentId === st.id && sc.criteriaId === c.id && sc.date >= startDate && sc.date <= endDate) {
+                                         earned += parseInt(sc.points) || 0;
+                                     }
+                                 });
+                                 let possible = (parseInt(c.positivePoints) || 0) * normalDaysCount;
+                                 reportText += `🔹 ${c.name}: ${earned} / ${possible}\n`;
+                                 totalEarned += earned;
+                                 totalPossible += possible;
+                             });
+                        }
+                        
+                        if (activityDaysCount > 0) {
+                             let actEarned = 0;
+                             sSnap.forEach(doc => {
+                                 let sc = doc.data();
+                                 if(sc.studentId === st.id && sc.criteriaId === 'ACTIVITY_DAY' && sc.date >= startDate && sc.date <= endDate) {
+                                     actEarned += parseInt(sc.points) || 0;
+                                 }
+                             });
+                             reportText += `🏃 نقاط النشاط: ${actEarned} / ${totalActivityPossible}\n`;
+                             totalEarned += actEarned;
+                             totalPossible += totalActivityPossible;
+                        }
+                        
+                        let absentDays = [];
+                        let deduction = 0;
+                        sSnap.forEach(doc => {
+                             let sc = doc.data();
+                             if(sc.studentId === st.id && sc.criteriaId === 'ABSENCE_RECORD' && sc.date >= startDate && sc.date <= endDate) {
+                                 deduction += parseInt(sc.points) || 0;
+                                 absentDays.push(`${sc.date} (${sc.criteriaName || 'غياب'})`);
+                             }
+                        });
+                        if (absentDays.length > 0) {
+                             reportText += `⚠️ خصم غياب: ${deduction}\n`;
+                             reportText += `❌ أيام الغياب:\n${absentDays.join('\n')}\n`;
+                             totalEarned += deduction;
+                        }
+                        
+                        reportText += `------------------\n`;
+                        reportText += `✨ *المجموع النهائي: ${totalEarned} / ${totalPossible}*\n`;
+                        reportText += `\nشاكرين تعاونكم 🌹`;
+
+                        bulkWhatsAppQueue.push({
+                            id: st.id,
+                            name: st.name,
+                            phone: st.studentNumber,
+                            text: reportText,
+                            sent: false
+                        });
+                    }
+                });
+            }
+        });
+
+        if (bulkWhatsAppQueue.length === 0) {
+            showToast("لا يوجد أرقام جوال مسجلة للطلاب", "error");
+            return;
+        }
+
+        bulkWhatsAppCurrentIndex = 0;
+        closeModal('bulk-wa-start-modal');
+        showBulkWhatsAppRunner();
+
+    } catch (e) {
+        console.error(e);
+        showToast("خطأ أثناء تجهيز القائمة", "error");
+    } finally {
+        btn.innerHTML = prevHTML;
+        btn.disabled = false;
+    }
+}
+
+function showBulkWhatsAppRunner() {
+    let modal = document.getElementById('bulk-wa-runner-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'bulk-wa-runner-modal';
+        modal.dataset.dynamic = 'true';
+        document.body.appendChild(modal);
+    }
+    
+    modal.className = 'fixed inset-0 bg-gray-50 dark:bg-gray-900 z-[200] flex flex-col animate-fade-in';
+    renderBulkWhatsAppList();
+    toggleModal('bulk-wa-runner-modal', true);
+}
+
+function renderBulkWhatsAppList() {
+    let modal = document.getElementById('bulk-wa-runner-modal');
+    const sentCount = bulkWhatsAppQueue.filter(item => item.sent).length;
+    const progressPct = bulkWhatsAppQueue.length > 0 ? Math.round((sentCount / bulkWhatsAppQueue.length) * 100) : 0;
+
+    let html = `
+        <div class="bg-white dark:bg-gray-800 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.1)] px-4 py-4 flex justify-between items-center shrink-0 border-b border-gray-100 dark:border-gray-700 z-10 relative">
+            <div>
+                <h2 class="font-bold text-lg text-emerald-600 flex items-center gap-2"><i data-lucide="send" class="w-5 h-5"></i> نظام المراسلة المجمعة</h2>
+                <p class="text-xs text-gray-500 mt-1">تم تجهيز ${bulkWhatsAppQueue.length} رسالة (أُرسل منها ${sentCount})</p>
+            </div>
+            <button onclick="closeModal('bulk-wa-runner-modal')" class="text-gray-400 hover:text-gray-600 p-2 bg-gray-100 dark:bg-gray-700 rounded-full"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        
+        <div class="h-1.5 w-full bg-gray-200 dark:bg-gray-700 shrink-0 relative">
+            <div class="h-full bg-emerald-500 transition-all duration-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" style="width: ${progressPct}%"></div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-3 pb-safe">
+    `;
+
+    bulkWhatsAppQueue.forEach((item, index) => {
+        const isCurrent = index === bulkWhatsAppCurrentIndex;
+        let phoneStr = item.phone.replace(/\\D/g, '');
+        if (phoneStr.startsWith('05') && phoneStr.length === 10) {
+            phoneStr = '966' + phoneStr.substring(1);
+        }
+
+        const encodedText = encodeURIComponent(item.text);
+        const waLink = `https://api.whatsapp.com/send?phone=${phoneStr}&text=${encodedText}`;
+
+        html += `
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border ${isCurrent ? 'border-emerald-500 ring-4 ring-emerald-100 dark:ring-emerald-900/40 transform scale-[1.02]' : (item.sent ? 'border-gray-100 dark:border-gray-700 opacity-60' : 'border-gray-200 dark:border-gray-700')} flex items-center justify-between transition-all duration-300">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${item.sent ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50' : 'bg-gray-100 text-gray-500 dark:bg-gray-700'}">
+                        ${index + 1}
+                    </div>
+                    <div>
+                        <p class="font-bold text-sm ${item.sent ? 'text-emerald-700 dark:text-emerald-400' : ''}">${item.name}</p>
+                        <p class="text-xs text-gray-500 dir-ltr">${item.phone}</p>
+                    </div>
+                </div>
+                <button onclick="sendSingleBulkWhatsApp(${index}, '${waLink}')" class="${item.sent ? 'bg-gray-100 text-emerald-600 dark:bg-gray-700 hover:bg-gray-200' : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg'} px-5 py-2.5 rounded-xl text-sm font-bold transition flex items-center gap-2">
+                    <i data-lucide="${item.sent ? 'check-check' : 'send'}" class="w-4 h-4"></i>
+                    ${item.sent ? 'مُرسل' : 'إرسال الآن'}
+                </button>
+            </div>
+        `;
+    });
+
+    html += `</div>`;
+    modal.innerHTML = html;
+    lucide.createIcons();
+    
+    setTimeout(() => {
+        const currentEl = modal.querySelector('.ring-4');
+        if (currentEl) {
+            currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 100);
+}
+
+function sendSingleBulkWhatsApp(index, url) {
+    bulkWhatsAppQueue[index].sent = true;
+    if (bulkWhatsAppCurrentIndex === index) {
+        bulkWhatsAppCurrentIndex++;
+        while (bulkWhatsAppCurrentIndex < bulkWhatsAppQueue.length && bulkWhatsAppQueue[bulkWhatsAppCurrentIndex].sent) {
+            bulkWhatsAppCurrentIndex++;
+        }
+    }
+    window.open(url, '_blank');
+    renderBulkWhatsAppList();
 }
 
 // =====================================================
