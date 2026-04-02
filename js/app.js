@@ -284,6 +284,12 @@ function normalizePhone(phone) {
     return cleaned;
 }
 
+// Helper: returns true if the value is a displayable image (base64 OR external URL)
+function isImgSrc(src) {
+    if (!src) return false;
+    return src.startsWith('data:image') || src.startsWith('http') || src.startsWith('blob:');
+}
+
 async function performParentLogin() {
     const phoneInput = $('#parent-phone-input').value.trim();
     const phone = normalizePhone(phoneInput);
@@ -558,11 +564,10 @@ function calculateLeaderboard() {
 
     // 1. Calculate Student Totals
     const studentTotals = state.students.map(function (student) {
-        // Filter scores for this student
         const myScores = state.scores.filter(function (s) {
             if (s.studentId !== student.id) return false;
             if (activeComp) return s.competitionId === activeComp.id;
-            return true; // No active comp = show all
+            return true;
         });
         const total = myScores.reduce(function (sum, score) { return sum + parseInt(score.points); }, 0);
         var sClone = Object.assign({}, student);
@@ -572,7 +577,7 @@ function calculateLeaderboard() {
 
     updateTop3UI(studentTotals.slice(0, 3));
 
-    // 2. Calculate Group Totals (Fetching Freshly for Home)
+    // 2. Calculate Group Totals (students sum + group_scores bonus)
     const gq = window.firebaseOps.query(window.firebaseOps.collection(window.db, "groups"));
     window.firebaseOps.getDocs(gq).then(function (snap) {
         const allGroups = [];
@@ -588,24 +593,52 @@ function calculateLeaderboard() {
             return true;
         });
 
-        const groupTotals = validGroups.map(function (group) {
-            if (!group.members) {
-                var gClone = Object.assign({}, group);
-                gClone.totalScore = 0;
-                return gClone;
-            }
-            var gTotal = 0;
-            group.members.forEach(function (mId) {
-                var sItem = studentTotals.find(function (s) { return s.id === mId; });
-                var sScore = sItem ? sItem.totalScore : 0;
-                gTotal += sScore;
+        // Fetch group_scores for bonus points
+        const gsq = window.firebaseOps.query(window.firebaseOps.collection(window.db, "group_scores"));
+        window.firebaseOps.getDocs(gsq).then(function (gsSnap) {
+            const groupBonusMap = {};
+            gsSnap.forEach(function (d) {
+                var gs = d.data();
+                if (activeComp && gs.competitionId !== activeComp.id) return;
+                if (!groupBonusMap[gs.groupId]) groupBonusMap[gs.groupId] = 0;
+                groupBonusMap[gs.groupId] += (parseInt(gs.points) || 0);
             });
-            var gFinal = Object.assign({}, group);
-            gFinal.totalScore = gTotal;
-            return gFinal;
-        }).sort(function (a, b) { return b.totalScore - a.totalScore; });
 
-        updateTopGroupsUI(groupTotals.slice(0, 5));
+            const groupTotals = validGroups.map(function (group) {
+                var membersScore = 0;
+                if (group.members) {
+                    group.members.forEach(function (mId) {
+                        var sItem = studentTotals.find(function (s) { return s.id === mId; });
+                        membersScore += sItem ? sItem.totalScore : 0;
+                    });
+                }
+                var bonusScore = groupBonusMap[group.id] || 0;
+                var gFinal = Object.assign({}, group);
+                gFinal.totalScore = membersScore + bonusScore;
+                gFinal.bonusScore = bonusScore;
+                return gFinal;
+            }).sort(function (a, b) { return b.totalScore - a.totalScore; });
+
+            updateTopGroupsUI(groupTotals.slice(0, 5));
+        }).catch(function(err) {
+            console.warn("Could not fetch group_scores (table may not exist yet):", err);
+            // Fallback without group bonus points
+            const groupTotals = validGroups.map(function (group) {
+                var membersScore = 0;
+                if (group.members) {
+                    group.members.forEach(function (mId) {
+                        var sItem = studentTotals.find(function (s) { return s.id === mId; });
+                        membersScore += sItem ? sItem.totalScore : 0;
+                    });
+                }
+                var gFinal = Object.assign({}, group);
+                gFinal.totalScore = membersScore;
+                gFinal.bonusScore = 0;
+                return gFinal;
+            }).sort(function (a, b) { return b.totalScore - a.totalScore; });
+
+            updateTopGroupsUI(groupTotals.slice(0, 5));
+        });
     });
 }
 
@@ -625,7 +658,7 @@ function updateTop3UI(top3) {
     container.innerHTML = `
         <div class="w-full space-y-2">
             ${top3.map((student, i) => {
-        const iconHtml = student.icon && student.icon.startsWith('data:image')
+        const iconHtml = isImgSrc(student.icon)
             ? `<img src="${student.icon}" class="w-full h-full object-cover">`
             : (student.icon || '👤');
         return `
@@ -657,7 +690,7 @@ function updateTopGroupsUI(groups) {
     }
 
     list.innerHTML = groups.map((g, i) => {
-        const isImg = g.icon && g.icon.startsWith('data:image');
+        const isImg = isImgSrc(g.icon);
         const iconHtml = isImg
             ? `<div class="w-10 h-10 rounded-full overflow-hidden border border-gray-200"><img src="${g.icon}" class="w-full h-full object-cover"></div>`
             : `<div class="text-2xl">${g.emoji || g.icon || '🛡️'}</div>`;
@@ -879,7 +912,7 @@ function updateStudentsListUI() {
         `;
     } else {
         list.innerHTML = state.students.map(student => {
-            const isImg = student.icon && student.icon.startsWith('data:image');
+            const isImg = isImgSrc(student.icon);
             const iconHtml = isImg
                 ? `<img src="${student.icon}" class="w-full h-full object-cover">`
                 : (student.icon || '👤');
@@ -1686,7 +1719,7 @@ async function openEditStudent(id) {
 
     // عرض الصورة/الإيموجي الحالي
     const preview = $('#student-emoji-preview');
-    if (student.icon && student.icon.startsWith('data:image')) {
+    if (isImgSrc(student.icon)) {
         preview.innerHTML = `<img src="${student.icon}" class="w-full h-full object-cover">`;
     } else {
         preview.innerHTML = student.icon || '👤';
@@ -1760,7 +1793,7 @@ function fetchGroupsForCompetition(compId) {
             var g = doc.data();
             g.id = doc.id;
             state.groups.push(g);
-            const isImg = g.icon && g.icon.startsWith('data:image');
+            const isImg = isImgSrc(g.icon);
             const iconHtml = isImg
                 ? `<img src="${g.icon}" class="w-full h-full object-cover">`
                 : (g.icon || '🛡️');
@@ -2105,7 +2138,7 @@ function openEditGroup(groupId) {
 
             // عرض الأيقونة
             const preview = $('#group-icon-preview');
-            if (d.icon && d.icon.startsWith('data:image')) {
+            if (isImgSrc(d.icon)) {
                 preview.innerHTML = `<img src = "${d.icon}" class="w-full h-full object-cover">`;
             } else {
                 preview.innerHTML = d.icon || '🛡️';
@@ -2280,11 +2313,18 @@ function openGradingSession(compId, keepDate = false) {
             return;
         }
 
-        let html = '<div class="space-y-3">';
+        let html = `
+        <div class="mb-4">
+            <button onclick="openActivityCheckModal('ALL')" class="w-full bg-purple-600 text-white px-4 py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-purple-700 transition flex items-center justify-center gap-2">
+                <i data-lucide="zap" class="w-5 h-5"></i>
+                تسجيل يوم نشاط للمسابقة (لجميع المجموعات)
+            </button>
+        </div>
+        <div class="space-y-3">`;
         snap.forEach(doc => {
             var g = doc.data();
             g.id = doc.id;
-            const iconHtml = (g.icon && g.icon.startsWith('data:image'))
+            const iconHtml = isImgSrc(g.icon)
                 ? `<img src="${g.icon}" class="w-full h-full object-cover">`
                 : (g.icon || '🛡️');
 
@@ -2376,9 +2416,9 @@ function openGroupGrading(groupId) {
                                                         </button>
                                                         <h4 class="font-bold mt-1">${group.name}</h4>
                                                     </div>
-                                                    <button onclick="openActivityCheckModal('${groupId}')" class="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-purple-700 transition flex items-center gap-1">
-                                                        <i data-lucide="zap" class="w-3 h-3"></i>
-                                                        يوم نشاط
+                                                    <button onclick="openGroupPointsModal()" class="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-amber-200 transition flex items-center gap-1 border border-amber-300">
+                                                        <i data-lucide="sparkles" class="w-3 h-3"></i>
+                                                        نقاط للمجموعة
                                                     </button>
                                                 </div>
                                                 <div class="space-y-2">
@@ -2547,50 +2587,71 @@ let currentActivityGroupId = null;
 
 async function openActivityCheckModal(groupId) {
     currentActivityGroupId = groupId;
-    const group = state.groups.find(g => g.id === groupId);
-    if (!group) return;
+    
+    let membersIds = [];
+    if (groupId === 'ALL') {
+        const compGroups = state.groups.filter(g => g.competitionId === currentGradingCompId);
+        compGroups.forEach(g => {
+            if(g.members) membersIds = membersIds.concat(g.members);
+        });
+    } else {
+        const group = state.groups.find(g => g.id === groupId);
+        if (!group) return;
+        membersIds = group.members || [];
+    }
 
     const list = $('#activity-students-list');
     list.innerHTML = `<div class="p-4 text-center"><i data-lucide="loader-2" class="animate-spin w-5 h-5 mx-auto"></i></div>`;
     lucide.createIcons();
 
-    // Fetch group members if not in state
-    let members = state.students.filter(s => group.members.includes(s.id));
-    if (members.length === 0) {
-        // Fallback fetch - already handled in openGroupGrading but just in case
+    let members = state.students.filter(s => membersIds.includes(s.id));
+    if (members.length === 0 && membersIds.length > 0) {
         const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"), window.firebaseOps.where("level", "==", state.currentLevel));
         const snap = await window.firebaseOps.getDocs(q);
         const all = []; snap.forEach(d => { var x = d.data(); x.id = d.id; all.push(x); });
         state.students = all;
-        members = all.filter(s => group.members.includes(s.id));
+        members = all.filter(s => membersIds.includes(s.id));
     }
 
-    list.innerHTML = members.map(s => `
-        <label class="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition">
-            <span class="font-bold text-sm">${s.name}</span>
-            <input type="checkbox" value="${s.id}" class="activity-absent-checkbox w-5 h-5 text-purple-600 rounded-lg border-gray-300">
-        </label>
-    `).join('');
+    if (members.length === 0) {
+        list.innerHTML = '<p class="text-center text-gray-500 py-4">لا يوجد طلاب لتقييمهم</p>';
+    } else {
+        list.innerHTML = members.map(s => `
+            <label class="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition">
+                <span class="font-bold text-sm">${s.name}</span>
+                <input type="checkbox" value="${s.id}" class="activity-absent-checkbox w-5 h-5 text-purple-600 rounded-lg border-gray-300">
+            </label>
+        `).join('');
+    }
 
     toggleModal('activity-check-modal', true);
 }
 
 async function submitActivityDay() {
     const comp = state.competitions.find(c => c.id === currentGradingCompId);
-    const group = state.groups.find(g => g.id === currentActivityGroupId);
     const dateVal = $('#grading-date').value;
 
-    if (!comp || !group || !dateVal) {
+    if (!comp || !dateVal) {
         showToast("خطأ في البيانات أو التاريخ", "error");
         return;
     }
 
+    let membersIds = [];
+    if (currentActivityGroupId === 'ALL') {
+        const compGroups = state.groups.filter(g => g.competitionId === comp.id);
+        compGroups.forEach(g => {
+            if(g.members) membersIds = membersIds.concat(g.members);
+        });
+    } else {
+        const group = state.groups.find(g => g.id === currentActivityGroupId);
+        if (!group) return;
+        membersIds = group.members || [];
+    }
+
     const activityPoints = comp.activityPoints || 0;
     const rawActivityAbsentPoints = comp.activityAbsentPoints || 0;
-    // Force negative for deduction consistency
     const activityAbsentPoints = rawActivityAbsentPoints > 0 ? -rawActivityAbsentPoints : rawActivityAbsentPoints;
     const absents = Array.from($$('.activity-absent-checkbox:checked')).map(cb => cb.value);
-    const members = group.members || [];
 
     const confirmBtn = $$('#activity-check-modal button')[1];
     if (confirmBtn) {
@@ -2622,12 +2683,13 @@ async function submitActivityDay() {
         // 2. Save Scores using Sequential Batch for stability
         const batch = window.firebaseOps.writeBatch(window.db);
 
-        members.forEach(sid => {
+        membersIds.forEach(sid => {
             const isAbsent = absents.includes(sid);
+            const groupId = currentActivityGroupId === 'ALL' ? (state.groups.find(g => g.members && g.members.includes(sid))?.id || '') : currentActivityGroupId;
             const scoreData = {
                 studentId: sid,
                 competitionId: comp.id,
-                groupId: group.id,
+                groupId: groupId,
                 criteriaId: isAbsent ? 'ABSENCE_RECORD' : 'ACTIVITY_DAY',
                 criteriaName: isAbsent ? 'غياب يوم نشاط' : 'حضور يوم نشاط',
                 points: isAbsent ? activityAbsentPoints : activityPoints,
@@ -3361,7 +3423,7 @@ async function renderParentDashboard() {
                 ${students.length === 0 ? '<p class="text-center text-gray-400 py-8">لا يوجد طلاب مسجلين بهذا الرقم</p>' : ''}
                 ${students.map(s => {
         const level = LEVELS[s.level] || { name: 'غير محدد', emoji: '📚' };
-        const iconHtml = (s.icon && s.icon.startsWith('data:image'))
+        const iconHtml = isImgSrc(s.icon)
             ? `<img src="${s.icon}" class="w-full h-full object-cover rounded-full">`
             : (s.icon || '👤');
         return `
@@ -3475,7 +3537,7 @@ async function openStudentReport(studentId) {
         teachers.push(data);
     });
 
-    const iconHtml = (student.icon && student.icon.startsWith('data:image'))
+    const iconHtml = isImgSrc(student.icon)
         ? `<img src="${student.icon}" class="w-full h-full object-cover rounded-full">`
         : (student.icon || '👤');
 
@@ -4292,7 +4354,9 @@ const OfflineCache = {
 // =====================================================
 // FEATURE #10: Custom Ad-hoc Points
 // =====================================================
-function openCustomPointsModal() {
+let isGroupCustomPoints = false;
+function openCustomPointsModal(isGroup = false) {
+    isGroupCustomPoints = isGroup;
     closeModal('rate-student-modal');
 
     let modal = document.getElementById('custom-points-modal');
@@ -4303,13 +4367,15 @@ function openCustomPointsModal() {
         document.body.appendChild(modal);
     }
 
+    const titleText = isGroup ? "نقاط مخصصة للمجموعة بأكملها" : "نقاط مخصصة للطالب";
+
     modal.className = 'fixed inset-0 bg-black/50 z-[200] hidden flex items-center justify-center p-4 backdrop-blur-sm';
     modal.innerHTML = `
         <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col">
             <div class="flex justify-between items-center mb-6 border-b pb-4 border-gray-100 dark:border-gray-700">
                 <h3 class="font-bold text-lg flex items-center gap-2">
                     <i data-lucide="sparkles" class="w-5 h-5 text-teal-600"></i>
-                    نقاط مخصصة
+                    ${titleText}
                 </h3>
                 <button onclick="closeModal('custom-points-modal')" class="text-gray-400 hover:text-gray-600 p-1 bg-gray-50 dark:bg-gray-700 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button>
             </div>
@@ -4354,8 +4420,12 @@ async function submitCustomPoints(e) {
     const compId = currentGradingCompId;
     const dateVal = document.getElementById('grading-date') ? document.getElementById('grading-date').value : new Date().toISOString().split('T')[0];
 
-    if(!studentId || !compId) {
-        showToast("خطأ: لم يتم تحديد الطالب أو المسابقة", "error");
+    if(!isGroupCustomPoints && !studentId) {
+        showToast("خطأ: لم يتم تحديد الطالب", "error");
+        return;
+    }
+    if(isGroupCustomPoints && !currentGradingGroupId) {
+        showToast("خطأ: لم يتم تحديد المجموعة", "error");
         return;
     }
 
@@ -4366,23 +4436,44 @@ async function submitCustomPoints(e) {
     lucide.createIcons();
 
     try {
-        const scoreData = {
-            studentId: studentId,
-            competitionId: compId,
-            criteriaId: 'CUSTOM_' + Date.now().toString(),
-            criteriaName: 'تقييم مخصص: ' + reasonStr,
-            points: points,
-            type: points > 0 ? 'custom_positive' : 'custom_negative',
-            level: state.currentLevel,
-            date: dateVal,
-            updatedAt: new Date(),
-            timestamp: Date.now(),
-            createdAt: new Date()
-        };
+        const batch = window.firebaseOps.writeBatch(window.db);
+        const criteriaIdStr = 'CUSTOM_' + Date.now().toString();
 
-        // Note: 'addDoc' automatically caches offline too based on our wrapper
-        await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), scoreData);
-        showToast(`تم رصد ${points > 0 ? '+' : ''}${points} نقطة بنجاح`, points > 0 ? "success" : "error");
+        let targetStudentIds = [];
+        if (isGroupCustomPoints) {
+            const group = state.groups.find(g => g.id === currentGradingGroupId);
+            if(group && group.members) targetStudentIds = group.members;
+        } else {
+            targetStudentIds = [studentId];
+        }
+
+        if(targetStudentIds.length === 0) {
+            showToast("لا يوجد طلاب لرصد الدرجة لهم", "error");
+            btn.innerHTML = prevText;
+            btn.disabled = false;
+            return;
+        }
+
+        targetStudentIds.forEach(sid => {
+            const scoreData = {
+                studentId: sid,
+                competitionId: compId,
+                groupId: currentGradingGroupId || '',
+                criteriaId: criteriaIdStr,
+                criteriaName: 'تقييم مخصص: ' + reasonStr,
+                points: points,
+                type: points > 0 ? 'custom_positive' : 'custom_negative',
+                level: state.currentLevel,
+                date: dateVal,
+                updatedAt: new Date(),
+                timestamp: Date.now(),
+                createdAt: new Date()
+            };
+            batch.set(window.firebaseOps.doc(window.db, "scores", "temp_" + sid + "_" + Date.now().toString()), scoreData);
+        });
+
+        await batch.commit();
+        showToast(`تم رصد ${points > 0 ? '+' : ''}${points} للمجموعة/الطالب بنجاح`, points > 0 ? "success" : "error");
         
         closeModal('custom-points-modal');
     } catch(err) {
@@ -4394,4 +4485,127 @@ async function submitCustomPoints(e) {
     }
 }
 
+// =====================================================
+// FEATURE #11: Group-Level Points (group_scores)
+// لا يتأثر أي طالب - النقاط تُضاف لاسم المجموعة فقط
+// =====================================================
+function openGroupPointsModal() {
+    const groupId = currentGradingGroupId;
+    const group = state.groups.find(g => g.id === groupId);
+    if (!group) {
+        showToast("لم يتم تحديد المجموعة", "error");
+        return;
+    }
 
+    let modal = document.getElementById('group-points-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'group-points-modal';
+        modal.dataset.dynamic = 'true';
+        document.body.appendChild(modal);
+    }
+
+    modal.className = 'fixed inset-0 bg-black/50 z-[200] hidden flex items-center justify-center p-4 backdrop-blur-sm';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center mb-6 border-b pb-4 border-gray-100 dark:border-gray-700">
+                <div>
+                    <h3 class="font-bold text-lg flex items-center gap-2">
+                        <i data-lucide="shield" class="w-5 h-5 text-amber-600"></i>
+                        نقاط المجموعة
+                    </h3>
+                    <p class="text-xs text-gray-500 mt-1">لا تُوزَّع على الطلاب — تُضاف للمجموعة فقط</p>
+                </div>
+                <button onclick="closeModal('group-points-modal')" class="text-gray-400 hover:text-gray-600 p-1 bg-gray-50 dark:bg-gray-700 rounded-full">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-3 mb-4 flex items-center gap-3 border border-amber-200 dark:border-amber-800">
+                <div class="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center bg-amber-100 dark:bg-amber-900/40 text-2xl shrink-0">
+                    ${isImgSrc(group.icon) ? `<img src="${group.icon}" class="w-full h-full object-cover">` : (group.icon || '🛡️')}
+                </div>
+                <div>
+                    <p class="font-bold text-amber-800 dark:text-amber-300">${group.name}</p>
+                    <p class="text-xs text-amber-600 dark:text-amber-400">النقاط ستُسجَّل لهذه المجموعة</p>
+                </div>
+            </div>
+
+
+            <form onsubmit="submitGroupPoints(event)" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold mb-2">سبب المنح / الخصم</label>
+                    <input type="text" id="group-points-reason" required
+                        placeholder="مثال: فوز في مسابقة، عقوبة جماعية..."
+                        class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 focus:outline-none focus:border-amber-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-bold mb-2">عدد النقاط</label>
+                    <input type="number" id="group-points-value" required placeholder="10"
+                        class="w-full bg-gray-50 dark:bg-gray-900 border border-amber-200 dark:border-amber-700 rounded-xl px-4 py-3 text-center text-2xl font-bold focus:outline-none focus:border-amber-500" dir="ltr">
+                    <p class="text-xs text-gray-500 mt-2 text-center">موجب للإضافة (+10) أو سالب للخصم (-5)</p>
+                </div>
+
+                <div class="flex gap-3 pt-4">
+                    <button type="button" onclick="closeModal('group-points-modal')" class="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 font-medium transition">إلغاء</button>
+                    <button type="submit" class="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 shadow-lg transition">تأكيد</button>
+                </div>
+            </form>
+        </div>
+    `;
+    lucide.createIcons();
+    toggleModal('group-points-modal', true);
+}
+
+async function submitGroupPoints(e) {
+    e.preventDefault();
+    const reason = document.getElementById('group-points-reason').value.trim();
+    const points = parseInt(document.getElementById('group-points-value').value);
+    const groupId = currentGradingGroupId;
+    const compId = currentGradingCompId;
+    const dateVal = document.getElementById('grading-date') ? document.getElementById('grading-date').value : new Date().toISOString().split('T')[0];
+
+    if (!reason || isNaN(points)) {
+        showToast("يرجى إدخال السبب والنقاط", "error");
+        return;
+    }
+    if (!groupId || !compId) {
+        showToast("خطأ: لم يتم تحديد المجموعة أو المسابقة", "error");
+        return;
+    }
+
+    const btn = e.submitter;
+    const prevText = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto"></i>';
+    btn.disabled = true;
+    lucide.createIcons();
+
+    try {
+        await window.firebaseOps.addDoc(
+            window.firebaseOps.collection(window.db, "group_scores"),
+            {
+                groupId: groupId,
+                competitionId: compId,
+                reason: reason,
+                points: points,
+                type: points > 0 ? 'group_bonus' : 'group_penalty',
+                level: state.currentLevel,
+                date: dateVal,
+                createdAt: new Date(),
+                timestamp: Date.now()
+            }
+        );
+
+        const group = state.groups.find(g => g.id === groupId);
+        const groupName = group ? group.name : 'المجموعة';
+        showToast(`تم رصد ${points > 0 ? '+' : ''}${points} نقطة لـ "${groupName}" بنجاح`, points > 0 ? "success" : "error");
+        closeModal('group-points-modal');
+    } catch(err) {
+        console.error("Group points error:", err);
+        showToast("حدث خطأ أثناء الحفظ", "error");
+    } finally {
+        btn.innerHTML = prevText;
+        btn.disabled = false;
+    }
+}

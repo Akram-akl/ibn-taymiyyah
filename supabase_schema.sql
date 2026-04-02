@@ -95,6 +95,21 @@ CREATE TABLE IF NOT EXISTS activity_days (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 7. Group Scores Table
+CREATE TABLE IF NOT EXISTS group_scores (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
+    competition_id UUID REFERENCES competitions(id) ON DELETE CASCADE,
+    reason TEXT,
+    points INTEGER NOT NULL,
+    type TEXT,
+    level TEXT,
+    date TEXT,
+    timestamp BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()) * 1000,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- =====================================================
 -- Enable Row Level Security (RLS)
 -- =====================================================
@@ -105,6 +120,7 @@ ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teachers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_days ENABLE ROW LEVEL SECURITY;
+ALTER TABLE group_scores ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
 -- Create Policies (Using DROP IF EXISTS for idempotency)
@@ -170,6 +186,16 @@ CREATE POLICY "Allow public insert activity_days" ON activity_days FOR INSERT WI
 CREATE POLICY "Allow public update activity_days" ON activity_days FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete activity_days" ON activity_days FOR DELETE USING (true);
 
+-- Group Scores
+DROP POLICY IF EXISTS "Allow public read group_scores" ON group_scores;
+DROP POLICY IF EXISTS "Allow public insert group_scores" ON group_scores;
+DROP POLICY IF EXISTS "Allow public update group_scores" ON group_scores;
+DROP POLICY IF EXISTS "Allow public delete group_scores" ON group_scores;
+CREATE POLICY "Allow public read group_scores" ON group_scores FOR SELECT USING (true);
+CREATE POLICY "Allow public insert group_scores" ON group_scores FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update group_scores" ON group_scores FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete group_scores" ON group_scores FOR DELETE USING (true);
+
 -- =====================================================
 -- Enable Realtime
 -- =====================================================
@@ -194,6 +220,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'activity_days') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE activity_days;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'group_scores') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE group_scores;
+    END IF;
 END $$;
 
 -- =====================================================
@@ -208,4 +237,5 @@ CREATE INDEX IF NOT EXISTS idx_students_level ON students(level);
 CREATE INDEX IF NOT EXISTS idx_students_parent_phone ON students(parent_phone);
 CREATE INDEX IF NOT EXISTS idx_groups_competition_id ON groups(competition_id);
 CREATE INDEX IF NOT EXISTS idx_teachers_level ON teachers(level);
-
+CREATE INDEX IF NOT EXISTS idx_group_scores_group_id ON group_scores(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_scores_competition_id ON group_scores(competition_id);
