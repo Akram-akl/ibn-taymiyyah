@@ -416,7 +416,6 @@ function refreshAllData() {
     if (state.currentView === 'home') renderHome();
     if (state.currentView === 'competitions') renderCompetitions();
     if (state.currentView === 'students') renderStudents();
-    if (state.currentView === 'reports') renderReports();
 }
 
 // --- Router ---
@@ -426,8 +425,7 @@ const router = {
         competitions: renderCompetitions,
         students: renderStudents,
         settings: renderSettings,
-        parent: renderParentDashboard,
-        reports: renderReports
+        parent: renderParentDashboard
     },
     cleanup() {
         // Unsubscribe from all active listeners to prevent memory leaks/lag
