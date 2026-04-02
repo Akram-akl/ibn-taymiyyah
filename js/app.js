@@ -416,6 +416,7 @@ function refreshAllData() {
     if (state.currentView === 'home') renderHome();
     if (state.currentView === 'competitions') renderCompetitions();
     if (state.currentView === 'students') renderStudents();
+    if (state.currentView === 'reports') renderReports();
 }
 
 // --- Router ---
@@ -425,7 +426,8 @@ const router = {
         competitions: renderCompetitions,
         students: renderStudents,
         settings: renderSettings,
-        parent: renderParentDashboard  // NEW: Parent Portal
+        parent: renderParentDashboard,
+        reports: renderReports
     },
     cleanup() {
         // Unsubscribe from all active listeners to prevent memory leaks/lag
@@ -3309,7 +3311,7 @@ async function generateWeeklyReport() {
         if (activityDaysTaken > 0) {
             const activityScores = scores.filter(s => s.criteriaId === 'ACTIVITY_DAY');
             const activityEarned = activityScores.reduce((sum, s) => sum + s.points, 0);
-            reportText += `🏃 نقاط النشاط: ${activityEarned} / ${totalActivityPossible}\n`;
+        reportText += `🏃 نقاط النشاط: ${activityEarned} / ${totalActivityPossible}\n`;
             totalEarned += activityEarned;
             totalPossible += totalActivityPossible;
         }
@@ -4607,5 +4609,204 @@ async function submitGroupPoints(e) {
     } finally {
         btn.innerHTML = prevText;
         btn.disabled = false;
+    }
+}
+
+// =====================================================
+// FEATURE #12: Group PDF Reports with Date Filter
+// =====================================================
+function renderReports() {
+    if (!state.isTeacher) {
+        router.navigate('home');
+        return;
+    }
+
+    const container = $('#view-container');
+    container.innerHTML = `
+        <div class="space-y-4 animate-fade-in pb-12">
+            <h2 class="text-xl font-bold mb-4">التقارير ومخرجات المعلم</h2>
+
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-3 bg-teal-100 dark:bg-teal-900/40 rounded-xl text-teal-600 dark:text-teal-400">
+                        <i data-lucide="file-text" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold">تصدير تقرير المجموعات (PDF)</h3>
+                        <p class="text-xs text-gray-500">اختر الفترة والمسابقة لتوليد كشف مفصل</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-bold mb-2">المسابقة</label>
+                        <select id="report-comp-select" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-3">
+                            ${state.competitions.filter(c => !c.level || c.level === state.currentLevel).map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm font-bold mb-2">من تاريخ</label>
+                            <input type="date" id="report-start-date" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-3 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold mb-2">إلى تاريخ</label>
+                            <input type="date" id="report-end-date" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-3 text-sm">
+                        </div>
+                    </div>
+
+                    <button onclick="generatePDFReport()" class="w-full mt-4 bg-teal-600 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-teal-700 transition flex justify-center items-center gap-2">
+                        <i data-lucide="download" class="w-5 h-5"></i>
+                        تحميل التقرير (PDF)
+                    </button>
+                    <p class="text-center text-[10px] text-gray-400 mt-2">ملاحظة: سيتم إضافة نقاط المجموعة الكلية والنقاط الفردية الخاصة بالمجموعة</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Set default dates (last 7 days to today)
+    const today = new Date();
+    const lastWeek = new Date();
+    lastWeek.setDate(today.getDate() - 7);
+    
+    // YYYY-MM-DD
+    $('#report-end-date').value = today.toISOString().split('T')[0];
+    $('#report-start-date').value = lastWeek.toISOString().split('T')[0];
+
+    lucide.createIcons();
+}
+
+async function generatePDFReport() {
+    const compId = $('#report-comp-select').value;
+    const startDate = $('#report-start-date').value;
+    const endDate = $('#report-end-date').value;
+
+    if (!compId || !startDate || !endDate) {
+        showToast("الرجاء تحديد المسابقة والفترة كاملة", "error");
+        return;
+    }
+
+    if (startDate > endDate) {
+        showToast("تاريخ البداية يجب أن يكون قبل تاريخ النهاية", "error");
+        return;
+    }
+
+    // 1. Fetch relevant groups and students
+    const groups = state.groups.filter(g => g.competitionId === compId && g.level === state.currentLevel);
+    if (!groups.length) {
+        showToast("لا توجد مجموعات في هذه المسابقة", "error");
+        return;
+    }
+
+    // Generate date range array for matching
+    const dateRange = [];
+    let curr = new Date(startDate);
+    const end = new Date(endDate);
+    while (curr <= end) {
+        dateRange.push(curr.toISOString().split('T')[0]);
+        curr.setDate(curr.getDate() + 1);
+    }
+
+    // 2. Fetch specific scores for that period
+    const sq = window.firebaseOps.query(
+        window.firebaseOps.collection(window.db, "scores"),
+        window.firebaseOps.where("competitionId", "==", compId),
+        window.firebaseOps.where("date", "in", dateRange)
+    );
+    
+    const gsq = window.firebaseOps.query(
+        window.firebaseOps.collection(window.db, "group_scores"),
+        window.firebaseOps.where("competitionId", "==", compId),
+        window.firebaseOps.where("date", "in", dateRange)
+    );
+
+    try {
+        showToast("جاري المعالجة وإعداد التقرير...", "success");
+
+        const [sSnap, gsSnap] = await Promise.all([
+            window.firebaseOps.getDocs(sq),
+            window.firebaseOps.getDocs(gsq).catch(() => ({ forEach: () => {} })) // fallback if table not ready
+        ]);
+
+        const studentScoresMap = {};
+        sSnap.forEach(d => {
+            const sc = d.data();
+            if (!studentScoresMap[sc.studentId]) studentScoresMap[sc.studentId] = 0;
+            studentScoresMap[sc.studentId] += parseInt(sc.points) || 0;
+        });
+
+        const groupScoresMap = {};
+        gsSnap.forEach(d => {
+            const gs = d.data();
+            if (!groupScoresMap[gs.groupId]) groupScoresMap[gs.groupId] = 0;
+            groupScoresMap[gs.groupId] += parseInt(gs.points) || 0;
+        });
+
+        // 3. Assemble data for PDF
+        const tableBody = [];
+
+        // Sort groups arbitrarily
+        groups.forEach(g => {
+            const gBonus = groupScoresMap[g.id] || 0;
+            // Group overall row
+            tableBody.push([
+                { content: g.name, colSpan: 2, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } },
+                { content: 'Extra Points:', styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } },
+                { content: gBonus.toString(), styles: { fillColor: (gBonus < 0 ? [255, 230, 230] : [240, 240, 240]), fontStyle: 'bold' } }
+            ]);
+
+            let gMembersSum = 0;
+            if (g.members && g.members.length > 0) {
+                g.members.forEach((mId, index) => {
+                    const st = state.students.find(s => s.id === mId);
+                    if (st) {
+                        const mScore = studentScoresMap[mId] || 0;
+                        gMembersSum += mScore;
+                        tableBody.push([
+                            (index + 1).toString(),
+                            st.name,
+                            st.studentNumber || '---',
+                            mScore.toString()
+                        ]);
+                    }
+                });
+            }
+
+            tableBody.push([
+                { content: 'Group Total Net Score:', colSpan: 3, styles: { fillColor: [220, 240, 220], fontStyle: 'bold' } },
+                { content: (gMembersSum + gBonus).toString(), styles: { fillColor: [220, 240, 220], fontStyle: 'bold' } }
+            ]);
+            // Empty row to separate
+            tableBody.push(['', '', '', '']);
+        });
+
+        // 4. Initialize jsPDF
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        doc.setFontSize(18);
+        doc.text("Group Leaderboard & Report", 105, 15, null, null, "center");
+        doc.setFontSize(12);
+        doc.text(`Period: ${startDate} to ${endDate}`, 105, 22, null, null, "center");
+
+        doc.autoTable({
+            startY: 30,
+            head: [['No.', 'Student Name', 'Mobile/ID', 'Points']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [13, 116, 110] }, // Teal-700
+            styles: {
+                font: 'helvetica',
+                halign: 'center'
+            }
+        });
+
+        doc.save(`Report_${startDate}_${endDate}.pdf`);
+
+    } catch (e) {
+        console.error("PDF Generate Error:", e);
+        showToast("حدث خطأ أثناء إعداد التقرير", "error");
     }
 }
