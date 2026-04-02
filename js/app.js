@@ -4854,14 +4854,14 @@ async function generatePDFReport() {
                                 if (st) {
                                     const score = studentScoresMap[mId] || 0;
                                     membersSum += score;
-                                    return \`
-                                        <tr style="background: \${idx % 2 === 0 ? '#f9fafb' : '#ffffff'};">
-                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center;">\${idx + 1}</td>
-                                            <td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold;">\${st.name}</td>
-                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center;" dir="ltr">\${st.studentNumber || '-'}</td>
-                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; color: \${score >= 0 ? '#059669' : '#dc2626'};">\${score}</td>
+                                    return `
+                                        <tr style="background: ${idx % 2 === 0 ? '#f9fafb' : '#ffffff'};">
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center;">${idx + 1}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: bold;">${st.name}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center;" dir="ltr">${st.studentNumber || '-'}</td>
+                                            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; color: ${score >= 0 ? '#059669' : '#dc2626'};">${score}</td>
                                         </tr>
-                                    \`;
+                                    `;
                                 }
                                 return '';
                             }).join('');
@@ -4871,26 +4871,26 @@ async function generatePDFReport() {
 
                         const netTotal = membersSum + gBonus;
 
-                        return \`
+                        return `
                         <div style="border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; page-break-inside: avoid;">
                             <!-- Group Header -->
                             <div style="background: #f3f4f6; padding: 15px; border-bottom: 2px solid #9ca3af; display: flex; justify-content: space-between; align-items: center;">
                                 <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span style="font-size: 24px;">\${g.icon && !isImgSrc(g.icon) ? g.icon : '🛡️'}</span>
-                                    <h3 style="margin: 0; font-size: 20px; font-weight: bold;">\${g.name}</h3>
+                                    <span style="font-size: 24px;">${g.icon && !isImgSrc(g.icon) ? g.icon : '🛡️'}</span>
+                                    <h3 style="margin: 0; font-size: 20px; font-weight: bold;">${g.name}</h3>
                                 </div>
-                                <div style="font-size: 22px; font-weight: bold; color: \${netTotal >= 0 ? '#0d9488' : '#dc2626'};">
-                                    الصافي: \${netTotal}
+                                <div style="font-size: 22px; font-weight: bold; color: ${netTotal >= 0 ? '#0d9488' : '#dc2626'};">
+                                    الصافي: ${netTotal}
                                 </div>
                             </div>
                             
                             <!-- Group Specific Score -->
-                            \${gBonus !== 0 ? \`
-                            <div style="padding: 10px 15px; background: \${gBonus > 0 ? '#ecfdf5' : '#fef2f2'}; border-bottom: 1px solid #e5e7eb; border-left: 4px solid \${gBonus > 0 ? '#10b981' : '#ef4444'}; font-weight: bold; font-size: 14px; text-align: right; display: flex; justify-content: space-between;">
+                            ${gBonus !== 0 ? `
+                            <div style="padding: 10px 15px; background: ${gBonus > 0 ? '#ecfdf5' : '#fef2f2'}; border-bottom: 1px solid #e5e7eb; border-left: 4px solid ${gBonus > 0 ? '#10b981' : '#ef4444'}; font-weight: bold; font-size: 14px; text-align: right; display: flex; justify-content: space-between;">
                                 <span>نقاط المجموعة المستقلة (بونص/خصم):</span>
-                                <span style="color: \${gBonus > 0 ? '#059669' : '#dc2626'};" dir="ltr">\${gBonus > 0 ? '+' : ''}\${gBonus}</span>
+                                <span style="color: ${gBonus > 0 ? '#059669' : '#dc2626'};" dir="ltr">${gBonus > 0 ? '+' : ''}${gBonus}</span>
                             </div>
-                            \` : ''}
+                            ` : ''}
 
                             <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 14px;">
                                 <thead>
@@ -4902,15 +4902,15 @@ async function generatePDFReport() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    \${membersRows}
+                                    ${membersRows}
                                     <tr style="background: #fdfce8;">
                                         <td colspan="3" style="padding: 10px; border: 1px solid #d1d5db; font-weight: bold; text-align: left;">مجموع نقاط الطلاب فقط:</td>
-                                        <td style="padding: 10px; border: 1px solid #d1d5db; text-align: center; font-weight: bold; color: #b45309;">\${membersSum}</td>
+                                        <td style="padding: 10px; border: 1px solid #d1d5db; text-align: center; font-weight: bold; color: #b45309;">${membersSum}</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
-                        \`;
+                        `;
                     }).join('')}
                 </div>
                 
