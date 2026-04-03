@@ -4552,9 +4552,15 @@ window.showDayDetails = (dateStr) => {
 };
 
 function contactTeacher(studentName, teacherPhone) {
-    const message = encodeURIComponent(`السلام عليكم ورحمة الله وبركاته،
-  (${studentName})، `);
+    let messageText = "";
+    
+    if (state.isParent) {
+        messageText = `السلام عليكم ورحمة الله وبركاته.. أنا ولي أمر الطالب (${studentName})\nكنت أريد أن أستفسر منك عن بعض الأمور`;
+    } else {
+        messageText = `السلام عليكم ورحمة الله وبركاته`;
+    }
 
+    const message = encodeURIComponent(messageText);
     window.open(`https://wa.me/${teacherPhone}?text=${message}`, '_blank');
 }
 
