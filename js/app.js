@@ -3105,7 +3105,7 @@ async function submitScore(criteriaId, points, criteriaName, type) {
     };
 
     try {
-        // Query by student+date and find matching criteriaId client-side
+        // Query by student+date
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
             window.firebaseOps.where("studentId", "==", currentRateStudentId),
@@ -3113,11 +3113,20 @@ async function submitScore(criteriaId, points, criteriaName, type) {
         );
 
         const snap = await window.firebaseOps.getDocs(q);
-        const existingDoc = snap.docs.find(d => d.data().criteriaId === criteriaId && d.data().type === type);
+        // Find ALL records for this criteriaId (ignore type to allow replacement)
+        const criteriaDocs = snap.docs.filter(d => d.data().criteriaId === criteriaId);
 
-        if (existingDoc) {
-            // Update existing record instead of creating duplicate
-            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "scores", existingDoc.id), data);
+        if (criteriaDocs.length > 0) {
+            // Update the FIRST record instead of creating duplicate
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "scores", criteriaDocs[0].id), data);
+            
+            // Safety: Delete any accidental duplicates for the same criteria on the same day
+            if (criteriaDocs.length > 1) {
+                for (let i = 1; i < criteriaDocs.length; i++) {
+                    await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, "scores", criteriaDocs[i].id));
+                }
+            }
+            
             showToast(`تم تعديل الدرجة إلى ${points}`, "success");
         } else {
             // Create new record
