@@ -200,28 +200,87 @@ function backToAuthHome() {
     $('#auth-options-panel').classList.remove('hidden');
 }
 
-function performStudentLogin() {
+async function verifyStudentLevel() {
     const levelKey = $('#student-level-select').value;
-    const password = $('#student-password-input').value;
+    const password = $('#student-level-password-input').value;
 
     if (!levelKey || !LEVELS[levelKey]) {
         showToast("الرجاء اختيار المرحلة", "error");
         return;
     }
 
-    // Check Global Password for the SPECIFIC selected level only
     const correctPass = LEVELS[levelKey].studentPass;
 
     if (password === correctPass) {
-        state.currentLevel = levelKey;
+        // Fetch students for this level
+        try {
+            const q = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "students"),
+                window.firebaseOps.where("level", "==", levelKey)
+            );
+            const snap = await window.firebaseOps.getDocs(q);
+            
+            const students = [];
+            snap.forEach(doc => {
+                const data = doc.data();
+                data.id = doc.id;
+                students.push(data);
+            });
+
+            // Populate select
+            const nameSelect = $('#student-name-select');
+            nameSelect.innerHTML = '<option value="" disabled selected>-- اختر اسمك --</option>' + 
+                students.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+            
+            if(students.length === 0) {
+                showToast("لا يوجد طلاب مسجلين في هذه المرحلة", "error");
+                return;
+            }
+
+            // Store level for step 2
+            window._tempStudentLevel = levelKey;
+            window._tempLevelStudents = students;
+
+            $('#student-step-1').classList.add('hidden');
+            $('#student-step-2').classList.remove('hidden');
+        } catch(e) {
+            console.error(e);
+            showToast("خطأ في جلب بيانات الطلاب", "error");
+        }
+    } else {
+        showToast("كلمة مرور المرحلة غير صحيحة", "error");
+    }
+}
+
+function performStudentLogin() {
+    const studentId = $('#student-name-select').value;
+    const personalPassword = $('#student-personal-password-input').value;
+
+    if (!studentId) {
+        showToast("الرجاء اختيار اسمك", "error");
+        return;
+    }
+
+    const student = window._tempLevelStudents.find(s => s.id === studentId);
+    
+    if (!student) {
+        showToast("طالب غير موجود", "error");
+        return;
+    }
+
+    if (!student.password) {
+        showToast("لم يتم تعيين كلمة مرور شخصية لك بعد، راجع المعلم", "error");
+        return;
+    }
+
+    if (personalPassword === student.password) {
+        state.currentLevel = window._tempStudentLevel;
         state.isTeacher = false;
-        state.studentPassword = password; // Store for permission checks
+        state.studentPassword = personalPassword;
+        window._currentLoggedInStudentId = student.id; // Store current student
         completeLogin();
     } else {
-        // Also check if it's an individual student password (optional feature mentioned in code comments)
-        // If we want to allow individual student passwords, we'd need to fetch students first.
-        // For now, based on user request "Strict Level Password", we enforce the global level password.
-        showToast("كلمة المرور غير صحيحة لهذه المرحلة", "error");
+        showToast("كلمة المرور الشخصية غير صحيحة", "error");
     }
 }
 
@@ -480,6 +539,23 @@ const router = {
 
 function renderHome() {
     const container = $('#view-container');
+
+    // If it's a student, show their dashboard instead of leaderboard
+    if (!state.isTeacher && !state.isParent && window._currentLoggedInStudentId) {
+        // Fetch their doc just in case
+        window.firebaseOps.getDoc(window.firebaseOps.doc(window.db, "students", window._currentLoggedInStudentId))
+            .then(docSnap => {
+                if(docSnap.exists()) {
+                    window._currentStudentRecord = docSnap.data();
+                    window._currentStudentRecord.id = docSnap.id;
+                    openStudentReport(window._currentLoggedInStudentId);
+                } else {
+                    container.innerHTML = '<p class="text-center p-8">خطأ: لم يتم العثور على الطالب</p>';
+                }
+            });
+        return;
+    }
+
     container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
             <div class="bg-gradient-to-br from-teal-500 to-emerald-600 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
@@ -1664,12 +1740,49 @@ function getGradingModalsHTML() {
                                                     <button onclick="closeModal('rate-student-modal')"><i data-lucide="x"></i></button>
                                                 </div>
                                                 
+                                                <!-- Quran tracking inputs (Teacher grading) -->
+                                                 <div id="rate-quran-section" class="hidden mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right space-y-3">
+                                                     <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">📖 تسجيل الحفظ / المراجعة</h4>
+                                                     <!-- Type selector -->
+                                                     <div class="grid grid-cols-2 gap-2">
+                                                         <button id="btn-type-hifz" onclick="setQuranType('memorization')" class="py-2 rounded-lg text-xs font-bold border-2 border-emerald-400 bg-emerald-100 text-emerald-700">📝 حفظ</button>
+                                                         <button id="btn-type-muraja" onclick="setQuranType('review')" class="py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500">🔄 مراجعة</button>
+                                                     </div>
+                                                     <input type="hidden" id="rate-quran-type" value="memorization">
+                                                     <!-- Start range -->
+                                                     <div>
+                                                         <p class="text-[10px] font-bold text-gray-500 mb-1">من (البداية)</p>
+                                                         <div class="grid grid-cols-2 gap-2">
+                                                             <select id="rate-quran-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('start')">
+                                                                 <option value="">السورة..</option>
+                                                             </select>
+                                                             <select id="rate-quran-start-aya" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                                                 <option value="">الآية..</option>
+                                                             </select>
+                                                         </div>
+                                                     </div>
+                                                     <!-- End range -->
+                                                     <div>
+                                                         <p class="text-[10px] font-bold text-gray-500 mb-1">إلى (النهاية)</p>
+                                                         <div class="grid grid-cols-2 gap-2">
+                                                             <select id="rate-quran-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('end')">
+                                                                 <option value="">السورة..</option>
+                                                             </select>
+                                                             <select id="rate-quran-end-aya" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                                                 <option value="">الآية..</option>
+                                                             </select>
+                                                         </div>
+                                                     </div>
+                                                     <!-- Save button -->
+                                                     <button onclick="submitQuranRecord()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
+                                                         <i data-lucide="save" class="w-4 h-4"></i>
+                                                         حفظ المقطع القرآني
+                                                     </button>
+                                                 </div>                       
                                                 <div id="rate-quran-plan-display" class="hidden mb-3 text-sm text-center bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 p-2 rounded-lg font-bold text-teal-700 dark:text-teal-400"></div>
 
                                                 <p id="rate-date-display" class="text-center text-sm text-gray-500 mb-4 font-bold bg-gray-100 dark:bg-gray-700 py-1 rounded-lg"></p>
                                                 
-                                                <!-- Quran tracking inputs (Teacher grading) -->
-                                                <div id="rate-quran-section" class="hidden mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right">
                                                     <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 mb-2">تحديد المقطع المُسمّع بالقرآن (اختياري)</h4>
                                                     <div class="grid grid-cols-3 gap-2">
                                                          <div>
@@ -1946,64 +2059,141 @@ function applyQuranPlan() {
 // Assuming groups are sub-collections or root collections with competitionId?
 // For simplicity in this flat structure, let's say groups are root but have 'competitionId'.
 
-async function initRateQuranSelectors() {
-    const suraSelect = document.getElementById('rate-quran-sura');
-    if (!suraSelect || suraSelect.options.length > 2) return; // already initialized, "السورة.." + options
-    
-    // clear and reset
-    suraSelect.innerHTML = '<option value="">السورة..</option>';
-    document.getElementById('rate-quran-from').innerHTML = '<option value="">من آية..</option>';
-    document.getElementById('rate-quran-to').innerHTML = '<option value="">إلى آية..</option>';
-    document.getElementById('rate-quran-from').disabled = true;
-    document.getElementById('rate-quran-to').disabled = true;
-
-    if (typeof QuranService === 'undefined') return;
-
-    await QuranService.loadData();
-    const suras = QuranService.getSuras();
-    suras.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.number;
-        opt.textContent = `${s.number}. ${s.name}`;
-        suraSelect.appendChild(opt);
-    });
+// Set Quran type (memorization/review) UI
+function setQuranType(type) {
+    document.getElementById('rate-quran-type').value = type;
+    const hifzBtn = document.getElementById('btn-type-hifz');
+    const murajaBtn = document.getElementById('btn-type-muraja');
+    if (type === 'memorization') {
+        hifzBtn.className = 'py-2 rounded-lg text-xs font-bold border-2 border-emerald-400 bg-emerald-100 text-emerald-700';
+        murajaBtn.className = 'py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500';
+    } else {
+        murajaBtn.className = 'py-2 rounded-lg text-xs font-bold border-2 border-blue-400 bg-blue-100 text-blue-700';
+        hifzBtn.className = 'py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500';
+    }
 }
 
-async function updateRateQuranAyaSelectors() {
-    const suraSelect = document.getElementById('rate-quran-sura');
-    const ayaFrom = document.getElementById('rate-quran-from');
-    const ayaTo = document.getElementById('rate-quran-to');
-    
-    if(!suraSelect || !ayaFrom || !ayaTo) return;
+// Initialize both sura selectors
+async function initRateQuranSelectors() {
+    const startSura = document.getElementById('rate-quran-start-sura');
+    if (!startSura || startSura.options.length > 1) return;
+
+    if (typeof QuranService === 'undefined') return;
+    await QuranService.loadData();
+    const suras = QuranService.getSuras();
+
+    let opts = '';
+    suras.forEach(s => { opts += `<option value="${s.number}">${s.number}. ${s.name}</option>`; });
+
+    document.getElementById('rate-quran-start-sura').innerHTML = '<option value="">السورة..</option>' + opts;
+    document.getElementById('rate-quran-end-sura').innerHTML = '<option value="">السورة..</option>' + opts;
+}
+
+// Update ayah selectors for start or end
+async function updateQuranAyas(which) {
+    const suraId = which === 'start' ? 'rate-quran-start-sura' : 'rate-quran-end-sura';
+    const ayaId  = which === 'start' ? 'rate-quran-start-aya'  : 'rate-quran-end-aya';
+    const suraSelect = document.getElementById(suraId);
+    const ayaSelect  = document.getElementById(ayaId);
+    if (!suraSelect || !ayaSelect) return;
 
     if (!suraSelect.value) {
-        ayaFrom.innerHTML = '<option value="">من آية..</option>';
-        ayaTo.innerHTML = '<option value="">إلى آية..</option>';
-        ayaFrom.disabled = true;
-        ayaTo.disabled = true;
+        ayaSelect.innerHTML = '<option value="">الآية..</option>';
+        ayaSelect.disabled = true;
         return;
     }
 
-    const suraNo = parseInt(suraSelect.value);
     if (typeof QuranService === 'undefined') return;
-    
     await QuranService.loadData();
-    const ayas = QuranService.getAyahs(suraNo);
-    
-    let optionsHTML = '';
-    ayas.forEach(a => {
-        optionsHTML += `<option value="${a.aya_no}">${a.aya_no}</option>`;
-    });
+    const ayas = QuranService.getAyahs(parseInt(suraSelect.value));
+    ayaSelect.innerHTML = ayas.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
+    ayaSelect.disabled = false;
+    if (which === 'end' && ayas.length > 0) ayaSelect.value = ayas[ayas.length - 1].aya_no;
+}
 
-    ayaFrom.innerHTML = optionsHTML;
-    ayaTo.innerHTML = optionsHTML;
-    
-    ayaFrom.disabled = false;
-    ayaTo.disabled = false;
-    
-    // Set default "to" to the last aya
-    if (ayas.length > 0) {
-        ayaTo.value = ayas[ayas.length - 1].aya_no;
+// Submit Quran record independently (separate from criteria scores)
+async function submitQuranRecord() {
+    if (!currentRateStudentId || !currentGradingCompId) return;
+
+    const dateVal = $('#grading-date').value;
+    if (!dateVal) { showToast('يرجى اختيار التاريخ', 'error'); return; }
+
+    const quranType = document.getElementById('rate-quran-type').value || 'memorization';
+    const startSuraEl = document.getElementById('rate-quran-start-sura');
+    const startAyaEl  = document.getElementById('rate-quran-start-aya');
+    const endSuraEl   = document.getElementById('rate-quran-end-sura');
+    const endAyaEl    = document.getElementById('rate-quran-end-aya');
+
+    if (!startSuraEl.value || !startAyaEl.value || !endSuraEl.value || !endAyaEl.value) {
+        showToast('يرجى تحديد المقطع كاملاً (سورة وآية بداية ونهاية)', 'error'); return;
+    }
+
+    const startSuraNo = parseInt(startSuraEl.value);
+    const startAya    = parseInt(startAyaEl.value);
+    const endSuraNo   = parseInt(endSuraEl.value);
+    const endAya      = parseInt(endAyaEl.value);
+
+    const startSuraName = startSuraEl.options[startSuraEl.selectedIndex].text.replace(/^\d+\.\s*/, '');
+    const endSuraName   = endSuraEl.options[endSuraEl.selectedIndex].text.replace(/^\d+\.\s*/, '');
+
+    const typeName = quranType === 'memorization' ? 'حفظ قرآن' : 'مراجعة قرآن';
+    const sectionText = startSuraNo === endSuraNo
+        ? `سورة ${startSuraName} (${startAya} - ${endAya})`
+        : `سورة ${startSuraName} (${startAya}) → سورة ${endSuraName} (${endAya})`;
+
+    // Build Uthmanic text
+    let quranText = '';
+    if (typeof QuranService !== 'undefined' && QuranService.isLoaded()) {
+        if (startSuraNo === endSuraNo) {
+            const ayas = QuranService.getAyahs(startSuraNo).filter(a => a.aya_no >= startAya && a.aya_no <= endAya);
+            quranText = ayas.map(a => `${a.aya_text} ﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾`).join(' ');
+        } else {
+            const startAyas = QuranService.getAyahs(startSuraNo).filter(a => a.aya_no >= startAya);
+            const endAyas   = QuranService.getAyahs(endSuraNo).filter(a => a.aya_no <= endAya);
+            quranText = [...startAyas, ...endAyas].map(a => `${a.aya_text} ﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾`).join(' ');
+        }
+    }
+
+    const data = {
+        studentId: currentRateStudentId,
+        competitionId: currentGradingCompId,
+        groupId: currentGradingGroupId,
+        criteriaId: quranType === 'memorization' ? 'QURAN_MEMORIZATION' : 'QURAN_REVIEW',
+        criteriaName: typeName,
+        points: 0,
+        quranType,
+        quranStartSura: startSuraNo,
+        quranStartAyah: startAya,
+        quranEndSura: endSuraNo,
+        quranEndAyah: endAya,
+        quranSection: sectionText,
+        quranText,
+        type: 'quran',
+        level: state.currentLevel,
+        date: dateVal,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        timestamp: Date.now()
+    };
+
+    try {
+        // Check if record already exists for this student+date+type
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'scores'),
+            window.firebaseOps.where('studentId', '==', currentRateStudentId),
+            window.firebaseOps.where('date', '==', dateVal),
+            window.firebaseOps.where('criteriaId', '==', data.criteriaId)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        if (!snap.empty) {
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, 'scores', snap.docs[0].id), data);
+        } else {
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, 'scores'), data);
+        }
+        showToast(`✅ تم حفظ ${typeName}: ${sectionText}`, 'success');
+    } catch(e) {
+        console.error(e);
+        showToast('خطأ في حفظ المقطع القرآني', 'error');
     }
 }
 
@@ -2738,6 +2928,9 @@ function openRateStudent(studentId) {
     if (quranSec) {
         if (state.quranTrackingEnabled) {
             quranSec.classList.remove('hidden');
+            // Reset type to memorization
+            document.getElementById('rate-quran-type').value = 'memorization';
+            setQuranType('memorization');
             initRateQuranSelectors();
         } else {
             quranSec.classList.add('hidden');
@@ -3849,7 +4042,16 @@ async function openStudentReport(studentId) {
     container.innerHTML = '<div class="flex justify-center p-8"><i data-lucide="loader-2" class="animate-spin w-8 h-8 text-amber-600"></i></div>';
     lucide.createIcons();
 
-    const student = state.parentStudents.find(s => s.id === studentId);
+    let student = null;
+    if (state.isParent) {
+        student = state.parentStudents.find(s => s.id === studentId);
+    } else {
+        student = window._currentStudentRecord || state.students.find(s => s.id === studentId);
+        if(!student && window._tempLevelStudents) {
+            student = window._tempLevelStudents.find(s => s.id === studentId);
+        }
+    }
+
     if (!student) {
         container.innerHTML = '<p class="text-center text-red-500 p-8">الطالب غير موجود</p>';
         return;
@@ -3975,16 +4177,33 @@ async function openStudentReport(studentId) {
         `;
     }
 
-    container.innerHTML = `
-        <div class="p-4 pb-24 max-w-lg mx-auto">
-            <!-- Back Button -->
+    const isStudent = (!state.isParent && !state.isTeacher);
+
+    let topButtonsHTML = '';
+    if (state.isParent) {
+        topButtonsHTML = `
             <button onclick="renderParentDashboard()" class="flex items-center gap-2 text-gray-500 hover:text-amber-600 mb-4 font-bold">
                 <i data-lucide="arrow-right" class="w-4 h-4"></i>
                 العودة لقائمة الأبناء
             </button>
+        `;
+    } else if (isStudent) {
+        topButtonsHTML = `
+            <div class="flex gap-2 mb-4">
+                <button onclick="openQuranSearchModal()" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                    <i data-lucide="book" class="w-5 h-5"></i>
+                    بحث في المصحف
+                </button>
+            </div>
+        `;
+    }
+
+    container.innerHTML = `
+        <div class="p-4 pb-24 max-w-lg mx-auto">
+            ${topButtonsHTML}
 
             <!-- Student Header -->
-            <div class="bg-gradient-to-r from-teal-500 to-teal-600 rounded-2xl p-6 mb-6 text-white shadow-lg">
+            <div class="bg-gradient-to-r ${isStudent ? 'from-teal-600 to-teal-800' : 'from-teal-500 to-teal-600'} rounded-2xl p-6 mb-6 text-white shadow-lg">
                 <div class="flex items-center gap-4">
                     <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center text-3xl border-4 border-white/50 overflow-hidden">
                         ${iconHtml}
@@ -4061,24 +4280,6 @@ async function openStudentReport(studentId) {
                         <p class="text-xl font-bold text-red-700 dark:text-red-400">${absenceNoExcuse}</p>
                         <p class="text-xs text-red-600">بدون عذر ▸</p>
                     </div>
-                </div>
-            </div>
-
-            <!-- Criteria Breakdown -->
-            <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border">
-                <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-4 h-4 text-blue-600"></i> تفصيل المعايير</h3>
-                ${Object.keys(criteriaStats).length === 0 ? '<p class="text-center text-gray-400 text-sm py-2">لا توجد درجات مسجلة بعد</p>' : ''}
-                <div class="space-y-2">
-                    ${Object.entries(criteriaStats).map(([name, data]) => `
-                    <div class="flex items-center justify-between bg-gray-50 dark:bg-gray-700 rounded-lg p-2">
-                        <span class="text-sm font-medium">${name}</span>
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs text-green-600 font-bold">+${data.positive}</span>
-                            <span class="text-xs text-red-600 font-bold">${data.negative}</span>
-                            <span class="text-xs text-gray-400">(${data.count})</span>
-                        </div>
-                    </div>
-                    `).join('')}
                 </div>
             </div>
 
@@ -4202,55 +4403,48 @@ window.renderStudentCalendar = (year, month) => {
 window.showDayDetails = (dateStr) => {
     const scores = window._currentStudentScores || [];
     const dayScores = scores.filter(s => s.date === dateStr);
-    
     if (dayScores.length === 0) return;
-    
+
+    // Group by criteriaId to avoid duplicates - keep last entry per criteriaId
+    const grouped = {};
+    dayScores.forEach(s => { grouped[s.criteriaId || s.criteriaName || Math.random()] = s; });
+    const uniqueScores = Object.values(grouped);
+
     let html = `<div class="space-y-3">`;
-    let hasAlert = false;
-    
-    dayScores.forEach(s => {
+
+    uniqueScores.forEach(s => {
         const isPositive = s.points > 0;
         const isAbsence = s.criteriaId === 'ABSENCE_RECORD';
-        
-        if (!isPositive || isAbsence) hasAlert = true;
-        
+        const isQuran = s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW';
+
+        let badge = '';
+        if (isQuran) {
+            badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-teal-100 text-teal-700">${s.criteriaId === 'QURAN_MEMORIZATION' ? '📝 حفظ' : '🔄 مراجعة'}</span>`;
+        } else if (isAbsence) {
+            badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-red-100 text-red-700">غياب ❌</span>`;
+        } else {
+            badge = `<span class="text-sm font-bold px-2 py-1 rounded-lg ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${isPositive ? '+' : ''}${s.points}</span>`;
+        }
+
         html += `
         <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
             <div class="flex justify-between items-center mb-2">
                 <span class="font-bold text-sm text-gray-800 dark:text-gray-100">${s.criteriaName || (isAbsence ? 'غياب' : 'تقييم')}</span>
-                <span class="text-sm font-bold px-2 py-1 rounded-lg ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${isPositive ? '+' : ''}${s.points}</span>
+                ${badge}
             </div>
             ${s.quranSection ? `
-            <div class="mt-3 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
-                <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-2">📖 المقطع القرآني المسمّع:</p>
-                <p class="text-[11px] text-gray-600 dark:text-gray-400 mb-2">${s.quranSection}</p>
-                ${s.quranText ? `<p class="font-quran text-gray-800 dark:text-gray-200 text-sm leading-loose bg-white dark:bg-gray-800 p-3 rounded border border-teal-50 dark:border-gray-700" dir="rtl">${s.quranText}</p>` : ''}
+            <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
+                <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع:</p>
+                <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${s.quranSection}</p>
+                ${s.quranText ? `<p class="font-quran text-gray-800 dark:text-gray-200 text-base leading-loose bg-white dark:bg-gray-800 p-3 rounded" dir="rtl">${s.quranText}</p>` : ''}
             </div>
             ` : ''}
         </div>
         `;
     });
-    
-    if (hasAlert) {
-        html += `
-        <div class="bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-xl p-3 mt-4 text-center">
-            <i data-lucide="alert-triangle" class="w-6 h-6 text-orange-500 mx-auto mb-2"></i>
-            <p class="text-xs font-bold text-orange-800 dark:text-orange-300">مطلوب من ولي الأمر:</p>
-            <p class="text-xs text-orange-700 dark:text-orange-400 mt-1">يُرجى الانتباه من الدرجات السلبية أو أيام الغياب، ومُتابعة مستوى الطالب لرفع تحصيله في الأيام القادمة.</p>
-        </div>
-        `;
-    } else {
-        html += `
-        <div class="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-xl p-3 mt-4 text-center">
-            <i data-lucide="star" class="w-6 h-6 text-green-500 mx-auto mb-2"></i>
-            <p class="text-xs font-bold text-green-800 dark:text-green-300">رسالة لولي الأمر:</p>
-            <p class="text-xs text-green-700 dark:text-green-400 mt-1">أداء الطالب ممتاز في هذا اليوم، بارك الله فيه واستمروا في تشجيعه.</p>
-        </div>
-        `;
-    }
-    
+
     html += `</div>`;
-    
+
     let modal = document.getElementById('day-scores-modal');
     if (!modal) {
         modal = document.createElement('div');
@@ -4261,7 +4455,7 @@ window.showDayDetails = (dateStr) => {
     modal.innerHTML = `
         <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-700 pb-3">
-                <h3 class="font-bold text-lg text-blue-700 dark:text-blue-400">تفاصيل يوم ${dateStr}</h3>
+                <h3 class="font-bold text-lg text-blue-700 dark:text-blue-400">📅 تفاصيل يوم ${dateStr}</h3>
                 <button onclick="document.getElementById('day-scores-modal').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 rounded-full p-2">
                     <i data-lucide="x" class="w-4 h-4"></i>
                 </button>
