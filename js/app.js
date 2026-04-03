@@ -122,6 +122,7 @@ function loadAuth() {
     const savedLevel = localStorage.getItem('auth_level');
     const savedRole = localStorage.getItem('auth_role');
     const savedParentPhone = localStorage.getItem('auth_parent_phone');
+    const savedStudentId = localStorage.getItem('auth_student_id');
 
     // Parent login
     if (savedRole === 'parent' && savedParentPhone) {
@@ -133,6 +134,9 @@ function loadAuth() {
     if (savedLevel && LEVELS[savedLevel]) {
         state.currentLevel = savedLevel;
         state.isTeacher = savedRole === 'teacher';
+        if (savedRole === 'student' && savedStudentId) {
+            window._currentLoggedInStudentId = savedStudentId;
+        }
         return true; // Logged in
     }
     return false; // Not logged in
@@ -145,6 +149,9 @@ function saveAuth() {
     } else if (state.currentLevel) {
         localStorage.setItem('auth_level', state.currentLevel);
         localStorage.setItem('auth_role', state.isTeacher ? 'teacher' : 'student');
+        if (!state.isTeacher && window._currentLoggedInStudentId) {
+            localStorage.setItem('auth_student_id', window._currentLoggedInStudentId);
+        }
     }
 }
 
@@ -422,7 +429,8 @@ function completeLogin() {
     startGlobalDataSync();
 
     // Load Data
-    router.navigate('home');
+    const startView = state.isParent ? 'parent' : (state.isTeacher ? 'home' : 'students');
+    router.navigate(startView);
 
     showToast(`مرحباً بك في ${LEVELS[state.currentLevel].name}`);
 
@@ -902,10 +910,10 @@ function updateCompetitionsListUI() {
 function renderStudents() {
     const container = $('#view-container');
 
-    // If it's a student, show their dashboard directly in this 'Students/Profile' tab
     if (!state.isTeacher && !state.isParent && window._currentLoggedInStudentId) {
         window.firebaseOps.getDoc(window.firebaseOps.doc(window.db, "students", window._currentLoggedInStudentId))
             .then(docSnap => {
+                if (state.currentView !== 'students') return; // Prevent async overwrite if user navigated away
                 if(docSnap.exists()) {
                     window._currentStudentRecord = docSnap.data();
                     window._currentStudentRecord.id = docSnap.id;
@@ -1403,54 +1411,18 @@ function getStudentModalHTML() {
                      
                      <!-- Plans -->
                      <div id="quran-plan-section" class="space-y-4 hidden mt-3">
-                         <!-- Memorization Plan -->
-                         <div class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800">
-                             <label class="block text-xs font-bold text-emerald-700 dark:text-emerald-400 mb-2 uppercase tracking-wider">خطة الحفظ (قرآن)</label>
-                             <div class="grid grid-cols-2 gap-3 mb-3">
-                                 <div class="space-y-1">
-                                     <p class="text-[10px] font-bold text-gray-400">من (البداية)</p>
-                                     <div class="flex gap-1">
-                                         <select id="plan-mem-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-xs font-bold" onchange="updateQuranAyas('plan-mem-start')"><option value="">السورة..</option></select>
-                                         <select id="plan-mem-start-aya" class="w-16 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-2 text-xs" disabled><option value="">الآية</option></select>
-                                     </div>
-                                 </div>
-                                 <div class="space-y-1">
-                                     <p class="text-[10px] font-bold text-gray-400">إلى (النهاية)</p>
-                                     <div class="flex gap-1">
-                                         <select id="plan-mem-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-xs font-bold" onchange="updateQuranAyas('plan-mem-end')"><option value="">السورة..</option></select>
-                                         <select id="plan-mem-end-aya" class="w-16 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-2 text-xs" disabled><option value="">الآية</option></select>
-                                     </div>
-                                 </div>
-                             </div>
-                             <input type="hidden" id="student-memorization">
-                             <button type="button" onclick="buildPlanText('memorization')" class="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-700 transition shadow-sm mb-2">💾 اعتماد خطة الحفظ</button>
-                             <div id="student-mem-display" class="mt-2 text-xs bg-white/80 dark:bg-gray-800/80 text-emerald-700 dark:text-emerald-300 p-3 rounded-xl border border-emerald-200 dark:border-emerald-700 hidden text-center font-bold shadow-inner"></div>
-                         </div>
-
-                         <!-- Review Plan -->
-                         <div class="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-800">
-                             <label class="block text-xs font-bold text-blue-700 dark:text-blue-400 mb-2 uppercase tracking-wider">خطة المراجعة (قرآن)</label>
-                             <div class="grid grid-cols-2 gap-3 mb-3">
-                                 <div class="space-y-1">
-                                     <p class="text-[10px] font-bold text-gray-400">من (البداية)</p>
-                                     <div class="flex gap-1">
-                                         <select id="plan-rev-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-xs font-bold" onchange="updateQuranAyas('plan-rev-start')"><option value="">السورة..</option></select>
-                                         <select id="plan-rev-start-aya" class="w-16 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-2 text-xs" disabled><option value="">الآية</option></select>
-                                     </div>
-                                 </div>
-                                 <div class="space-y-1">
-                                     <p class="text-[10px] font-bold text-gray-400">إلى (النهاية)</p>
-                                     <div class="flex gap-1">
-                                         <select id="plan-rev-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-xs font-bold" onchange="updateQuranAyas('plan-rev-end')"><option value="">السورة..</option></select>
-                                         <select id="plan-rev-end-aya" class="w-16 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-2 text-xs" disabled><option value="">الآية</option></select>
-                                     </div>
-                                 </div>
-                             </div>
-                             <input type="hidden" id="student-review">
-                             <button type="button" onclick="buildPlanText('review')" class="w-full bg-blue-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-blue-700 transition shadow-sm mb-2">💾 اعتماد خطة المراجعة</button>
-                             <div id="student-rev-display" class="mt-2 text-xs bg-white/80 dark:bg-gray-800/80 text-blue-700 dark:text-blue-300 p-3 rounded-xl border border-blue-200 dark:border-blue-700 hidden text-center font-bold shadow-inner"></div>
+                         <input type="hidden" id="student-memorization">
+                         <input type="hidden" id="student-review">
+                         <div class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800 text-center">
+                             <h4 class="font-bold text-emerald-800 dark:text-emerald-400 mb-2">إدارة خطة الحفظ والمراجعة</h4>
+                             <p class="text-xs text-gray-500 mb-3">تقسيم المنهج بشكل تلقائي على أيام الأسبوع</p>
+                             <button type="button" id="btn-manage-curriculum" class="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-700 transition shadow-sm flex items-center justify-center gap-2">
+                                 <i data-lucide="calendar"></i>
+                                 إدارة الخطة الزمنية
+                             </button>
                          </div>
                      </div>
+
 
                      
                      <div class="mb-2">
@@ -1872,12 +1844,7 @@ function openAddStudentModal() {
     
     const quranSection = document.getElementById('quran-plan-section');
     if (quranSection) {
-        if (state.quranTrackingEnabled && state.isTeacher) {
-            quranSection.classList.remove('hidden');
-            initQuranPlanSelectors();
-        } else {
-            quranSection.classList.add('hidden');
-        }
+        quranSection.classList.add('hidden'); // Plans are added after saving a student
     }
     
     toggleModal('student-modal', true);
@@ -2005,23 +1972,11 @@ async function openEditStudent(id) {
 
     const quranSection = document.getElementById('quran-plan-section');
     if (quranSection) {
-        if (state.quranTrackingEnabled && state.isTeacher) {
+        if (state.quranTrackingEnabled && state.isTeacher && id) {
             quranSection.classList.remove('hidden');
-            initQuranPlanSelectors();
-            
-            // Show existing text if any
-            if (student.memorizationPlan) {
-                document.getElementById('student-mem-display').textContent = 'الخطة الحالية: ' + student.memorizationPlan;
-                document.getElementById('student-mem-display').classList.remove('hidden');
-            } else {
-                document.getElementById('student-mem-display').classList.add('hidden');
-            }
-            if (student.reviewPlan) {
-                document.getElementById('student-rev-display').textContent = 'الخطة الحالية: ' + student.reviewPlan;
-                document.getElementById('student-rev-display').classList.remove('hidden');
-            } else {
-                document.getElementById('student-rev-display').classList.add('hidden');
-            }
+            document.getElementById('btn-manage-curriculum').onclick = () => {
+                CurriculumManager.openPlanModal(id);
+            };
         } else {
             quranSection.classList.add('hidden');
         }
@@ -3006,11 +2961,55 @@ function openRateStudent(studentId) {
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : 'تقييم الطالب';
 
-    // Show plan if any
+    // Show plan if any (new curriculum system)
     const planDisplay = $('#rate-quran-plan-display');
-    if (s && s.memorizationPlan && state.quranTrackingEnabled) {
-        planDisplay.textContent = `الخطة الحالية: ${s.memorizationPlan}`;
-        planDisplay.classList.remove('hidden');
+    if (s && state.quranTrackingEnabled) {
+        CurriculumManager.loadStudentPlan(studentId).then(plan => {
+            if (plan) {
+                const today = $('#grading-date').value;
+                const schedule = CurriculumManager.generateDailySchedule(
+                    plan.startDate, plan.endDate, plan.startPage, plan.endPage, plan.weeklyPages
+                );
+                const todayEntry = schedule.find(d => d.date === today);
+                if (todayEntry && todayEntry.sections && todayEntry.sections.length > 0) {
+                    // Store in temp for button handlers
+                    window._currentPlanContext = { plan, todayEntry, studentId, today };
+                    
+                    const label = plan.planType === 'memorization' ? '📝 حفظ' : '🔄 مراجعة';
+                    const secText = todayEntry.sections.map(s => `${s.suraName}: آية ${s.fromAyah} - ${s.toAyah}`).join(' | ');
+                    planDisplay.innerHTML = `
+                        <div class="text-xs font-bold mb-1">${label} اليوم:</div>
+                        <div class="text-sm mb-2">${secText}</div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button onclick="window._completePlan()" class="py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition">✅ تم الإنجاز</button>
+                            <button onclick="window._showPlanQuran()" class="py-2 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-600 transition">📖 إظهار القرآن</button>
+                            <button onclick="window._differentCompletion()" class="py-2 bg-blue-500 text-white rounded-lg text-xs font-bold hover:bg-blue-600 transition">📝 إنجاز مختلف</button>
+                        </div>
+                    `;
+                    planDisplay.classList.remove('hidden');
+                    
+                    // Define handlers
+                    window._completePlan = () => {
+                        const ctx = window._currentPlanContext;
+                        CurriculumManager.markDayCompleted(ctx.plan.id, ctx.studentId, ctx.today, ctx.todayEntry);
+                    };
+                    window._showPlanQuran = () => {
+                        const ctx = window._currentPlanContext;
+                        const html = QuranService.getTextForSections(ctx.todayEntry.sections);
+                        CurriculumManager.showQuranModal(html);
+                    };
+                    window._differentCompletion = () => {
+                        const ctx = window._currentPlanContext;
+                        CurriculumManager.openDifferentCompletionModal(ctx.plan, ctx.studentId, ctx.today, ctx.todayEntry);
+                    };
+                } else {
+                    planDisplay.textContent = 'لا يوجد ورد مجدول لهذا اليوم';
+                    planDisplay.classList.remove('hidden');
+                }
+            } else {
+                planDisplay.classList.add('hidden');
+            }
+        });
     } else {
         planDisplay.classList.add('hidden');
         planDisplay.textContent = '';
@@ -3476,7 +3475,7 @@ function init() {
         startGlobalDataSync();
 
         // Navigate based on role
-        const startView = state.isParent ? 'parent' : 'home';
+        const startView = state.isParent ? 'parent' : (state.isTeacher ? 'home' : 'students');
         // Replace initial state so Android Back button exits app from start screen
         history.replaceState({ view: startView }, '', `#${startView}`);
         router.render(startView);

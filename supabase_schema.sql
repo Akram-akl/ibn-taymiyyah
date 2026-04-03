@@ -166,6 +166,44 @@ CREATE TABLE IF NOT EXISTS group_scores (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 8. Student Plans Table (Curriculum Management)
+CREATE TABLE IF NOT EXISTS student_plans (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
+    plan_type TEXT NOT NULL, -- 'memorization' or 'review'
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    start_sura INTEGER NOT NULL,
+    start_ayah INTEGER NOT NULL,
+    end_sura INTEGER NOT NULL,
+    end_ayah INTEGER NOT NULL,
+    start_page NUMERIC NOT NULL,
+    end_page NUMERIC NOT NULL,
+    weekly_pages JSONB DEFAULT '{"sun":1,"mon":1,"tue":1,"wed":1,"thu":1}'::jsonb,
+    level TEXT NOT NULL,
+    status TEXT DEFAULT 'active', -- 'active', 'completed', 'paused'
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9. Plan Daily Records Table (only stores actual events: completed, absent, intensive)
+CREATE TABLE IF NOT EXISTS plan_daily_records (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    plan_id UUID REFERENCES student_plans(id) ON DELETE CASCADE,
+    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    planned_start_page NUMERIC,
+    planned_end_page NUMERIC,
+    planned_sections JSONB DEFAULT '[]'::jsonb,
+    actual_start_page NUMERIC,
+    actual_end_page NUMERIC,
+    actual_sections JSONB DEFAULT '[]'::jsonb,
+    status TEXT DEFAULT 'pending', -- 'completed', 'absent', 'activity_day', 'intensive', 'different'
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- =====================================================
 -- Enable Row Level Security (RLS)
 -- =====================================================
@@ -176,6 +214,8 @@ ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teachers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_days ENABLE ROW LEVEL SECURITY;
 ALTER TABLE group_scores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE student_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plan_daily_records ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
 -- Create Policies (Using DROP IF EXISTS for idempotency)
@@ -243,6 +283,24 @@ CREATE POLICY "Allow public insert group_scores" ON group_scores FOR INSERT WITH
 CREATE POLICY "Allow public update group_scores" ON group_scores FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete group_scores" ON group_scores FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Allow public read student_plans" ON student_plans;
+DROP POLICY IF EXISTS "Allow public insert student_plans" ON student_plans;
+DROP POLICY IF EXISTS "Allow public update student_plans" ON student_plans;
+DROP POLICY IF EXISTS "Allow public delete student_plans" ON student_plans;
+CREATE POLICY "Allow public read student_plans" ON student_plans FOR SELECT USING (true);
+CREATE POLICY "Allow public insert student_plans" ON student_plans FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update student_plans" ON student_plans FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete student_plans" ON student_plans FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow public read plan_daily_records" ON plan_daily_records;
+DROP POLICY IF EXISTS "Allow public insert plan_daily_records" ON plan_daily_records;
+DROP POLICY IF EXISTS "Allow public update plan_daily_records" ON plan_daily_records;
+DROP POLICY IF EXISTS "Allow public delete plan_daily_records" ON plan_daily_records;
+CREATE POLICY "Allow public read plan_daily_records" ON plan_daily_records FOR SELECT USING (true);
+CREATE POLICY "Allow public insert plan_daily_records" ON plan_daily_records FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update plan_daily_records" ON plan_daily_records FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete plan_daily_records" ON plan_daily_records FOR DELETE USING (true);
+
 -- =====================================================
 -- Enable Realtime
 -- =====================================================
@@ -269,6 +327,12 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'group_scores') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE group_scores;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'student_plans') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE student_plans;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'plan_daily_records') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE plan_daily_records;
+    END IF;
 END $$;
 
 -- =====================================================
@@ -285,6 +349,11 @@ CREATE INDEX IF NOT EXISTS idx_groups_competition_id ON groups(competition_id);
 CREATE INDEX IF NOT EXISTS idx_teachers_level ON teachers(level);
 CREATE INDEX IF NOT EXISTS idx_group_scores_group_id ON group_scores(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_scores_competition_id ON group_scores(competition_id);
+CREATE INDEX IF NOT EXISTS idx_student_plans_student_id ON student_plans(student_id);
+CREATE INDEX IF NOT EXISTS idx_student_plans_student_status ON student_plans(student_id, status);
+CREATE INDEX IF NOT EXISTS idx_student_plans_level ON student_plans(level);
+CREATE INDEX IF NOT EXISTS idx_plan_daily_records_plan_id ON plan_daily_records(plan_id);
+CREATE INDEX IF NOT EXISTS idx_plan_daily_records_student_date ON plan_daily_records(student_id, date);
 
 -- Create trigger functions for updated_at
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()
