@@ -4143,30 +4143,34 @@ window.renderStudentCalendar = (year, month) => {
         if (dayData) {
             const isAbsence = dayData.criteria.some(c => c && c.indexOf('غياب') !== -1);
             if (isAbsence) {
-                dayClass = 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
+                dayClass = 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-red-400 transition';
                 dayContent = `
                     <span class="text-xs font-bold text-red-700 dark:text-red-400">${i}</span>
-                    <span class="text-[10px] mt-0.5 cursor-pointer" title="${dayData.criteria.join(', ')}">❌</span>
+                    <span class="text-[10px] mt-0.5" title="${dayData.criteria.join(', ')}">❌</span>
                 `;
             } else if (dayData.points > 0) {
-                dayClass = 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
+                dayClass = 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-green-400 transition';
                 dayContent = `
                     <span class="text-xs font-bold text-green-700 dark:text-green-400">${i}</span>
                     <span class="text-[10px] font-bold text-green-600 mt-0.5" title="${dayData.criteria.join(', ')}">+${dayData.points}</span>
                 `;
             } else if (dayData.points < 0) {
-                dayClass = 'bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
+                dayClass = 'bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-orange-400 transition';
                 dayContent = `
                     <span class="text-xs font-bold text-orange-700 dark:text-orange-400">${i}</span>
                     <span class="text-[10px] font-bold text-orange-600 mt-0.5" title="${dayData.criteria.join(', ')}">${dayData.points}</span>
                 `;
             }
+            
+            // Add click handler for days with data
+            calendarDaysHTML += `<div class="${dayClass}" onclick="showDayDetails('${dateStr}')">${dayContent}</div>`;
         } else if (dateStr === todayDate.toISOString().split('T')[0]) {
              dayClass = 'bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-400 dark:border-blue-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center relative';
              dayContent = `<span class="text-xs font-bold text-blue-700 dark:text-blue-400">${i}</span>`;
+             calendarDaysHTML += `<div class="${dayClass}">${dayContent}</div>`;
+        } else {
+             calendarDaysHTML += `<div class="${dayClass}">${dayContent}</div>`;
         }
-        
-        calendarDaysHTML += `<div class="${dayClass}">${dayContent}</div>`;
     }
 
     const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
@@ -4193,6 +4197,80 @@ window.renderStudentCalendar = (year, month) => {
     `;
     lucide.createIcons();
 }
+
+// Show specific day details for parent
+window.showDayDetails = (dateStr) => {
+    const scores = window._currentStudentScores || [];
+    const dayScores = scores.filter(s => s.date === dateStr);
+    
+    if (dayScores.length === 0) return;
+    
+    let html = `<div class="space-y-3">`;
+    let hasAlert = false;
+    
+    dayScores.forEach(s => {
+        const isPositive = s.points > 0;
+        const isAbsence = s.criteriaId === 'ABSENCE_RECORD';
+        
+        if (!isPositive || isAbsence) hasAlert = true;
+        
+        html += `
+        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
+            <div class="flex justify-between items-center mb-2">
+                <span class="font-bold text-sm text-gray-800 dark:text-gray-100">${s.criteriaName || (isAbsence ? 'غياب' : 'تقييم')}</span>
+                <span class="text-sm font-bold px-2 py-1 rounded-lg ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${isPositive ? '+' : ''}${s.points}</span>
+            </div>
+            ${s.quranSection ? `
+            <div class="mt-3 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
+                <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-2">📖 المقطع القرآني المسمّع:</p>
+                <p class="text-[11px] text-gray-600 dark:text-gray-400 mb-2">${s.quranSection}</p>
+                ${s.quranText ? `<p class="font-quran text-gray-800 dark:text-gray-200 text-sm leading-loose bg-white dark:bg-gray-800 p-3 rounded border border-teal-50 dark:border-gray-700" dir="rtl">${s.quranText}</p>` : ''}
+            </div>
+            ` : ''}
+        </div>
+        `;
+    });
+    
+    if (hasAlert) {
+        html += `
+        <div class="bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-xl p-3 mt-4 text-center">
+            <i data-lucide="alert-triangle" class="w-6 h-6 text-orange-500 mx-auto mb-2"></i>
+            <p class="text-xs font-bold text-orange-800 dark:text-orange-300">مطلوب من ولي الأمر:</p>
+            <p class="text-xs text-orange-700 dark:text-orange-400 mt-1">يُرجى الانتباه من الدرجات السلبية أو أيام الغياب، ومُتابعة مستوى الطالب لرفع تحصيله في الأيام القادمة.</p>
+        </div>
+        `;
+    } else {
+        html += `
+        <div class="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-xl p-3 mt-4 text-center">
+            <i data-lucide="star" class="w-6 h-6 text-green-500 mx-auto mb-2"></i>
+            <p class="text-xs font-bold text-green-800 dark:text-green-300">رسالة لولي الأمر:</p>
+            <p class="text-xs text-green-700 dark:text-green-400 mt-1">أداء الطالب ممتاز في هذا اليوم، بارك الله فيه واستمروا في تشجيعه.</p>
+        </div>
+        `;
+    }
+    
+    html += `</div>`;
+    
+    let modal = document.getElementById('day-scores-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'day-scores-modal';
+        document.body.appendChild(modal);
+    }
+    modal.className = 'fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-700 pb-3">
+                <h3 class="font-bold text-lg text-blue-700 dark:text-blue-400">تفاصيل يوم ${dateStr}</h3>
+                <button onclick="document.getElementById('day-scores-modal').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 rounded-full p-2">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            ${html}
+        </div>
+    `;
+    lucide.createIcons();
+};
 
 function contactTeacher(studentName, teacherPhone) {
     const message = encodeURIComponent(`السلام عليكم ورحمة الله وبركاته
