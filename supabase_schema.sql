@@ -71,6 +71,11 @@ CREATE TABLE IF NOT EXISTS scores (
     date TEXT,
     "quranSection" TEXT,
     "quranText" TEXT,
+    "quranType" TEXT,
+    "quranStartSura" INTEGER,
+    "quranStartAyah" INTEGER,
+    "quranEndSura" INTEGER,
+    "quranEndAyah" INTEGER,
     timestamp BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()) * 1000,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -84,6 +89,21 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranText') THEN
         ALTER TABLE scores ADD COLUMN "quranText" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranType') THEN
+        ALTER TABLE scores ADD COLUMN "quranType" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranStartSura') THEN
+        ALTER TABLE scores ADD COLUMN "quranStartSura" INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranStartAyah') THEN
+        ALTER TABLE scores ADD COLUMN "quranStartAyah" INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranEndSura') THEN
+        ALTER TABLE scores ADD COLUMN "quranEndSura" INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranEndAyah') THEN
+        ALTER TABLE scores ADD COLUMN "quranEndAyah" INTEGER;
     END IF;
 END $$;
 

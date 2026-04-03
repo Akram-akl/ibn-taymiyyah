@@ -1783,24 +1783,6 @@ function getGradingModalsHTML() {
 
                                                 <p id="rate-date-display" class="text-center text-sm text-gray-500 mb-4 font-bold bg-gray-100 dark:bg-gray-700 py-1 rounded-lg"></p>
                                                 
-                                                    <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 mb-2">تحديد المقطع المُسمّع بالقرآن (اختياري)</h4>
-                                                    <div class="grid grid-cols-3 gap-2">
-                                                         <div>
-                                                              <select id="rate-quran-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[11px] font-bold" onchange="updateRateQuranAyaSelectors()">
-                                                                   <option value="">السورة..</option>
-                                                              </select>
-                                                         </div>
-                                                         <div>
-                                                              <select id="rate-quran-from" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[11px] font-bold" disabled>
-                                                                    <option value="">من آية..</option>
-                                                              </select>
-                                                         </div>
-                                                         <div>
-                                                              <select id="rate-quran-to" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[11px] font-bold" disabled>
-                                                                    <option value="">إلى آية..</option>
-                                                              </select>
-                                                         </div>
-                                                    </div>
                                                 </div>
 
                                                 <div id="criteria-buttons-grid" class="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto"></div>
@@ -2997,6 +2979,10 @@ async function submitScore(criteriaId, points, criteriaName, type) {
         return;
     }
 
+    // Prevent double-click submits
+    if (window._isSubmittingScore) return;
+    window._isSubmittingScore = true;
+
     const data = {
         studentId: currentRateStudentId,
         competitionId: currentGradingCompId,
@@ -3004,52 +2990,15 @@ async function submitScore(criteriaId, points, criteriaName, type) {
         criteriaId,
         criteriaName,
         points: parseInt(points),
-        type, // 'positive' or 'negative'
+        type,
         level: state.currentLevel,
-        date: dateVal, // Store YYYY-MM-DD
+        date: dateVal,
         updatedAt: new Date(),
         timestamp: Date.now()
     };
 
-    if (state.quranTrackingEnabled) {
-        const suraSelect = document.getElementById('rate-quran-sura');
-        const ayaFrom = document.getElementById('rate-quran-from');
-        const ayaTo = document.getElementById('rate-quran-to');
-        
-        if (suraSelect && suraSelect.value && ayaFrom.value && ayaTo.value) {
-            const suraNo = parseInt(suraSelect.value);
-            const fromAya = parseInt(ayaFrom.value);
-            const toAya = parseInt(ayaTo.value);
-            
-            const suraName = suraSelect.options[suraSelect.selectedIndex].text.split('. ')[1] || '';
-            const quranSectionText = `سورة ${suraName} (آية ${fromAya} - ${toAya})`;
-            
-            // fetch Uthmanic Text
-            if (typeof QuranService !== 'undefined') {
-                 await QuranService.loadData();
-                 const allAyas = QuranService.getAyahs(suraNo);
-                 const ayas = allAyas.filter(a => parseInt(a.aya_no) >= fromAya && parseInt(a.aya_no) <= toAya);
-                 const quranText = ayas.map(a => `${a.aya_text} ﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾`).join(' ');
-                 data.quranSection = quranSectionText;
-                 data.quranText = quranText;
-            }
-        }
-    }
-
     try {
-        // Check for existing score to Update
-        const duplicateQ = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "scores"),
-            window.firebaseOps.where("studentId", "==", currentRateStudentId),
-            window.firebaseOps.where("date", "==", dateVal),
-            window.firebaseOps.where("criteriaId", "==", criteriaId) // Need strict match
-        );
-
-        // Note: Composite index might be needed. If fails, we might need client-side filtering again.
-        // But for update, we really need the ID.
-        // Let's try to query by student+date (which likely has index or small enough result set) 
-        // and find the doc client-side to save writes/queries complexity if index missing.
-
+        // Query by student+date and find matching criteriaId client-side
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
             window.firebaseOps.where("studentId", "==", currentRateStudentId),
@@ -3057,24 +3006,23 @@ async function submitScore(criteriaId, points, criteriaName, type) {
         );
 
         const snap = await window.firebaseOps.getDocs(q);
-        const existingDoc = snap.docs.find(d => d.data().criteriaId === criteriaId);
+        const existingDoc = snap.docs.find(d => d.data().criteriaId === criteriaId && d.data().type === type);
 
         if (existingDoc) {
-            // Update
+            // Update existing record instead of creating duplicate
             await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "scores", existingDoc.id), data);
             showToast(`تم تعديل الدرجة إلى ${points}`, "success");
         } else {
-            // Create
+            // Create new record
             data.createdAt = new Date();
             await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
             showToast(`تم رصد ${points > 0 ? '+' : ''}${points} نقطة`, points > 0 ? "success" : "error");
         }
-        // closeModal('rate-student-modal'); // Keep open
     } catch (e) {
         console.error(e);
-        // Fallback if query fails (e.g. index issue), try adding blindly? No, unsafe. 
-        // Just show error.
-        showToast("خطأ في الرصد Check Console", "error");
+        showToast("خطأ في الرصد", "error");
+    } finally {
+        window._isSubmittingScore = false;
     }
 }
 
