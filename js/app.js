@@ -429,6 +429,11 @@ function completeLogin() {
     // Explicitly show content
     $('#loading').classList.add('hidden');
     $('#view-container').classList.remove('hidden');
+
+    // Background preload Quran data (Feature #14 Optimization)
+    if (typeof QuranService !== 'undefined') {
+        QuranService.loadData();
+    }
 }
 
 function updateUIMode() {
@@ -3466,6 +3471,11 @@ function init() {
         // Replace initial state so Android Back button exits app from start screen
         history.replaceState({ view: startView }, '', `#${startView}`);
         router.render(startView);
+
+        // Preload Quran data in background (Feature #14)
+        if (typeof QuranService !== 'undefined') {
+            QuranService.loadData();
+        }
     } else {
         // Needs Login (Show Auth Overlay)
         $('#loading').classList.add('hidden');
@@ -3913,24 +3923,31 @@ function getQuranSearchModalHTML() {
     `;
 }
 
-async function openQuranSearchModal() {
+function openQuranSearchModal() {
     toggleModal('quran-search-modal', true);
     lucide.createIcons();
+    
+    const input = $('#quran-search-query');
+    if(input) {
+        setTimeout(() => input.focus(), 150);
+    }
+
     if (typeof QuranService !== 'undefined' && !QuranService.isLoaded()) {
         const res = $('#quran-search-results');
         const oldHtml = res.innerHTML;
-        res.innerHTML = '<div class="text-center py-8"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto text-emerald-600"></i><p class="text-xs text-gray-500 mt-2">جاري جلب بيانات المصحف...</p></div>';
+        res.innerHTML = '<div class="text-center py-8"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto text-emerald-600"></i><p class="text-xs text-gray-500 mt-2">جاري تجهيز المصحف... فضلاً انتظر ثواني</p></div>';
         lucide.createIcons();
-        await QuranService.loadData();
-        res.innerHTML = oldHtml;
+        
+        // Load in background without blocking focus
+        QuranService.loadData().then(() => {
+            if (res.innerHTML.includes('جاري تجهيز المصحف')) {
+                res.innerHTML = oldHtml;
+            }
+        });
     }
-    setTimeout(() => {
-        const input = $('#quran-search-query');
-        if(input) input.focus();
-    }, 100);
 }
 
-function executeQuranSearch() {
+async function executeQuranSearch() {
     const query = $('#quran-search-query').value;
     const res = $('#quran-search-results');
     
@@ -3939,14 +3956,19 @@ function executeQuranSearch() {
         return;
     }
     
-    if (typeof QuranService === 'undefined' || !QuranService.isLoaded()) {
+    if (typeof QuranService === 'undefined') {
          showToast("خدمة المصحف غير متوفرة", "error");
          return;
     }
-    
+
     // UI Loading state
-    res.innerHTML = '<div class="text-center py-8"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto text-emerald-600"></i></div>';
+    res.innerHTML = '<div class="text-center py-8"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto text-emerald-600"></i><p class="text-xs text-gray-500 mt-2">جاري البحث (قد يتأخر قليلاً عند أول مرة)...</p></div>';
     lucide.createIcons();
+    
+    // Ensure data is loaded
+    if (!QuranService.isLoaded()) {
+        await QuranService.loadData();
+    }
     
     setTimeout(() => {
         const results = QuranService.searchAyahs(query);
