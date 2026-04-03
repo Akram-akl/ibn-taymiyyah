@@ -1783,8 +1783,6 @@ function getGradingModalsHTML() {
 
                                                 <p id="rate-date-display" class="text-center text-sm text-gray-500 mb-4 font-bold bg-gray-100 dark:bg-gray-700 py-1 rounded-lg"></p>
                                                 
-                                                </div>
-
                                                 <div id="criteria-buttons-grid" class="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto"></div>
                                             </div>
                                         </div>
