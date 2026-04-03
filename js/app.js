@@ -2043,7 +2043,7 @@ async function performDeleteStudent() {
 }
 
 // === QURAN INTEGRATION ===
-async function initQuranPlanSelectors() {
+async function initRateQuranSelectors() {
     const suraSelect = document.getElementById('quran-sura-select');
     if (!suraSelect || suraSelect.options.length > 1) return; // already initialized
 
