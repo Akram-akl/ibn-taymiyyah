@@ -1399,55 +1399,51 @@ function getStudentModalHTML() {
                      <!-- Plans -->
                      <div id="quran-plan-section" class="space-y-4 hidden mt-3">
                          <!-- Memorization Plan -->
-                         <div class="bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                             <label class="block text-sm font-bold text-emerald-700 dark:text-emerald-400 mb-1">خطة الحفظ الجديد (قرآن)</label>
-                             <div class="grid grid-cols-2 gap-2 mb-2">
-                                 <div>
-                                     <p class="text-[10px] font-bold text-gray-500 mb-1">من (البداية)</p>
+                         <div class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800">
+                             <label class="block text-xs font-bold text-emerald-700 dark:text-emerald-400 mb-2 uppercase tracking-wider">خطة الحفظ (قرآن)</label>
+                             <div class="grid grid-cols-2 gap-3 mb-3">
+                                 <div class="space-y-1">
+                                     <p class="text-[10px] font-bold text-gray-400">من (البداية)</p>
                                      <div class="flex gap-1">
-                                         <select id="plan-mem-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px] font-bold" onchange="updateQuranAyas('plan-mem-start')"><option value="">السورة..</option></select>
-                                         <select id="plan-mem-start-aya" class="w-1/3 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px]" disabled><option value="">الآية</option></select>
+                                         <select id="plan-mem-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-xs font-bold" onchange="updateQuranAyas('plan-mem-start')"><option value="">السورة..</option></select>
+                                         <select id="plan-mem-start-aya" class="w-16 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-2 text-xs" disabled><option value="">الآية</option></select>
                                      </div>
                                  </div>
-                                 <div>
-                                     <p class="text-[10px] font-bold text-gray-500 mb-1">إلى (النهاية)</p>
+                                 <div class="space-y-1">
+                                     <p class="text-[10px] font-bold text-gray-400">إلى (النهاية)</p>
                                      <div class="flex gap-1">
-                                         <select id="plan-mem-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px] font-bold" onchange="updateQuranAyas('plan-mem-end')"><option value="">السورة..</option></select>
-                                         <select id="plan-mem-end-aya" class="w-1/3 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px]" disabled><option value="">الآية</option></select>
+                                         <select id="plan-mem-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-xs font-bold" onchange="updateQuranAyas('plan-mem-end')"><option value="">السورة..</option></select>
+                                         <select id="plan-mem-end-aya" class="w-16 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-2 text-xs" disabled><option value="">الآية</option></select>
                                      </div>
                                  </div>
                              </div>
                              <input type="hidden" id="student-memorization">
-                             <div class="mt-2 text-left">
-                                 <button type="button" onclick="buildPlanText('memorization')" class="w-full bg-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition">تحويل لنص الخطة</button>
-                             </div>
-                             <div id="student-mem-display" class="mt-2 text-xs bg-white dark:bg-gray-800 text-emerald-700 dark:text-emerald-300 p-2 rounded border border-emerald-200 dark:border-emerald-700 hidden text-center font-bold"></div>
+                             <button type="button" onclick="buildPlanText('memorization')" class="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-700 transition shadow-sm mb-2">💾 اعتماد خطة الحفظ</button>
+                             <div id="student-mem-display" class="mt-2 text-xs bg-white/80 dark:bg-gray-800/80 text-emerald-700 dark:text-emerald-300 p-3 rounded-xl border border-emerald-200 dark:border-emerald-700 hidden text-center font-bold shadow-inner"></div>
                          </div>
 
                          <!-- Review Plan -->
-                         <div class="bg-blue-50 dark:bg-blue-900/10 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
-                             <label class="block text-sm font-bold text-blue-700 dark:text-blue-400 mb-1">خطة المراجعة (قرآن)</label>
-                             <div class="grid grid-cols-2 gap-2 mb-2">
-                                 <div>
-                                     <p class="text-[10px] font-bold text-gray-500 mb-1">من (البداية)</p>
+                         <div class="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-800">
+                             <label class="block text-xs font-bold text-blue-700 dark:text-blue-400 mb-2 uppercase tracking-wider">خطة المراجعة (قرآن)</label>
+                             <div class="grid grid-cols-2 gap-3 mb-3">
+                                 <div class="space-y-1">
+                                     <p class="text-[10px] font-bold text-gray-400">من (البداية)</p>
                                      <div class="flex gap-1">
-                                         <select id="plan-rev-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px] font-bold" onchange="updateQuranAyas('plan-rev-start')"><option value="">السورة..</option></select>
-                                         <select id="plan-rev-start-aya" class="w-1/3 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px]" disabled><option value="">الآية</option></select>
+                                         <select id="plan-rev-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-xs font-bold" onchange="updateQuranAyas('plan-rev-start')"><option value="">السورة..</option></select>
+                                         <select id="plan-rev-start-aya" class="w-16 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-2 text-xs" disabled><option value="">الآية</option></select>
                                      </div>
                                  </div>
-                                 <div>
-                                     <p class="text-[10px] font-bold text-gray-500 mb-1">إلى (النهاية)</p>
+                                 <div class="space-y-1">
+                                     <p class="text-[10px] font-bold text-gray-400">إلى (النهاية)</p>
                                      <div class="flex gap-1">
-                                         <select id="plan-rev-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px] font-bold" onchange="updateQuranAyas('plan-rev-end')"><option value="">السورة..</option></select>
-                                         <select id="plan-rev-end-aya" class="w-1/3 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px]" disabled><option value="">الآية</option></select>
+                                         <select id="plan-rev-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-xs font-bold" onchange="updateQuranAyas('plan-rev-end')"><option value="">السورة..</option></select>
+                                         <select id="plan-rev-end-aya" class="w-16 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-2 text-xs" disabled><option value="">الآية</option></select>
                                      </div>
                                  </div>
                              </div>
                              <input type="hidden" id="student-review">
-                             <div class="mt-2 text-left">
-                                 <button type="button" onclick="buildPlanText('review')" class="w-full bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition">تحويل لنص الخطة</button>
-                             </div>
-                             <div id="student-rev-display" class="mt-2 text-xs bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-300 p-2 rounded border border-blue-200 dark:border-blue-700 hidden text-center font-bold"></div>
+                             <button type="button" onclick="buildPlanText('review')" class="w-full bg-blue-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-blue-700 transition shadow-sm mb-2">💾 اعتماد خطة المراجعة</button>
+                             <div id="student-rev-display" class="mt-2 text-xs bg-white/80 dark:bg-gray-800/80 text-blue-700 dark:text-blue-300 p-3 rounded-xl border border-blue-200 dark:border-blue-700 hidden text-center font-bold shadow-inner"></div>
                          </div>
                      </div>
 
@@ -1889,6 +1885,12 @@ async function initQuranPlanSelectors() {
     }
     await QuranService.loadData();
     const suras = QuranService.getSuras();
+    if (!suras || suras.length === 0) {
+        console.warn("No suras loaded yet, retrying in 500ms...");
+        setTimeout(initQuranPlanSelectors, 500);
+        return;
+    }
+
     let opts = '<option value="">السورة..</option>';
     suras.forEach(s => { opts += `<option value="${s.number}">${s.number}. ${s.name}</option>`; });
     
@@ -1897,7 +1899,6 @@ async function initQuranPlanSelectors() {
         const el = document.getElementById(id);
         if (el) {
             el.innerHTML = opts;
-            // Trigger onchange if there was a previous value set in the DOM (not likely needed here, but safe)
         }
     });
 }
@@ -3084,10 +3085,6 @@ async function submitScore(criteriaId, points, criteriaName, type) {
         return;
     }
 
-    // Prevent double-click submits
-    if (window._isSubmittingScore) return;
-    window._isSubmittingScore = true;
-
     const data = {
         studentId: currentRateStudentId,
         competitionId: currentGradingCompId,
@@ -3126,8 +3123,6 @@ async function submitScore(criteriaId, points, criteriaName, type) {
     } catch (e) {
         console.error(e);
         showToast("خطأ في الرصد", "error");
-    } finally {
-        window._isSubmittingScore = false;
     }
 }
 
@@ -4299,24 +4294,34 @@ async function openStudentReport(studentId) {
                 const quranRecords = scores.filter(s => s.quranSection).sort((a,b) => new Date(b.date) - new Date(a.date));
                 if (quranRecords.length > 0) {
                     return `
-                    <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border">
-                        <h3 class="font-bold mb-3 flex items-center gap-2 text-emerald-600"><i data-lucide="book" class="w-4 h-4"></i> سجل التسميع (قرآن)</h3>
-                        <div class="space-y-3">
-                            ${quranRecords.map(r => `
-                                <div class="bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                                    <div class="flex justify-between items-center">
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${r.quranType === 'review' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}">
-                                                ${r.quranType === 'review' ? '🔄 مراجعة' : '📝 حفظ'}
-                                            </span>
-                                            <span class="font-bold text-xs text-emerald-800 dark:text-emerald-300">${r.quranSection}</span>
-                                        </div>
-                                        <span class="text-[10px] text-gray-500 bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full border">${r.date}</span>
-                                    </div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
+                     <div class="bg-white dark:bg-gray-800 rounded-2xl p-5 mb-5 shadow-sm border border-gray-100 dark:border-gray-700">
+                         <div class="flex items-center gap-2 mb-4">
+                             <div class="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                                 <i data-lucide="book" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i>
+                             </div>
+                             <h3 class="font-bold text-gray-800 dark:text-gray-100">سجل التسميع (قرآن)</h3>
+                         </div>
+                         <div class="space-y-3">
+                             ${quranRecords.map(r => `
+                                 <div class="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-100 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 transition-all shadow-sm">
+                                     <div class="flex justify-between items-start">
+                                         <div class="flex-1">
+                                             <div class="flex items-center gap-2 mb-2">
+                                                 <span class="text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm border ${r.quranType === 'review' ? 'bg-blue-600 text-white border-blue-500' : 'bg-emerald-600 text-white border-emerald-500'}">
+                                                     ${r.quranType === 'review' ? '🔄 مراجعة' : '📝 حفظ'}
+                                                 </span>
+                                                 <span class="text-[10px] font-bold text-gray-400">${r.date}</span>
+                                             </div>
+                                             <p class="font-bold text-sm text-gray-800 dark:text-gray-100">${r.quranSection}</p>
+                                         </div>
+                                         <div class="text-emerald-500">
+                                             <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+                                         </div>
+                                     </div>
+                                 </div>
+                             `).join('')}
+                         </div>
+                     </div>
                     `;
                 }
                 return '';
@@ -4525,7 +4530,7 @@ window.showDayDetails = (dateStr) => {
 
 function contactTeacher(studentName, teacherPhone) {
     const message = encodeURIComponent(`السلام عليكم ورحمة الله وبركاته،
-بخصوص الطالب (${studentName})، `);
+  (${studentName})، `);
 
     window.open(`https://wa.me/${teacherPhone}?text=${message}`, '_blank');
 }
