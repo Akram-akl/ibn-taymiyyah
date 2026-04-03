@@ -1396,40 +1396,58 @@ function getStudentModalHTML() {
                          <p class="text-xs text-gray-400 mt-1">يستخدم للتواصل عبر واتساب عند الغياب</p>
                      </div>
                      
-                     <div class="grid grid-cols-2 gap-4">
-                         <div>
-                             <label class="block text-sm font-bold mb-1">خطة الحفظ</label>
-                             <input type="text" id="student-memorization" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3">
+                     <!-- Plans -->
+                     <div id="quran-plan-section" class="space-y-4 hidden mt-3">
+                         <!-- Memorization Plan -->
+                         <div class="bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
+                             <label class="block text-sm font-bold text-emerald-700 dark:text-emerald-400 mb-1">خطة الحفظ الجديد (قرآن)</label>
+                             <div class="grid grid-cols-2 gap-2 mb-2">
+                                 <div>
+                                     <p class="text-[10px] font-bold text-gray-500 mb-1">من (البداية)</p>
+                                     <div class="flex gap-1">
+                                         <select id="plan-mem-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px] font-bold" onchange="updateQuranAyas('plan-mem-start')"><option value="">السورة..</option></select>
+                                         <select id="plan-mem-start-aya" class="w-1/3 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px]" disabled><option value="">الآية</option></select>
+                                     </div>
+                                 </div>
+                                 <div>
+                                     <p class="text-[10px] font-bold text-gray-500 mb-1">إلى (النهاية)</p>
+                                     <div class="flex gap-1">
+                                         <select id="plan-mem-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px] font-bold" onchange="updateQuranAyas('plan-mem-end')"><option value="">السورة..</option></select>
+                                         <select id="plan-mem-end-aya" class="w-1/3 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px]" disabled><option value="">الآية</option></select>
+                                     </div>
+                                 </div>
+                             </div>
+                             <input type="hidden" id="student-memorization">
+                             <div class="mt-2 text-left">
+                                 <button type="button" onclick="buildPlanText('memorization')" class="w-full bg-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition">تحويل لنص الخطة</button>
+                             </div>
+                             <div id="student-mem-display" class="mt-2 text-xs bg-white dark:bg-gray-800 text-emerald-700 dark:text-emerald-300 p-2 rounded border border-emerald-200 dark:border-emerald-700 hidden text-center font-bold"></div>
                          </div>
-                         <div>
-                             <label class="block text-sm font-bold mb-1">خطة المراجعة</label>
-                             <input type="text" id="student-review" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3">
-                         </div>
-                     </div>
 
-                     <!-- Quran Plan Section -->
-                     <div id="quran-plan-section" class="hidden mt-3 bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                         <h4 class="font-bold text-sm text-emerald-700 dark:text-emerald-400 mb-2">تخصيص خطة الحفظ (قرآن)</h4>
-                         <div class="grid grid-cols-3 gap-2">
-                              <div>
-                                   <label class="block text-xs font-bold mb-1">السورة</label>
-                                   <select id="quran-sura-select" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-sm" onchange="updateQuranPlanAyaSelectors()">
-                                        <option value="">اختر..</option>
-                                   </select>
-                              </div>
-                              <div>
-                                   <label class="block text-xs font-bold mb-1">من آية</label>
-                                   <select id="quran-aya-from" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-sm" disabled>
-                                   </select>
-                              </div>
-                              <div>
-                                   <label class="block text-xs font-bold mb-1">إلى آية</label>
-                                   <select id="quran-aya-to" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-sm" disabled>
-                                   </select>
-                              </div>
-                         </div>
-                         <div class="mt-2 text-left">
-                             <button type="button" onclick="applyQuranPlan()" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700 transition">اعتماد الخطة</button>
+                         <!-- Review Plan -->
+                         <div class="bg-blue-50 dark:bg-blue-900/10 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
+                             <label class="block text-sm font-bold text-blue-700 dark:text-blue-400 mb-1">خطة المراجعة (قرآن)</label>
+                             <div class="grid grid-cols-2 gap-2 mb-2">
+                                 <div>
+                                     <p class="text-[10px] font-bold text-gray-500 mb-1">من (البداية)</p>
+                                     <div class="flex gap-1">
+                                         <select id="plan-rev-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px] font-bold" onchange="updateQuranAyas('plan-rev-start')"><option value="">السورة..</option></select>
+                                         <select id="plan-rev-start-aya" class="w-1/3 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px]" disabled><option value="">الآية</option></select>
+                                     </div>
+                                 </div>
+                                 <div>
+                                     <p class="text-[10px] font-bold text-gray-500 mb-1">إلى (النهاية)</p>
+                                     <div class="flex gap-1">
+                                         <select id="plan-rev-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px] font-bold" onchange="updateQuranAyas('plan-rev-end')"><option value="">السورة..</option></select>
+                                         <select id="plan-rev-end-aya" class="w-1/3 bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[10px]" disabled><option value="">الآية</option></select>
+                                     </div>
+                                 </div>
+                             </div>
+                             <input type="hidden" id="student-review">
+                             <div class="mt-2 text-left">
+                                 <button type="button" onclick="buildPlanText('review')" class="w-full bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition">تحويل لنص الخطة</button>
+                             </div>
+                             <div id="student-rev-display" class="mt-2 text-xs bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-300 p-2 rounded border border-blue-200 dark:border-blue-700 hidden text-center font-bold"></div>
                          </div>
                      </div>
 
@@ -1862,6 +1880,50 @@ function openAddStudentModal() {
     toggleModal('student-modal', true);
 }
 
+async function initQuranPlanSelectors() {
+    if (typeof QuranService === 'undefined') return;
+    await QuranService.loadData();
+    const suras = QuranService.getSuras();
+    let opts = '<option value="">السورة..</option>';
+    suras.forEach(s => { opts += `<option value="${s.number}">${s.number}. ${s.name}</option>`; });
+    
+    const selects = ['plan-mem-start-sura', 'plan-mem-end-sura', 'plan-rev-start-sura', 'plan-rev-end-sura'];
+    selects.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.options.length <= 1) el.innerHTML = opts;
+    });
+}
+
+async function buildPlanText(type) {
+    let prefix = type === 'memorization' ? 'plan-mem' : 'plan-rev';
+    const sSura = document.getElementById(`${prefix}-start-sura`);
+    const sAya  = document.getElementById(`${prefix}-start-aya`);
+    const eSura = document.getElementById(`${prefix}-end-sura`);
+    const eAya  = document.getElementById(`${prefix}-end-aya`);
+    
+    if(!sSura.value || !sAya.value || !eSura.value || !eAya.value) {
+        showToast('يرجى تحديد النطاق كاملاً (سورة وآية بداية ونهاية)', 'error');
+        return;
+    }
+    
+    const _sSurahName = sSura.options[sSura.selectedIndex].text.replace(/^[0-9.]+\s*/, '');
+    const _eSurahName = eSura.options[eSura.selectedIndex].text.replace(/^[0-9.]+\s*/, '');
+    
+    let text = sSura.value === eSura.value ? 
+        `${_sSurahName} (آية ${sAya.value} - ${eAya.value})` : 
+        `من ${_sSurahName} (${sAya.value}) إلى ${_eSurahName} (${eAya.value})`;
+        
+    const hiddenInputId = type === 'memorization' ? 'student-memorization' : 'student-review';
+    document.getElementById(hiddenInputId).value = text;
+    
+    const displayId = type === 'memorization' ? 'student-mem-display' : 'student-rev-display';
+    const displayEl = document.getElementById(displayId);
+    displayEl.textContent = 'الخطة: ' + text;
+    displayEl.classList.remove('hidden');
+    
+    showToast('تم اعتماد الخطة');
+}
+
 async function openEditStudent(id) {
     const student = state.students.find(s => s.id === id);
     if (!student) return;
@@ -1921,6 +1983,20 @@ async function openEditStudent(id) {
         if (state.quranTrackingEnabled && state.isTeacher) {
             quranSection.classList.remove('hidden');
             initQuranPlanSelectors();
+            
+            // Show existing text if any
+            if (student.memorizationPlan) {
+                document.getElementById('student-mem-display').textContent = 'الخطة الحالية: ' + student.memorizationPlan;
+                document.getElementById('student-mem-display').classList.remove('hidden');
+            } else {
+                document.getElementById('student-mem-display').classList.add('hidden');
+            }
+            if (student.reviewPlan) {
+                document.getElementById('student-rev-display').textContent = 'الخطة الحالية: ' + student.reviewPlan;
+                document.getElementById('student-rev-display').classList.remove('hidden');
+            } else {
+                document.getElementById('student-rev-display').classList.add('hidden');
+            }
         } else {
             quranSection.classList.add('hidden');
         }
@@ -2069,10 +2145,14 @@ async function initRateQuranSelectors() {
     document.getElementById('rate-quran-end-sura').innerHTML = '<option value="">السورة..</option>' + opts;
 }
 
-// Update ayah selectors for start or end
-async function updateQuranAyas(which) {
-    const suraId = which === 'start' ? 'rate-quran-start-sura' : 'rate-quran-end-sura';
-    const ayaId  = which === 'start' ? 'rate-quran-start-aya'  : 'rate-quran-end-aya';
+// Update ayah selectors for any prefix
+async function updateQuranAyas(prefix) {
+    const suraId = prefix === 'start' ? 'rate-quran-start-sura' : 
+                   prefix === 'end' ? 'rate-quran-end-sura' : 
+                   `${prefix}-sura`;
+    const ayaId  = prefix === 'start' ? 'rate-quran-start-aya' : 
+                   prefix === 'end' ? 'rate-quran-end-aya' : 
+                   `${prefix}-aya`;
     const suraSelect = document.getElementById(suraId);
     const ayaSelect  = document.getElementById(ayaId);
     if (!suraSelect || !ayaSelect) return;

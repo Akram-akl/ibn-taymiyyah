@@ -68,42 +68,66 @@ CREATE TABLE IF NOT EXISTS scores (
     points INTEGER NOT NULL,
     type TEXT,
     level TEXT,
-    date TEXT,
-    "quranSection" TEXT,
-    "quranText" TEXT,
-    "quranType" TEXT,
-    "quranStartSura" INTEGER,
-    "quranStartAyah" INTEGER,
-    "quranEndSura" INTEGER,
-    "quranEndAyah" INTEGER,
+    "date" TEXT,
+    quran_section TEXT,
+    quran_text TEXT,
+    quran_type TEXT,
+    quran_start_sura INTEGER,
+    quran_start_ayah INTEGER,
+    quran_end_sura INTEGER,
+    quran_end_ayah INTEGER,
     timestamp BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()) * 1000,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- NEW: Add Quran Fields if they don't exist
+-- NEW: Add Quran Fields in snake_case (matching supabase.js)
 DO $$ 
 BEGIN 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranSection') THEN
-        ALTER TABLE scores ADD COLUMN "quranSection" TEXT;
+    -- Drop old unmatching camelCase columns if any
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranSection') THEN
+        ALTER TABLE scores DROP COLUMN "quranSection";
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranText') THEN
-        ALTER TABLE scores ADD COLUMN "quranText" TEXT;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranText') THEN
+        ALTER TABLE scores DROP COLUMN "quranText";
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranType') THEN
-        ALTER TABLE scores ADD COLUMN "quranType" TEXT;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranType') THEN
+        ALTER TABLE scores DROP COLUMN "quranType";
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranStartSura') THEN
-        ALTER TABLE scores ADD COLUMN "quranStartSura" INTEGER;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranStartSura') THEN
+        ALTER TABLE scores DROP COLUMN "quranStartSura";
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranStartAyah') THEN
-        ALTER TABLE scores ADD COLUMN "quranStartAyah" INTEGER;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranStartAyah') THEN
+        ALTER TABLE scores DROP COLUMN "quranStartAyah";
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranEndSura') THEN
-        ALTER TABLE scores ADD COLUMN "quranEndSura" INTEGER;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranEndSura') THEN
+        ALTER TABLE scores DROP COLUMN "quranEndSura";
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranEndAyah') THEN
-        ALTER TABLE scores ADD COLUMN "quranEndAyah" INTEGER;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quranEndAyah') THEN
+        ALTER TABLE scores DROP COLUMN "quranEndAyah";
+    END IF;
+
+    -- Add snake_case columns
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_section') THEN
+        ALTER TABLE scores ADD COLUMN quran_section TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_text') THEN
+        ALTER TABLE scores ADD COLUMN quran_text TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_type') THEN
+        ALTER TABLE scores ADD COLUMN quran_type TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_start_sura') THEN
+        ALTER TABLE scores ADD COLUMN quran_start_sura INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_start_ayah') THEN
+        ALTER TABLE scores ADD COLUMN quran_start_ayah INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_end_sura') THEN
+        ALTER TABLE scores ADD COLUMN quran_end_sura INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_end_ayah') THEN
+        ALTER TABLE scores ADD COLUMN quran_end_ayah INTEGER;
     END IF;
 END $$;
 
