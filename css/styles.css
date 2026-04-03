@@ -110,9 +110,9 @@ header {
 
 /* Global input dark mode fixes to prevent invisible text */
 .dark input, .dark select, .dark textarea {
-    color: #f3f4f6;
+    color: #f3f4f6 !important;
 }
 .dark option {
-    background-color: #1f2937;
-    color: #f3f4f6;
+    background-color: #1f2937 !important;
+    color: #f3f4f6 !important;
 }

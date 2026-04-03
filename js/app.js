@@ -134,8 +134,12 @@ function loadAuth() {
     if (savedLevel && LEVELS[savedLevel]) {
         state.currentLevel = savedLevel;
         state.isTeacher = savedRole === 'teacher';
-        if (savedRole === 'student' && savedStudentId) {
-            window._currentLoggedInStudentId = savedStudentId;
+        if (savedRole === 'student') {
+            if (savedStudentId) {
+                window._currentLoggedInStudentId = savedStudentId;
+            } else {
+                return false; // Incomplete student session, force logout to avoid bug
+            }
         }
         return true; // Logged in
     }
@@ -4258,14 +4262,7 @@ async function openStudentReport(studentId) {
             </button>
         `;
     } else if (isStudent) {
-        topButtonsHTML = `
-            <div class="flex gap-2 mb-4">
-                <button onclick="openQuranSearchModal()" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2">
-                    <i data-lucide="book" class="w-5 h-5"></i>
-                    بحث في المصحف
-                </button>
-            </div>
-        `;
+        topButtonsHTML = ``;
     }
 
     container.innerHTML = `
@@ -4352,6 +4349,14 @@ async function openStudentReport(studentId) {
 
             <!-- Visual Calendar -->
             ${calendarHTML}
+            ${(state.isParent || isStudent) ? `
+                <div class="mb-5 flex justify-center">
+                    <button onclick="openQuranSearchModal()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                        <i data-lucide="book-open" class="w-5 h-5"></i>
+                         المصحف الشريف
+                    </button>
+                </div>
+            ` : ''}
 
             <!-- Absence Details -->
             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border">
@@ -4520,7 +4525,10 @@ window.showDayDetails = (dateStr) => {
             ${s.quranSection ? `
             <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
                 <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع:</p>
-                <p class="text-xs text-gray-600 dark:text-gray-400 mb-0 font-bold">${s.quranSection}</p>
+                <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${s.quranSection}</p>
+                <button onclick="window._openQuranForScore('${s.id}')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
+                    <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
+                </button>
             </div>
             ` : ''}
         </div>
@@ -4548,6 +4556,25 @@ window.showDayDetails = (dateStr) => {
         </div>
     `;
     lucide.createIcons();
+
+    window._openQuranForScore = (scoreId) => {
+        const score = uniqueScores.find(s => s.id === scoreId);
+        if (!score || !score.quranStartSura || !score.quranEndSura) {
+            showToast('التفاصيل الدقيقة للآيات غير متوفرة لهذا السجل القديم', 'error');
+            return;
+        }
+        if (!window.QuranService || !window.CurriculumManager || !window.CurriculumManager.showPaginatedQuranModal) {
+            showToast('برجاء الانتظار لحين تحميل المصحف', 'error');
+            return;
+        }
+        
+        let startPage = window.QuranService.getPageForAyah(score.quranStartSura, score.quranStartAyah);
+        let endPage = window.QuranService.getPageForAyah(score.quranEndSura, score.quranEndAyah);
+        let sections = window.QuranService.getSectionsForPageRange(startPage, endPage);
+        
+        // Use pagination
+        window.CurriculumManager.showPaginatedQuranModal(sections);
+    };
 };
 
 function contactTeacher(studentName, teacherPhone) {

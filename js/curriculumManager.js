@@ -138,12 +138,9 @@ window.CurriculumManager = (function() {
                         <!-- الأيام -->
                         <div>
                             <p class="text-xs font-bold mb-2">مقدار الحفظ/المراجعة اليومي (بالصفحات)</p>
-                            <div class="grid grid-cols-5 gap-1 text-center">
-                                ${['sun', 'mon', 'tue', 'wed', 'thu'].map(day => `
-                                    <div class="bg-teal-50 rounded-lg p-1">
-                                        <input type="number" step="0.25" id="plan-${day}" class="w-full text-center border rounded text-xs p-1 font-bold dark:bg-gray-700 dark:text-white dark:border-gray-600" value="${plan ? (plan.weeklyPages[day]||1) : 1}">
-                                    </div>
-                                `).join('')}
+                            <div class="bg-teal-50 dark:bg-gray-700/50 rounded-lg p-3 flex items-center gap-3 max-w-[200px]">
+                                <input type="number" step="0.25" id="plan-daily-pages" class="w-full text-center border rounded-xl px-3 py-2 font-bold dark:bg-gray-700 dark:text-white dark:border-gray-600 shadow-sm" value="${plan ? (plan.weeklyPages['sun']||1) : 1}">
+                                <span class="text-xs text-gray-500 font-bold whitespace-nowrap">صفحة يومياً</span>
                             </div>
                         </div>
 
@@ -230,11 +227,11 @@ window.CurriculumManager = (function() {
             start_page: startPage,
             end_page: endPage,
             weekly_pages: {
-                sun: Number(document.getElementById('plan-sun').value),
-                mon: Number(document.getElementById('plan-mon').value),
-                tue: Number(document.getElementById('plan-tue').value),
-                wed: Number(document.getElementById('plan-wed').value),
-                thu: Number(document.getElementById('plan-thu').value),
+                sun: Number(document.getElementById('plan-daily-pages').value),
+                mon: Number(document.getElementById('plan-daily-pages').value),
+                tue: Number(document.getElementById('plan-daily-pages').value),
+                wed: Number(document.getElementById('plan-daily-pages').value),
+                thu: Number(document.getElementById('plan-daily-pages').value),
             },
             level: state.currentLevel,
             status: 'active'
@@ -244,7 +241,7 @@ window.CurriculumManager = (function() {
             await savePlan(planData);
             showToast('تم حفظ الخطة بنجاح', 'success');
             closeModal();
-            // Optional: refresh UI
+            if (window.openStudentReport) window.openStudentReport(studentId);
         } catch (e) {
             showToast('خطأ في الحفظ', 'error');
         }
@@ -275,6 +272,47 @@ window.CurriculumManager = (function() {
         `;
         document.body.insertAdjacentHTML('beforeend', html);
         lucide.createIcons();
+    }
+    
+    function showPaginatedQuranModal(sectionsRaw) {
+        if (!sectionsRaw || sectionsRaw.length === 0) return;
+        // Map each section to a single HTML string
+        const pagesHtmlArray = sectionsRaw.map(sec => typeof window.QuranService !== 'undefined' ? window.QuranService.getTextForSections([sec]) : '');
+        
+        let currentIndex = 0;
+        
+        function renderPage() {
+            document.getElementById('quran-viewer-content').innerHTML = pagesHtmlArray[currentIndex];
+            document.getElementById('quran-page-indicator').textContent = `${currentIndex + 1} / ${pagesHtmlArray.length}`;
+            document.getElementById('quran-prev-btn').disabled = currentIndex === 0;
+            document.getElementById('quran-next-btn').disabled = currentIndex === pagesHtmlArray.length - 1;
+        }
+
+        window._nextQuranPage = () => { if (currentIndex < pagesHtmlArray.length - 1) { currentIndex++; renderPage(); } };
+        window._prevQuranPage = () => { if (currentIndex > 0) { currentIndex--; renderPage(); } };
+
+        let old = document.getElementById('quran-viewer-modal');
+        if (old) old.remove();
+        
+        let html = `
+            <div id="quran-viewer-modal" class="fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-2 sm:p-4 animate-fade-in" onclick="if(event.target===this)this.remove()">
+                <div class="bg-amber-50 dark:bg-[#1a1c1e] w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col" style="height:88vh" onclick="event.stopPropagation()">
+                    <div class="p-4 border-b border-amber-200 dark:border-gray-700 bg-gradient-to-l from-amber-100 to-amber-200 dark:from-gray-800 dark:to-gray-900 flex justify-between items-center shrink-0">
+                        <button onclick="document.getElementById('quran-viewer-modal').remove()" class="w-8 h-8 flex items-center justify-center rounded-full bg-amber-300/50 hover:bg-amber-300 text-amber-800 transition"><i data-lucide="x" class="w-5 h-5"></i></button>
+                        <div class="flex items-center gap-3" dir="ltr">
+                            <button id="quran-next-btn" onclick="window._nextQuranPage()" class="w-8 h-8 flex items-center justify-center bg-amber-600 disabled:opacity-50 text-white rounded-full font-bold shadow-md hover:bg-amber-700 transition"><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
+                            <span id="quran-page-indicator" class="text-sm font-bold text-amber-900 dark:text-amber-100 min-w-[50px] text-center"></span>
+                            <button id="quran-prev-btn" onclick="window._prevQuranPage()" class="w-8 h-8 flex items-center justify-center bg-amber-600 disabled:opacity-50 text-white rounded-full font-bold shadow-md hover:bg-amber-700 transition"><i data-lucide="chevron-left" class="w-5 h-5"></i></button>
+                        </div>
+                        <h3 class="font-bold text-amber-900 dark:text-amber-100 text-lg flex items-center gap-2">ورد التسميع 📖</h3>
+                    </div>
+                    <div id="quran-viewer-content" class="p-6 flex-1 overflow-y-auto text-2xl md:text-[1.7rem] font-quran" dir="rtl">
+                    </div>
+                </div>
+            </div>`;
+        document.body.insertAdjacentHTML('beforeend', html);
+        lucide.createIcons();
+        renderPage();
     }
 
     async function markDayCompleted(planId, studentId, date, todayEntry) {
@@ -539,6 +577,7 @@ window.CurriculumManager = (function() {
         submitPlan,
         generateDailySchedule,
         showQuranModal,
+        showPaginatedQuranModal,
         markDayCompleted,
         markDayAbsent,
         openDifferentCompletionModal,
