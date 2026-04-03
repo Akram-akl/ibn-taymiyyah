@@ -135,15 +135,6 @@ window.CurriculumManager = (function() {
                             </div>
                         </div>
 
-                        <!-- الأيام -->
-                        <div>
-                            <p class="text-xs font-bold mb-2">مقدار الحفظ/المراجعة اليومي (بالصفحات)</p>
-                            <div class="bg-teal-50 dark:bg-gray-700/50 rounded-lg p-3 flex items-center gap-3 max-w-[200px]">
-                                <input type="number" step="0.25" id="plan-daily-pages" class="w-full text-center border rounded-xl px-3 py-2 font-bold dark:bg-gray-700 dark:text-white dark:border-gray-600 shadow-sm" value="${plan ? (plan.weeklyPages['sun']||1) : 1}">
-                                <span class="text-xs text-gray-500 font-bold whitespace-nowrap">صفحة يومياً</span>
-                            </div>
-                        </div>
-
                     </div>
                     
                     <div class="flex gap-2 mt-6">
@@ -214,12 +205,40 @@ window.CurriculumManager = (function() {
             showToast('الترتيب غير صحيح', 'error'); return;
         }
 
+        const startDateStr = document.getElementById('plan-start-date').value;
+        const endDateStr = document.getElementById('plan-end-date').value;
+        
+        if (!startDateStr || !endDateStr) {
+            showToast('الرجاء تحديد تاريخ البدء والانتهاء', 'error'); return;
+        }
+
+        let sDate = new Date(startDateStr);
+        let eDate = new Date(endDateStr);
+        if (eDate < sDate) {
+            showToast('تاريخ الانتهاء يجب أن يكون بعد تاريخ البدء', 'error'); return;
+        }
+
+        let studyDaysCount = 0;
+        let cDate = new Date(sDate);
+        while(cDate <= eDate) {
+            if (STUDY_DAYS.includes(cDate.getDay())) studyDaysCount++;
+            cDate.setDate(cDate.getDate() + 1);
+        }
+
+        if (studyDaysCount === 0) {
+            showToast('الجدول لا يحتوي على أيام دراسة، يرجى توسيع النطاق', 'error'); return;
+        }
+
+        const totalPages = Math.abs(endPage - startPage) + 1;
+        // round to nearest hundreth
+        let pagesPerDay = Math.ceil((totalPages / studyDaysCount) * 100) / 100;
+
         const planData = {
             id: id || null,
             student_id: studentId,
             plan_type: document.getElementById('plan-type').value,
-            start_date: document.getElementById('plan-start-date').value,
-            end_date: document.getElementById('plan-end-date').value,
+            start_date: startDateStr,
+            end_date: endDateStr,
             start_sura: Number(startSura),
             start_ayah: Number(startAya),
             end_sura: Number(endSura),
@@ -227,11 +246,11 @@ window.CurriculumManager = (function() {
             start_page: startPage,
             end_page: endPage,
             weekly_pages: {
-                sun: Number(document.getElementById('plan-daily-pages').value),
-                mon: Number(document.getElementById('plan-daily-pages').value),
-                tue: Number(document.getElementById('plan-daily-pages').value),
-                wed: Number(document.getElementById('plan-daily-pages').value),
-                thu: Number(document.getElementById('plan-daily-pages').value),
+                sun: pagesPerDay,
+                mon: pagesPerDay,
+                tue: pagesPerDay,
+                wed: pagesPerDay,
+                thu: pagesPerDay,
             },
             level: state.currentLevel,
             status: 'active'
