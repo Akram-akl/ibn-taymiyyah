@@ -21,7 +21,8 @@ const state = {
     groups: [],
     scores: [],
     darkMode: localStorage.getItem('darkMode') === 'true',
-    studentPassword: null // For student mode authentication persistence
+    studentPassword: null, // For student mode authentication persistence
+    quranTrackingEnabled: localStorage.getItem('quranTrackingEnabled') === 'true' // For Quran Tracking feature
 };
 
 // --- Supabase Realtime Listeners ---
@@ -496,18 +497,24 @@ function renderHome() {
             </div>
 
             ${state.isTeacher ? `
-            <div class="grid grid-cols-2 gap-4">
-                <button onclick="router.navigate('students')" class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-teal-500 transition">
-                    <div class="bg-teal-100 dark:bg-teal-900/40 p-3 rounded-xl text-teal-600 dark:text-teal-400">
-                        <i data-lucide="user-plus" class="w-6 h-6"></i>
+            <div class="grid grid-cols-3 gap-3">
+                <button onclick="router.navigate('students')" class="bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-teal-500 transition">
+                    <div class="bg-teal-100 dark:bg-teal-900/40 p-2.5 rounded-xl text-teal-600 dark:text-teal-400">
+                        <i data-lucide="user-plus" class="w-5 h-5"></i>
                     </div>
-                    <span class="font-medium text-sm">إدارة الطلاب</span>
+                    <span class="font-medium text-[11px] sm:text-xs">إدارة الطلاب</span>
                 </button>
-                <button onclick="router.navigate('competitions')" class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-teal-500 transition">
-                    <div class="bg-purple-100 dark:bg-purple-900/40 p-3 rounded-xl text-purple-600 dark:text-purple-400">
-                        <i data-lucide="trophy" class="w-6 h-6"></i>
+                <button onclick="router.navigate('competitions')" class="bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-teal-500 transition">
+                    <div class="bg-purple-100 dark:bg-purple-900/40 p-2.5 rounded-xl text-purple-600 dark:text-purple-400">
+                        <i data-lucide="trophy" class="w-5 h-5"></i>
                     </div>
-                    <span class="font-medium text-sm">إدارة المسابقات</span>
+                    <span class="font-medium text-[11px] sm:text-xs">إدارة المسابقات</span>
+                </button>
+                <button onclick="openQuranSearchModal()" class="bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-emerald-500 transition">
+                    <div class="bg-emerald-100 dark:bg-emerald-900/40 p-2.5 rounded-xl text-emerald-600 dark:text-emerald-400">
+                        <i data-lucide="book" class="w-5 h-5"></i>
+                    </div>
+                    <span class="font-medium text-[11px] sm:text-xs">بحث المصحف</span>
                 </button>
             </div>
             ` : ''}
@@ -1045,11 +1052,32 @@ function renderSettings() {
                          </div>
                          <span class="font-medium">الوضع الليلي</span>
                      </div>
-                     <button onclick="toggleTheme()" class="w-12 h-7 bg-gray-200 dark:bg-teal-600 rounded-full relative transition-colors duration-300">
-                         <div class="w-5 h-5 bg-white rounded-full absolute top-1 left-1 dark:left-6 transition-all duration-300 shadow-sm"></div>
+                     <button onclick="toggleTheme()" class="w-12 h-7 ${state.darkMode ? 'bg-teal-600' : 'bg-gray-200'} rounded-full relative transition-colors duration-300">
+                         <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.darkMode ? 'left-6' : 'left-1'} transition-all duration-300 shadow-sm"></div>
                      </button>
                  </div>
              </div>
+
+             ${state.isTeacher ? `
+             <!-- Quran Tracking Setting (Teacher Only) -->
+             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm mt-3 border border-emerald-100 dark:border-emerald-900 border-dashed">
+                 <div class="flex justify-between items-center">
+                     <div class="flex items-center gap-3">
+                         <div class="bg-emerald-100 dark:bg-emerald-900/30 p-2 rounded-lg text-emerald-600">
+                             <i data-lucide="book-open" class="w-5 h-5"></i>
+                         </div>
+                         <div>
+                             <h4 class="font-bold text-sm text-gray-800 dark:text-gray-100">تتبع الحفظ بالقرآن</h4>
+                             <p class="text-xs text-gray-500 mt-1">تفعيل ميزة اختيار مقاطع قرآنية للطلاب ورصد تسميعها</p>
+                         </div>
+                     </div>
+                     <button onclick="toggleQuranTracking()" class="w-12 h-7 ${state.quranTrackingEnabled ? 'bg-emerald-600' : 'bg-gray-200 dark:bg-gray-700'} rounded-full relative transition-colors duration-300 shrink-0">
+                         <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.quranTrackingEnabled ? 'left-6' : 'left-1'} transition-all duration-300 shadow-sm"></div>
+                     </button>
+                 </div>
+             </div>
+             ` : ''}
+
 
              ${teacherInfoHTML}
 
@@ -1243,6 +1271,13 @@ function applyTheme() {
     }
 }
 
+function toggleQuranTracking() {
+    state.quranTrackingEnabled = !state.quranTrackingEnabled;
+    localStorage.setItem('quranTrackingEnabled', state.quranTrackingEnabled);
+    renderSettings(); // Re-render to update the toggle visual state
+    showToast(state.quranTrackingEnabled ? "تم تفعيل ميزة تتبع الحفظ بالقرآن" : "تم تعطيل ميزة تتبع الحفظ بالقرآن", "success");
+}
+
 // --- Modals HTML generation to keep JS clean ---
 // Implement Data Wipe Functions here (Global Scope)
 // Data Wipe Functions Removed per user request
@@ -1295,6 +1330,33 @@ function getStudentModalHTML() {
                              <input type="text" id="student-review" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3">
                          </div>
                      </div>
+
+                     <!-- Quran Plan Section -->
+                     <div id="quran-plan-section" class="hidden mt-3 bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
+                         <h4 class="font-bold text-sm text-emerald-700 dark:text-emerald-400 mb-2">تخصيص خطة الحفظ (قرآن)</h4>
+                         <div class="grid grid-cols-3 gap-2">
+                              <div>
+                                   <label class="block text-xs font-bold mb-1">السورة</label>
+                                   <select id="quran-sura-select" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-sm" onchange="updateQuranPlanAyaSelectors()">
+                                        <option value="">اختر..</option>
+                                   </select>
+                              </div>
+                              <div>
+                                   <label class="block text-xs font-bold mb-1">من آية</label>
+                                   <select id="quran-aya-from" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-sm" disabled>
+                                   </select>
+                              </div>
+                              <div>
+                                   <label class="block text-xs font-bold mb-1">إلى آية</label>
+                                   <select id="quran-aya-to" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-2 py-2 text-sm" disabled>
+                                   </select>
+                              </div>
+                         </div>
+                         <div class="mt-2 text-left">
+                             <button type="button" onclick="applyQuranPlan()" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700 transition">اعتماد الخطة</button>
+                         </div>
+                     </div>
+
                      
                      <div class="mb-2">
                          <label class="block text-sm font-bold mb-1">كلمة المرور</label>
@@ -1601,7 +1663,33 @@ function getGradingModalsHTML() {
                                                     <h3 id="rate-student-name" class="font-bold text-lg">اسم الطالب</h3>
                                                     <button onclick="closeModal('rate-student-modal')"><i data-lucide="x"></i></button>
                                                 </div>
+                                                
+                                                <div id="rate-quran-plan-display" class="hidden mb-3 text-sm text-center bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 p-2 rounded-lg font-bold text-teal-700 dark:text-teal-400"></div>
+
                                                 <p id="rate-date-display" class="text-center text-sm text-gray-500 mb-4 font-bold bg-gray-100 dark:bg-gray-700 py-1 rounded-lg"></p>
+                                                
+                                                <!-- Quran tracking inputs (Teacher grading) -->
+                                                <div id="rate-quran-section" class="hidden mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right">
+                                                    <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 mb-2">تحديد المقطع المُسمّع بالقرآن (اختياري)</h4>
+                                                    <div class="grid grid-cols-3 gap-2">
+                                                         <div>
+                                                              <select id="rate-quran-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[11px] font-bold" onchange="updateRateQuranAyaSelectors()">
+                                                                   <option value="">السورة..</option>
+                                                              </select>
+                                                         </div>
+                                                         <div>
+                                                              <select id="rate-quran-from" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[11px] font-bold" disabled>
+                                                                    <option value="">من آية..</option>
+                                                              </select>
+                                                         </div>
+                                                         <div>
+                                                              <select id="rate-quran-to" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-0.5 py-1.5 text-[11px] font-bold" disabled>
+                                                                    <option value="">إلى آية..</option>
+                                                              </select>
+                                                         </div>
+                                                    </div>
+                                                </div>
+
                                                 <div id="criteria-buttons-grid" class="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto"></div>
                                             </div>
                                         </div>
@@ -1667,6 +1755,17 @@ function openAddStudentModal() {
     $('#student-form').reset();
     $('#student-modal-title').textContent = 'إضافة طالب جديد';
     $('#save-student-text').textContent = 'حفظ';
+    
+    const quranSection = document.getElementById('quran-plan-section');
+    if (quranSection) {
+        if (state.quranTrackingEnabled && state.isTeacher) {
+            quranSection.classList.remove('hidden');
+            initQuranPlanSelectors();
+        } else {
+            quranSection.classList.add('hidden');
+        }
+    }
+    
     toggleModal('student-modal', true);
 }
 
@@ -1723,6 +1822,17 @@ async function openEditStudent(id) {
 
     $('#student-modal-title').textContent = 'تعديل بيانات الطالب';
     $('#save-student-text').textContent = 'تحديث';
+
+    const quranSection = document.getElementById('quran-plan-section');
+    if (quranSection) {
+        if (state.quranTrackingEnabled && state.isTeacher) {
+            quranSection.classList.remove('hidden');
+            initQuranPlanSelectors();
+        } else {
+            quranSection.classList.add('hidden');
+        }
+    }
+
     toggleModal('student-modal', true);
 }
 
@@ -1743,9 +1853,160 @@ async function performDeleteStudent() {
     } catch (err) { console.error(err); showToast("خطأ في الحذف", "error"); }
 }
 
+// === QURAN INTEGRATION ===
+async function initQuranPlanSelectors() {
+    const suraSelect = document.getElementById('quran-sura-select');
+    if (!suraSelect || suraSelect.options.length > 1) return; // already initialized
+
+    if (typeof QuranService === 'undefined') {
+        console.warn("QuranService is not available.");
+        return;
+    }
+
+    const loadSpan = document.createElement('option');
+    loadSpan.textContent = "جاري التحميل...";
+    suraSelect.innerHTML = '';
+    suraSelect.appendChild(loadSpan);
+
+    await QuranService.loadData();
+    const suras = QuranService.getSuras();
+    suraSelect.innerHTML = '<option value="">اختر السورة..</option>';
+    suras.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.number;
+        opt.textContent = `${s.number}. ${s.name}`;
+        suraSelect.appendChild(opt);
+    });
+}
+
+async function updateQuranPlanAyaSelectors() {
+    const suraSelect = document.getElementById('quran-sura-select');
+    const ayaFrom = document.getElementById('quran-aya-from');
+    const ayaTo = document.getElementById('quran-aya-to');
+    
+    if(!suraSelect || !ayaFrom || !ayaTo) return;
+
+    if (!suraSelect.value) {
+        ayaFrom.innerHTML = '';
+        ayaTo.innerHTML = '';
+        ayaFrom.disabled = true;
+        ayaTo.disabled = true;
+        return;
+    }
+
+    const suraNo = parseInt(suraSelect.value);
+    await QuranService.loadData();
+    const ayas = QuranService.getAyahs(suraNo);
+    
+    let optionsHTML = '';
+    ayas.forEach(a => {
+        optionsHTML += `<option value="${a.aya_no}">${a.aya_no}</option>`;
+    });
+
+    ayaFrom.innerHTML = optionsHTML;
+    ayaTo.innerHTML = optionsHTML;
+    
+    ayaFrom.disabled = false;
+    ayaTo.disabled = false;
+    
+    // Set default "to" to the last aya
+    if (ayas.length > 0) {
+        ayaTo.value = ayas[ayas.length - 1].aya_no;
+    }
+}
+
+function applyQuranPlan() {
+    const suraSelect = document.getElementById('quran-sura-select');
+    const ayaFrom = document.getElementById('quran-aya-from');
+    const ayaTo = document.getElementById('quran-aya-to');
+    const memoInput = document.getElementById('student-memorization');
+    
+    if (!suraSelect.value) {
+        showToast('الرجاء اختيار السورة أولاً', 'error');
+        return;
+    }
+    
+    const suraName = suraSelect.options[suraSelect.selectedIndex].text.split('. ')[1];
+    const fromLine = ayaFrom.value;
+    const toLine = ayaTo.value;
+    
+    // Append to existing, or overwrite depending on preference. Let's merge nicely.
+    const planText = `سورة ${suraName} من آية ${fromLine} إلى ${toLine}`;
+    if (memoInput.value.trim() === '') {
+        memoInput.value = planText;
+    } else {
+        memoInput.value = memoInput.value.trim() + ' | ' + planText;
+    }
+    
+    showToast('تم اعتماد المقطع في الخطة', 'success');
+}
+
+
 // === GROUPS ===
 // Assuming groups are sub-collections or root collections with competitionId?
 // For simplicity in this flat structure, let's say groups are root but have 'competitionId'.
+
+async function initRateQuranSelectors() {
+    const suraSelect = document.getElementById('rate-quran-sura');
+    if (!suraSelect || suraSelect.options.length > 2) return; // already initialized, "السورة.." + options
+    
+    // clear and reset
+    suraSelect.innerHTML = '<option value="">السورة..</option>';
+    document.getElementById('rate-quran-from').innerHTML = '<option value="">من آية..</option>';
+    document.getElementById('rate-quran-to').innerHTML = '<option value="">إلى آية..</option>';
+    document.getElementById('rate-quran-from').disabled = true;
+    document.getElementById('rate-quran-to').disabled = true;
+
+    if (typeof QuranService === 'undefined') return;
+
+    await QuranService.loadData();
+    const suras = QuranService.getSuras();
+    suras.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.number;
+        opt.textContent = `${s.number}. ${s.name}`;
+        suraSelect.appendChild(opt);
+    });
+}
+
+async function updateRateQuranAyaSelectors() {
+    const suraSelect = document.getElementById('rate-quran-sura');
+    const ayaFrom = document.getElementById('rate-quran-from');
+    const ayaTo = document.getElementById('rate-quran-to');
+    
+    if(!suraSelect || !ayaFrom || !ayaTo) return;
+
+    if (!suraSelect.value) {
+        ayaFrom.innerHTML = '<option value="">من آية..</option>';
+        ayaTo.innerHTML = '<option value="">إلى آية..</option>';
+        ayaFrom.disabled = true;
+        ayaTo.disabled = true;
+        return;
+    }
+
+    const suraNo = parseInt(suraSelect.value);
+    if (typeof QuranService === 'undefined') return;
+    
+    await QuranService.loadData();
+    const ayas = QuranService.getAyahs(suraNo);
+    
+    let optionsHTML = '';
+    ayas.forEach(a => {
+        optionsHTML += `<option value="${a.aya_no}">${a.aya_no}</option>`;
+    });
+
+    ayaFrom.innerHTML = optionsHTML;
+    ayaTo.innerHTML = optionsHTML;
+    
+    ayaFrom.disabled = false;
+    ayaTo.disabled = false;
+    
+    // Set default "to" to the last aya
+    if (ayas.length > 0) {
+        ayaTo.value = ayas[ayas.length - 1].aya_no;
+    }
+}
+
 
 let currentManageCompId = null;
 
@@ -2462,6 +2723,27 @@ function openRateStudent(studentId) {
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : 'تقييم الطالب';
 
+    // Show plan if any
+    const planDisplay = $('#rate-quran-plan-display');
+    if (s && s.memorizationPlan && state.quranTrackingEnabled) {
+        planDisplay.textContent = `الخطة الحالية: ${s.memorizationPlan}`;
+        planDisplay.classList.remove('hidden');
+    } else {
+        planDisplay.classList.add('hidden');
+        planDisplay.textContent = '';
+    }
+
+    // Init Quran Selectors in grading if enabled
+    const quranSec = document.getElementById('rate-quran-section');
+    if (quranSec) {
+        if (state.quranTrackingEnabled) {
+            quranSec.classList.remove('hidden');
+            initRateQuranSelectors();
+        } else {
+            quranSec.classList.add('hidden');
+        }
+    }
+
     // عرض التاريخ
     const dateVal = $('#grading-date').value;
     $('#rate-date-display').textContent = `تاريخ الرصد: ${dateVal}`;
@@ -2535,6 +2817,31 @@ async function submitScore(criteriaId, points, criteriaName, type) {
         updatedAt: new Date(),
         timestamp: Date.now()
     };
+
+    if (state.quranTrackingEnabled) {
+        const suraSelect = document.getElementById('rate-quran-sura');
+        const ayaFrom = document.getElementById('rate-quran-from');
+        const ayaTo = document.getElementById('rate-quran-to');
+        
+        if (suraSelect && suraSelect.value && ayaFrom.value && ayaTo.value) {
+            const suraNo = parseInt(suraSelect.value);
+            const fromAya = parseInt(ayaFrom.value);
+            const toAya = parseInt(ayaTo.value);
+            
+            const suraName = suraSelect.options[suraSelect.selectedIndex].text.split('. ')[1] || '';
+            const quranSectionText = `سورة ${suraName} (آية ${fromAya} - ${toAya})`;
+            
+            // fetch Uthmanic Text
+            if (typeof QuranService !== 'undefined') {
+                 await QuranService.loadData();
+                 const allAyas = QuranService.getAyahs(suraNo);
+                 const ayas = allAyas.filter(a => parseInt(a.aya_no) >= fromAya && parseInt(a.aya_no) <= toAya);
+                 const quranText = ayas.map(a => `${a.aya_text} ﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾`).join(' ');
+                 data.quranSection = quranSectionText;
+                 data.quranText = quranText;
+            }
+        }
+    }
 
     try {
         // Check for existing score to Update
@@ -3340,10 +3647,98 @@ async function generateWeeklyReport() {
     }
 }
 
+function getQuranSearchModalHTML() {
+    return `
+    <div id="quran-search-modal" class="fixed inset-0 bg-black/60 z-[100] hidden flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h3 class="font-bold text-lg flex items-center gap-2 text-emerald-700 dark:text-emerald-400"><i data-lucide="book" class="w-5 h-5"></i> بحث في المصحف</h3>
+                <button onclick="closeModal('quran-search-modal')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x"></i></button>
+            </div>
+            
+            <div class="flex gap-2 mb-4 shrink-0">
+                <input type="text" id="quran-search-query" placeholder="ابحث بجزء من الآية (مسموح بدون تشكيل)..." class="flex-1 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition" onkeydown="if(event.key === 'Enter') executeQuranSearch()">
+                <button onclick="executeQuranSearch()" class="bg-emerald-600 text-white px-5 py-3 rounded-xl font-bold hover:bg-emerald-700 transition flex items-center gap-2"><i data-lucide="search" class="w-5 h-5"></i></button>
+            </div>
+            
+            <div id="quran-search-results" class="flex-1 overflow-y-auto space-y-3 p-1">
+                <div class="text-center py-8 opacity-50">
+                    <i data-lucide="search" class="w-12 h-12 mx-auto mb-3"></i>
+                    <p class="text-sm">اكتب كلمة للبحث عنها، للوصول السريع لاسم السورة وأرقام الآيات.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+}
+
+async function openQuranSearchModal() {
+    toggleModal('quran-search-modal', true);
+    lucide.createIcons();
+    if (typeof QuranService !== 'undefined' && !QuranService.isLoaded()) {
+        const res = $('#quran-search-results');
+        const oldHtml = res.innerHTML;
+        res.innerHTML = '<div class="text-center py-8"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto text-emerald-600"></i><p class="text-xs text-gray-500 mt-2">جاري جلب بيانات المصحف...</p></div>';
+        lucide.createIcons();
+        await QuranService.loadData();
+        res.innerHTML = oldHtml;
+    }
+    setTimeout(() => {
+        const input = $('#quran-search-query');
+        if(input) input.focus();
+    }, 100);
+}
+
+function executeQuranSearch() {
+    const query = $('#quran-search-query').value;
+    const res = $('#quran-search-results');
+    
+    if (!query || query.trim() === '') {
+        res.innerHTML = '<p class="text-center text-red-500 py-4 text-sm font-bold">الرجاء إدخال كلمة للبحث!</p>';
+        return;
+    }
+    
+    if (typeof QuranService === 'undefined' || !QuranService.isLoaded()) {
+         showToast("خدمة المصحف غير متوفرة", "error");
+         return;
+    }
+    
+    // UI Loading state
+    res.innerHTML = '<div class="text-center py-8"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto text-emerald-600"></i></div>';
+    lucide.createIcons();
+    
+    setTimeout(() => {
+        const results = QuranService.searchAyahs(query);
+        if (results.length === 0) {
+            res.innerHTML = '<p class="text-center text-gray-500 py-8 font-bold">لم يتم العثور على نتائج مطابقة.</p>';
+            return;
+        }
+        
+        const toShow = results.slice(0, 30);
+        
+        let html = `<p class="text-xs text-gray-500 mb-3 text-center border-b pb-2">تم العثور على <span class="font-bold text-emerald-600">${results.length}</span> آية ${results.length > 30 ? '(عرض أول 30)' : ''}</p>`;
+        
+        toShow.forEach(aya => {
+            html += `
+                <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-200 dark:border-gray-600 shadow-sm transition hover:border-emerald-400">
+                    <div class="flex justify-between items-center mb-3">
+                        <span class="text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i> سورة ${aya.sura_name_ar}</span>
+                        <span class="text-[10px] text-gray-500 bg-white dark:bg-gray-600 px-2 py-0.5 rounded-full border">الجزء ${aya.jozz} | الآية ${aya.aya_no}</span>
+                    </div>
+                    <p class="font-quran text-gray-800 dark:text-gray-200 text-lg leading-loose text-justify" dir="rtl">${aya.aya_text} ﴿${Number(aya.aya_no).toLocaleString('ar-EG')}﴾</p>
+                </div>
+            `;
+        });
+        
+        res.innerHTML = html;
+        lucide.createIcons();
+    }, 50); // slight delay to allow rendering spinner
+}
+
 // Global Modals Helper
 function ensureGlobalModals() {
     if (!document.getElementById('student-modal')) {
-        const modalsHTML = getStudentModalHTML() + getCompetitionModalsHTML();
+        const modalsHTML = getStudentModalHTML() + getCompetitionModalsHTML() + getQuranSearchModalHTML();
         document.body.insertAdjacentHTML('beforeend', modalsHTML);
         document.body.insertAdjacentHTML('beforeend', getGradingModalsHTML());
     }
@@ -3626,6 +4021,30 @@ async function openStudentReport(studentId) {
                 ${student.reviewPlan ? `<p class="text-sm"><span class="font-bold text-purple-600">المراجعة:</span> ${student.reviewPlan}</p>` : ''}
             </div>
             ` : ''}
+
+            <!-- Quran Recitation Log -->
+            ${(() => {
+                const quranRecords = scores.filter(s => s.quranSection).sort((a,b) => new Date(b.date) - new Date(a.date));
+                if (quranRecords.length > 0) {
+                    return `
+                    <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border">
+                        <h3 class="font-bold mb-3 flex items-center gap-2 text-emerald-600"><i data-lucide="book" class="w-4 h-4"></i> سجل التسميع (قرآن)</h3>
+                        <div class="space-y-3">
+                            ${quranRecords.map(r => `
+                                <div class="bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
+                                    <div class="flex justify-between items-center mb-1">
+                                        <span class="font-bold text-xs text-emerald-800 dark:text-emerald-300">${r.quranSection}</span>
+                                        <span class="text-[10px] text-gray-500 bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full border">${r.date}</span>
+                                    </div>
+                                    <p class="font-quran text-gray-800 dark:text-gray-200 mt-2 whitespace-pre-wrap leading-loose text-justify text-lg" dir="rtl">${r.quranText}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    `;
+                }
+                return '';
+            })()}
 
             <!-- Visual Calendar -->
             ${calendarHTML}
