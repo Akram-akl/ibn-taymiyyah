@@ -550,7 +550,7 @@ function renderHome() {
                     <h2 class="text-2xl font-bold mb-1">لوحة المتصدرين</h2>
                     <p class="text-teal-100 text-sm">أفضل الطلاب أداءً - ${(LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')}</p>
                     
-                    <div id="top-3-container" class="mt-6 flex justify-center items-end gap-4 h-32">
+                    <div id="top-3-container" class="mt-6 flex justify-center gap-4">
                         <i data-lucide="loader-2" class="w-8 h-8 animate-spin text-white"></i>
                     </div>
                 </div>
