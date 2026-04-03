@@ -540,22 +540,6 @@ const router = {
 function renderHome() {
     const container = $('#view-container');
 
-    // If it's a student, show their dashboard instead of leaderboard
-    if (!state.isTeacher && !state.isParent && window._currentLoggedInStudentId) {
-        // Fetch their doc just in case
-        window.firebaseOps.getDoc(window.firebaseOps.doc(window.db, "students", window._currentLoggedInStudentId))
-            .then(docSnap => {
-                if(docSnap.exists()) {
-                    window._currentStudentRecord = docSnap.data();
-                    window._currentStudentRecord.id = docSnap.id;
-                    openStudentReport(window._currentLoggedInStudentId);
-                } else {
-                    container.innerHTML = '<p class="text-center p-8">خطأ: لم يتم العثور على الطالب</p>';
-                }
-            });
-        return;
-    }
-
     container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
             <div class="bg-gradient-to-br from-teal-500 to-emerald-600 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
@@ -912,6 +896,22 @@ function updateCompetitionsListUI() {
 
 function renderStudents() {
     const container = $('#view-container');
+
+    // If it's a student, show their dashboard directly in this 'Students/Profile' tab
+    if (!state.isTeacher && !state.isParent && window._currentLoggedInStudentId) {
+        window.firebaseOps.getDoc(window.firebaseOps.doc(window.db, "students", window._currentLoggedInStudentId))
+            .then(docSnap => {
+                if(docSnap.exists()) {
+                    window._currentStudentRecord = docSnap.data();
+                    window._currentStudentRecord.id = docSnap.id;
+                    openStudentReport(window._currentLoggedInStudentId);
+                } else {
+                    container.innerHTML = '<p class="text-center p-8">خطأ: لم يتم العثور على الطالب</p>';
+                }
+            });
+        return;
+    }
+
     container.innerHTML = `
         <div class="space-y-4 animate-fade-in">
             <div class="flex justify-between items-center mb-2">
