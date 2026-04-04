@@ -162,6 +162,7 @@ window.CurriculumManager = (function() {
             const raw = planSnap.data();
             const plan = {
                 ...raw,
+                original_start_date: raw.original_start_date || raw.start_date || raw.startDate,
                 end_date: raw.end_date || raw.endDate,
                 start_date: raw.start_date || raw.startDate,
                 start_sura: raw.start_sura || raw.startSura,
@@ -170,34 +171,35 @@ window.CurriculumManager = (function() {
             };
 
             let finalEndDate = plan.end_date;
+            let finalNextDate = nextDateStr;
             
-            // حساب الانحراف عن الخطة (هل الطالب متأخر أم متقدم؟)
-            const nextDate = new Date(nextDateStr);
-            const endDate = new Date(plan.end_date);
-            
-            // إذا كان هناك تأخير (غياب أو إنجاز أقل) أو طلب تمديد صريح
+            // الحد من رقم السورة (1-114)
+            let safeNextSura = Number(nextSura);
+            let safeNextAyah = Number(nextAyah);
+            if (safeNextSura > 114) {
+               await window.firebaseOps.updateDoc(planRef, { status: 'completed' });
+               return { warning: false, completed: true };
+            }
+
+            // إذا كان هناك تمديد صريح (غياب)
             if (forceExtend) {
                 const eDate = new Date(plan.end_date);
                 eDate.setDate(eDate.getDate() + 1);
                 finalEndDate = eDate.toLocaleDateString('en-CA');
             }
 
-            // إذا انتهى الوقت كلياً
-            if (nextDate > new Date(finalEndDate)) {
-                await window.firebaseOps.updateDoc(planRef, { status: 'completed' });
-                return { warning: false, completed: true };
-            }
-
             const updateData = {
-                start_date: nextDateStr,
+                // لا نغير start_date الأصلي هنا للحفاظ على التاريخ في التقويم
+                // بل سنحدث الحقول التي تدل على نقطة التقدم الحالية
+                start_sura: safeNextSura,
+                start_ayah: safeNextAyah,
+                current_progress_date: finalNextDate,
                 end_date: finalEndDate,
-                start_sura: Number(nextSura),
-                start_ayah: Number(nextAyah),
+                original_start_date: plan.original_start_date, // نضمن بقاءه
                 updated_at: new Date().toISOString()
             };
 
             await window.firebaseOps.updateDoc(planRef, updateData);
-
             return { warning: false, completed: false };
         } catch (e) {
             console.error("Error recalculating plan:", e);
@@ -210,16 +212,16 @@ window.CurriculumManager = (function() {
         
         const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
         const planSnap = await window.firebaseOps.getDoc(planRef);
-        const planRaw = planSnap.data();
-        const planEndDate = planRaw.end_date || planRaw.endDate;
+        const planData = planSnap.data();
         
         // حساب الآية التالية
         const allAyas = window.QuranService.getAyahs(actualEndSura);
         const currIdx = allAyas.findIndex(a => a.aya_no == actualEndAyah);
-        let nextSura = actualEndSura;
-        let nextAyah = actualEndAyah + 1;
+        let nextSura = Number(actualEndSura);
+        let nextAyah = Number(actualEndAyah) + 1;
+        
         if (currIdx === allAyas.length - 1) {
-            nextSura = Number(actualEndSura) + 1;
+            nextSura = nextSura + 1;
             nextAyah = 1;
         }
 
@@ -227,8 +229,7 @@ window.CurriculumManager = (function() {
         tomorrow.setDate(tomorrow.getDate() + 1);
         const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
 
-        // المقارنة مع ما كان مخططاً له اليوم (لمعرفة هل نمدد أم لا)
-        // إذا كان المقدار المنجز أقل من المقرر اليومي، نمدد يوماً واحداً
+        // كشف التأخير (هل أنجز أقل مما هو مقرر اليوم؟)
         const todayStr = new Date().toLocaleDateString('en-CA');
         const fullSchedule = await generateDailySchedule(planSnap.data());
         const todayTarget = fullSchedule.find(d => d.date === todayStr);
@@ -767,12 +768,29 @@ window.CurriculumManager = (function() {
 
             // إنجاز مختلف: نقوم فقط بتقديم الخطة إلى النقطة التي وصل إليها الطالب
             
-            const result = await recalculatePlanAfterAchievement(studentId, planId, endSura, endAyah);
-            if (result && result.warning) {
-                alert('⚠️ تنبيه: الطالب لم ينجز الورد بالكامل؛ تم ضغط المتبقي لضمان الختم في الموعد.');
-            }
+            // 1. إضافة سجل في جدول scores ليظهر اللون الأخضر
+            const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
+            const planSnap = await window.firebaseOps.getDoc(planRef);
+            const planRaw = planSnap.data();
+            const planType = planRaw.plan_type || planRaw.planType || 'memorization';
             
-            showToast('✅ تم تسجيل الإنجاز وإعادة الجدولة', 'success');
+            const planScoreId = planType === 'review' ? 'QURAN_REVIEW' : 'QURAN_MEMORIZATION';
+            const planScoreName = planType === 'review' ? 'تسميع مراجعة' : 'تسميع حفظ';
+            
+            const scoreData = {
+                student_id: studentId,
+                criteria_id: planScoreId,
+                criteria_name: planScoreName,
+                points: 10,
+                date: date,
+                timestamp: Date.now()
+            };
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), scoreData);
+
+            // 2. تحديث الخطة
+            const result = await recalculatePlanAfterAchievement(studentId, planId, endSura, endAyah);
+            
+            showToast('✅ تم تسجيل الإنجاز وإعادة الجدولة بنجاح', 'success');
             document.getElementById('diff-completion-modal').remove();
             if (window.openRateStudent) window.openRateStudent(studentId);
         } catch (e) {

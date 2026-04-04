@@ -2978,11 +2978,17 @@ function openRateStudent(studentId) {
         
         Promise.all([
             CurriculumManager.loadStudentPlan(studentId, 'memorization'),
-            CurriculumManager.loadStudentPlan(studentId, 'review')
-        ]).then(async ([hifzPlan, reviewPlan]) => {
-            planDisplay.innerHTML = '';
-            const today = $('#grading-date').value;
+            CurriculumManager.loadStudentPlan(studentId, 'review'),
+            window.firebaseOps.getDocs(window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "scores"),
+                window.firebaseOps.where("studentId", "==", studentId),
+                window.firebaseOps.where("date", "==", today)
+            ))
+        ]).then(async ([hifzPlan, reviewPlan, scoresSnap]) => {
+            // تحديث السجلات المحلية لهذه النافذة
+            window._currentStudentScores = scoresSnap.docs.map(d => ({id: d.id, ...d.data()}));
             
+            planDisplay.innerHTML = '';
             let hasAny = false;
             const plans = [hifzPlan, reviewPlan].filter(p => p !== null);
             
@@ -2997,7 +3003,13 @@ function openRateStudent(studentId) {
                     const color = isHifz ? 'teal' : 'purple';
                     const secText = todayEntry.sections.map(s => `${s.suraName}: (${s.fromAyah}-${s.toAyah})`).join(' | ');
                     
-                    const planHtml = `
+                    // التحقق من حالة الإنجاز لهذا الورد تحديداً
+                    const planScoreId = (plan.plan_type || plan.planType) === 'review' ? 'QURAN_REVIEW' : 'QURAN_MEMORIZATION';
+                    const sScores = window._currentStudentScores || [];
+                    const isDone = sScores.some(s => s.date === today && (s.criteria_id === planScoreId || s.criteriaId === planScoreId));
+                    const isAbsent = sScores.some(s => s.date === today && (s.criteria_id === 'ABSENCE_RECORD' || s.criteriaId === 'ABSENCE_RECORD'));
+
+                    let planHtml = `
                         <div class="mb-4 p-4 bg-${color}-50 dark:bg-${color}-900/10 border-2 border-${color}-100 dark:border-${color}-800 rounded-2xl relative overflow-hidden">
                             <div class="flex justify-between items-center mb-3">
                                 <span class="text-xs font-black text-${color}-700 dark:text-${color}-400 uppercase tracking-wider">${label}</span>
@@ -3010,18 +3022,42 @@ function openRateStudent(studentId) {
                                 <i data-lucide="hash" class="w-4 h-4 text-${color}-400"></i>
                                 ${secText}
                             </div>
-                            <div class="flex gap-2">
+                    `;
+
+                    if (isDone) {
+                        planHtml += `
+                            <div class="w-full py-3 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-xl text-center font-black text-xs flex items-center justify-center gap-2 border border-green-200 dark:border-green-800 animate-fade-in">
+                                <i data-lucide="check-circle" class="w-4 h-4"></i> تم الإنجاز بنجاح
+                            </div>
+                        `;
+                    } else if (isAbsent) {
+                        planHtml += `
+                            <div class="w-full py-3 bg-orange-50 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 rounded-xl text-center font-black text-xs flex items-center justify-center gap-2 border border-orange-100 dark:border-orange-800 animate-fade-in">
+                                <i data-lucide="clock" class="w-4 h-4"></i> تم التأجيل (غياب)
+                            </div>
+                        `;
+                    } else {
+                        planHtml += `
+                            <div class="flex flex-col gap-2">
                                 <button onclick="window._handlePlanAction('${plan.id}', 'executed', '${plan.plan_type || plan.planType}', '${escape(JSON.stringify(todayEntry))}')" 
-                                        class="flex-[2] py-3 bg-${color}-600 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-${color}-700 active:scale-95 transition">
+                                        class="w-full py-3 bg-${color}-600 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-${color}-700 active:scale-95 transition">
                                     تم التنفيذ ✅
                                 </button>
-                                <button onclick="CurriculumManager.openDifferentCompletionModal(${JSON.stringify(plan).replace(/"/g, '&quot;')}, '${studentId}', '${today}', ${JSON.stringify(todayEntry).replace(/"/g, '&quot;')})" 
-                                        class="flex-1 py-3 bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-200 border-2 border-gray-100 dark:border-gray-600 text-xs font-bold rounded-xl hover:bg-gray-50 transition">
-                                    أنجزت غيره
-                                </button>
+                                <div class="flex gap-2">
+                                    <button onclick="CurriculumManager.openDifferentCompletionModal(${JSON.stringify(plan).replace(/"/g, '&quot;')}, '${studentId}', '${today}', ${JSON.stringify(todayEntry).replace(/"/g, '&quot;')})" 
+                                            class="flex-1 py-2.5 bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-200 border-2 border-gray-100 dark:border-gray-600 text-[10px] font-black rounded-xl hover:bg-gray-50 transition">
+                                        أنجزت غيره
+                                    </button>
+                                    <button onclick="window._handlePlanAction('${plan.id}', 'absent', '${plan.plan_type || plan.planType}', '${escape(JSON.stringify(todayEntry))}')" 
+                                            class="flex-1 py-2.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-2 border-red-100 dark:border-red-900/50 text-[10px] font-black rounded-xl hover:bg-red-50 transition">
+                                        تسجيل غياب
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                    }
+                    
+                    planHtml += `</div>`;
                     planDisplay.insertAdjacentHTML('beforeend', planHtml);
                 }
             }
@@ -3044,6 +3080,10 @@ function openRateStudent(studentId) {
             await CurriculumManager.markDayCompleted(planId, studentId, today, entry);
             showToast('✅ تم تسجيل إنجاز الورد بنجاح');
             // Re-open to refresh UI
+            openRateStudent(studentId);
+        } else if (action === 'absent') {
+            await CurriculumManager.markDayAbsent(planId, studentId, today, entry);
+            showToast('⚠️ تم تسجيل الغياب وتأجيل الورد');
             openRateStudent(studentId);
         }
     };
@@ -4546,8 +4586,9 @@ window.showDayDetails = (dateStr) => {
             window[`_tempPlanSection_${idx}`] = p.sections;
             window[`_tempPlanObj_${idx}`] = p;
 
-            const isDone = dayScores.some(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
-            const isAbsent = dayScores.some(s => s.criteriaId === 'ABSENCE_RECORD');
+            const planScoreId = p.planType === 'review' ? 'QURAN_REVIEW' : 'QURAN_MEMORIZATION';
+            const isDone = dayScores.some(s => s.criteria_id === planScoreId || s.criteriaId === planScoreId);
+            const isAbsent = dayScores.some(s => s.criteria_id === 'ABSENCE_RECORD' || s.criteriaId === 'ABSENCE_RECORD');
 
             html += `
             <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
@@ -4567,17 +4608,6 @@ window.showDayDetails = (dateStr) => {
                     ` : isAbsent ? `
                         <div class="w-full py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-center font-bold text-sm flex items-center justify-center gap-2">
                             <i data-lucide="clock" class="w-4 h-4"></i> تم التأجيل (غياب)
-                        </div>
-                    ` : state.isTeacher ? `
-                        <div class="flex flex-col gap-2">
-                            <button onclick="if(window.CurriculumManager) window.CurriculumManager.markDayCompleted('${p.planId}','${window._currentStudentData.id}','${dateStr}', window['_tempPlanObj_${idx}'])" 
-                                class="w-full py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold transition">تم التنفيذ</button>
-                            <div class="flex gap-2">
-                                <button onclick="if(window.CurriculumManager) window.CurriculumManager.openDifferentCompletionModal(window['_tempPlanObj_${idx}'], '${window._currentStudentData.id}','${dateStr}', window['_tempPlanObj_${idx}'])" 
-                                    class="flex-1 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-[10px] font-bold transition">انجزت غيره</button>
-                                <button onclick="if(window.CurriculumManager) window.CurriculumManager.markDayAbsent('${p.planId}','${window._currentStudentData.id}','${dateStr}', window['_tempPlanObj_${idx}'])" 
-                                    class="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-[10px] font-bold transition">تسجيل غياب</button>
-                            </div>
                         </div>
                     ` : `
                         <button onclick="if(window.CurriculumManager) window.CurriculumManager.showPaginatedQuranModal(window['_tempPlanSection_${idx}'])" 
