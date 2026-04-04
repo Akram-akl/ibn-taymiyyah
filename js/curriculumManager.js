@@ -158,7 +158,15 @@ window.CurriculumManager = (function() {
             const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
             const planSnap = await window.firebaseOps.getDoc(planRef);
             if (!planSnap.exists()) return;
-            const plan = planSnap.data();
+            // توحيد الحقول (Normalize) لضمان التعامل مع snake_case و camelCase
+            const raw = planSnap.data();
+            const plan = {
+                ...raw,
+                end_date: raw.end_date || raw.endDate,
+                start_date: raw.start_date || raw.startDate,
+                start_sura: raw.start_sura || raw.startSura,
+                start_ayah: raw.start_ayah || raw.startAyah
+            };
 
             // إذا انتهى الوقت، انتهت الخطة
             if (new Date(nextDateStr) > new Date(plan.end_date)) {
@@ -175,12 +183,17 @@ window.CurriculumManager = (function() {
             const newAvg = (newSchedule[0]?.totalWeight || 1);
             const isHeavier = newAvg > oldAvg * 1.5;
 
-            await window.firebaseOps.updateDoc(planRef, {
+            const updateData = {
                 start_date: nextDateStr,
-                start_sura: nextSura,
-                start_ayah: nextAyah,
+                startDate: nextDateStr,
+                start_sura: Number(nextSura),
+                startSura: Number(nextSura),
+                start_ayah: Number(nextAyah),
+                startAyah: Number(nextAyah),
                 updated_at: new Date().toISOString()
-            });
+            };
+
+            await window.firebaseOps.updateDoc(planRef, updateData);
 
             return { warning: isHeavier, completed: false };
         } catch (e) {
