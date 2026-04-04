@@ -9,11 +9,12 @@ window.CurriculumManager = (function() {
     // الأيام المعتمدة للدراسة (0 الأحد، 1 الإثنين، ... 4 الخميس)
     const STUDY_DAYS = [0, 1, 2, 3, 4]; // الأحد إلى الخميس
 
-    async function loadStudentPlan(studentId) {
+    async function loadStudentPlan(studentId, planType = 'memorization') {
         try {
             const q = window.firebaseOps.query(
                 window.firebaseOps.collection(window.db, "student_plans"),
                 window.firebaseOps.where("student_id", "==", studentId),
+                window.firebaseOps.where("plan_type", "==", planType),
                 window.firebaseOps.where("status", "==", "active")
             );
             const snap = await window.firebaseOps.getDocs(q);
@@ -28,13 +29,12 @@ window.CurriculumManager = (function() {
     async function generateDailySchedule(planData) {
         if (!planData) return [];
         
-        const { start_date, end_date, start_sura, start_ayah, end_sura, end_ayah, weekly_pages } = planData;
+        const { start_date, end_date, start_sura, start_ayah, end_sura, end_ayah } = planData;
         const STUDY_DAYS = [0, 1, 2, 3, 4]; // الأحد إلى الخميس
-        const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
         
         if (!window.QuranService.isLoaded()) await window.QuranService.loadData();
         
-        // 1. الحصول على قائمة كاملة بالأيات في النطاق المحدد
+        // 1. 获取范围内的所有阿亚
         const allSuras = window.QuranService.getSuras();
         let allAyasInRange = [];
         let capturing = false;
@@ -45,14 +45,12 @@ window.CurriculumManager = (function() {
             
             const ayas = window.QuranService.getAyahs(sura.number);
             for (const aya of ayas) {
-                // بداية النطاق
                 if (aya.sura_no == start_sura && aya.aya_no == start_ayah) capturing = true;
-                
                 if (capturing) {
+                    // إضافة وزن للأية بناءً على طول النص (للتوزيع العادل)
+                    aya.weight = (aya.aya_text || "").length;
                     allAyasInRange.push(aya);
                 }
-                
-                // نهاية النطاق
                 if (aya.sura_no == end_sura && aya.aya_no == end_ayah) {
                     capturing = false;
                     break;
@@ -63,7 +61,7 @@ window.CurriculumManager = (function() {
 
         if (allAyasInRange.length === 0) return [];
 
-        // 2. حساب عدد أيام الدراسة المتاحة
+        // 2. حساب أيام الدراسة
         let studyDates = [];
         let cDate = new Date(start_date);
         let eDate = new Date(end_date);
@@ -76,62 +74,131 @@ window.CurriculumManager = (function() {
 
         if (studyDates.length === 0) return [];
 
-        // 3. تقسيم الآيات على الأيام (Ayah-Aware)
-        // الفكرة: نقسم عدد الآيات الكلي على عدد الأيام للحصول على متوسط، 
-        // أو نقسم الصفحات. المستخدم طلب تقسيم الصفحات لكن مع مراعاة عدم قطع الآية.
-        
-        const totalAyas = allAyasInRange.length;
-        const ayasPerDay = Math.ceil(totalAyas / studyDates.length);
+        // 3. التوزيع الميزان التسلسلي
+        const totalWeight = allAyasInRange.reduce((sum, a) => sum + a.weight, 0);
+        const avgWeightPerDay = totalWeight / studyDates.length;
         
         let schedule = [];
         let ayaIndex = 0;
 
         for (let i = 0; i < studyDates.length; i++) {
-            if (ayaIndex >= totalAyas) break;
-            
+            if (ayaIndex >= allAyasInRange.length) break;
+
             let dayStartAya = allAyasInRange[ayaIndex];
-            let dayEndIndex = Math.min(ayaIndex + ayasPerDay - 1, totalAyas - 1);
-            
-            // مرونة: إذا كان هناك آية واحدة فقط متبقية لليوم التالي، نضمها لليوم الحالي
-            if (i === studyDates.length - 1) {
-                dayEndIndex = totalAyas - 1;
-            } else if (totalAyas - 1 - dayEndIndex <= 2) { 
-                // إذا بطل أقل من آيتين للنهاية ضمهما لليوم الحالي للراحة
-                dayEndIndex = totalAyas - 1;
+            let dayWeight = 0;
+            let dayEndIndex = ayaIndex;
+
+            // تجميع الآيات حتى نصل للوزن المطلوب
+            while (dayEndIndex < allAyasInRange.length) {
+                const aya = allAyasInRange[dayEndIndex];
+                
+                // إذا أضفنا هذه الآية، هل سنتخطى الوزن بكثير؟
+                if (dayWeight > 0 && (dayWeight + aya.weight > avgWeightPerDay * 1.2)) {
+                    // توقف هنا لضمان عدم الضغط الزائد، إلا إذا كانت أول آية
+                    break;
+                }
+                
+                dayWeight += aya.weight;
+                dayEndIndex++;
+
+                // قاعدة "الريحية الذكية": إذا وصلنا لنهاية سورة، نتفحص السورة القادمة
+                const nextAya = allAyasInRange[dayEndIndex];
+                if (nextAya && nextAya.sura_no !== aya.sura_no) {
+                    // إذا كان المتبقي من السورة الجديدة قليل جداً (أقل من 4 آيات)، لا نبدأها اليوم إذا كان الوزن كافياً
+                    if (dayWeight >= avgWeightPerDay * 0.8) {
+                        // تفحص كم آية متبقية من السورة الجديدة في نطاقنا
+                        let nextSuraCount = 0;
+                        for(let k=dayEndIndex; k < allAyasInRange.length && allAyasInRange[k].sura_no == nextAya.sura_no; k++) nextSuraCount++;
+                        if (nextSuraCount < 4) break; 
+                    }
+                }
+                
+                if (dayWeight >= avgWeightPerDay) break;
             }
 
-            let dayEndAya = allAyasInRange[dayEndIndex];
+            // ضمان شمولية اليوم الأخير
+            if (i === studyDates.length - 1) dayEndIndex = allAyasInRange.length;
             
-            // تجميع السور في هذا اليوم
+            const dayAyas = allAyasInRange.slice(ayaIndex, dayEndIndex);
+            if (dayAyas.length === 0) break;
+
             let daySections = [];
-            let currentSura = null;
-            for (let j = ayaIndex; j <= dayEndIndex; j++) {
-                let a = allAyasInRange[j];
-                if (!currentSura || currentSura.suraNo !== a.sura_no) {
-                    currentSura = {
-                        suraNo: a.sura_no,
-                        suraName: a.sura_name_ar,
-                        fromAyah: a.aya_no,
-                        toAyah: a.aya_no
-                    };
-                    daySections.push(currentSura);
+            let curr = null;
+            dayAyas.forEach(a => {
+                if (!curr || curr.suraNo !== a.sura_no) {
+                    curr = { suraNo: a.sura_no, suraName: a.sura_name_ar, fromAyah: a.aya_no, toAyah: a.aya_no };
+                    daySections.push(curr);
                 } else {
-                    currentSura.toAyah = a.aya_no;
+                    curr.toAyah = a.aya_no;
                 }
-            }
+            });
 
             schedule.push({
                 date: studyDates[i],
-                targetStartPage: dayStartAya.page,
-                targetEndPage: dayEndAya.page,
-                sections: daySections
+                targetStartPage: dayAyas[0].page,
+                targetEndPage: dayAyas[dayAyas.length-1].page,
+                sections: daySections,
+                totalWeight: dayWeight
             });
 
-            ayaIndex = dayEndIndex + 1;
-            if (ayaIndex >= totalAyas) break;
+            ayaIndex = dayEndIndex;
         }
 
         return schedule;
+    }
+
+    async function recalculatePlanAfterAchievement(studentId, planId, actualEndSura, actualEndAyah) {
+        try {
+            // 1. جلب الخطة الحالية
+            const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
+            const planSnap = await window.firebaseOps.getDoc(planRef);
+            if (!planSnap.exists()) return;
+            const plan = planSnap.data();
+
+            // 2. تحديد الآية التالية للإنجاز الفعلي
+            if (!window.QuranService.isLoaded()) await window.QuranService.loadData();
+            const allAyas = window.QuranService.getAyas(actualEndSura);
+            const currIdx = allAyas.findIndex(a => a.aya_no == actualEndAyah);
+            
+            let nextSura = actualEndSura;
+            let nextAyah = actualEndAyah + 1;
+            
+            if (currIdx === allAyas.length - 1) {
+                nextSura = actualEndSura + 1;
+                nextAyah = 1;
+            }
+
+            // 3. تحديث الخطة لتبدأ من الغد بالمقطع المتبقي
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+            if (new Date(tomorrowStr) > new Date(plan.end_date)) {
+                // إذا انتهى الوقت، انتهت الخطة
+                await window.firebaseOps.updateDoc(planRef, { status: 'completed' });
+                return { warning: false, completed: true };
+            }
+
+            // حساب الوزن الجديد للتأكد من عدم وجود ضغط كبير
+            const newPlanData = { ...plan, start_date: tomorrowStr, start_sura: nextSura, start_ayah: nextAyah };
+            const oldSchedule = await generateDailySchedule(plan); 
+            const newSchedule = await generateDailySchedule(newPlanData);
+            
+            const oldAvg = (oldSchedule[0]?.totalWeight || 1);
+            const newAvg = (newSchedule[0]?.totalWeight || 1);
+            const isHeavier = newAvg > oldAvg * 1.5;
+
+            await window.firebaseOps.updateDoc(planRef, {
+                start_date: tomorrowStr,
+                start_sura: nextSura,
+                start_ayah: nextAyah,
+                updated_at: new Date().toISOString()
+            });
+
+            return { warning: isHeavier, completed: false };
+        } catch (e) {
+            console.error("Error recalculating plan:", e);
+        }
     }
 
     async function savePlan(planData) {
@@ -166,9 +233,9 @@ window.CurriculumManager = (function() {
                         <div class="grid grid-cols-2 gap-3">
                             <div class="flex-1">
                                 <label class="block text-xs font-bold text-gray-500 mb-1">نوع الخطة</label>
-                                <select id="plan-type" class="w-full border rounded-xl px-3 py-2 bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600 text-sm font-bold">
-                                    <option value="memorization" ${plan && plan.planType === 'memorization' ? 'selected' : ''}>حفظ</option>
-                                    <option value="review" ${plan && plan.planType === 'review' ? 'selected' : ''}>مراجعة</option>
+                                <select id="plan-type" onchange="CurriculumManager.openPlanModal('${studentId}', this.value)" class="w-full border rounded-xl px-3 py-2 bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600 text-sm font-bold">
+                                    <option value="memorization" ${plan && plan.plan_type === 'memorization' ? 'selected' : ''}>حفظ</option>
+                                    <option value="review" ${plan && plan.plan_type === 'review' ? 'selected' : ''}>مراجعة</option>
                                 </select>
                             </div>
                             <div></div>
@@ -177,11 +244,11 @@ window.CurriculumManager = (function() {
                         <div class="grid grid-cols-2 gap-3">
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 mb-1">تاريخ البدء</label>
-                                <input type="date" id="plan-start-date" value="${plan ? plan.startDate : new Date().toISOString().split('T')[0]}" class="w-full border rounded-xl px-3 py-2 bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600">
+                                <input type="date" id="plan-start-date" value="${plan ? plan.start_date : new Date().toISOString().split('T')[0]}" class="w-full border rounded-xl px-3 py-2 bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 mb-1">تاريخ النهاية المستهدف</label>
-                                <input type="date" id="plan-end-date" value="${plan ? plan.endDate : ''}" class="w-full border rounded-xl px-3 py-2 bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600">
+                                <input type="date" id="plan-end-date" value="${plan ? plan.end_date : ''}" class="w-full border rounded-xl px-3 py-2 bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600">
                             </div>
                         </div>
 
@@ -616,36 +683,34 @@ window.CurriculumManager = (function() {
     }
 
     async function submitDifferentCompletion(planId, studentId, date) {
-        const ss = document.getElementById('diff-start-sura').value;
-        const sa = document.getElementById('diff-start-aya').value;
-        const es = document.getElementById('diff-end-sura').value;
-        const ea = document.getElementById('diff-end-aya').value;
-        if (!ss || !sa || !es || !ea) { showToast('حدد النطاق بالكامل', 'error'); return; }
-
-        const actualStartPage = QuranService.getPageForAyah(ss, sa);
-        const actualEndPage = QuranService.getPageForAyah(es, ea);
-        const sections = QuranService.getSectionsForPageRange(actualStartPage, actualEndPage);
-
         try {
+            const startSura = parseInt(document.getElementById('diff-start-sura').value);
+            const startAyah = parseInt(document.getElementById('diff-start-aya').value);
+            const endSura = parseInt(document.getElementById('diff-end-sura').value);
+            const endAyah = parseInt(document.getElementById('diff-end-aya').value);
+
+            if (!startSura || !endSura) {
+                showToast("يرجى اختيار السورة والآيات", "error");
+                return;
+            }
+
             const data = {
                 plan_id: planId, student_id: studentId, date: date,
-                actual_start_page: actualStartPage, actual_end_page: actualEndPage,
-                actual_sections: sections, status: 'different'
+                actual_sections: [{ suraNo: endSura, fromAyah: startAyah, toAyah: endAyah }],
+                status: 'completed',
+                updated_at: new Date().toISOString()
             };
-            // Check existing
-            const q = window.firebaseOps.query(
-                window.firebaseOps.collection(window.db, "plan_daily_records"),
-                window.firebaseOps.where("plan_id", "==", planId),
-                window.firebaseOps.where("date", "==", date)
-            );
-            const snap = await window.firebaseOps.getDocs(q);
-            if (!snap.empty) {
-                await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "plan_daily_records", snap.docs[0].id), data);
-            } else {
-                await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "plan_daily_records"), data);
+
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "plan_daily_records"), data);
+            
+            const result = await recalculatePlanAfterAchievement(studentId, planId, endSura, endAyah);
+            if (result && result.warning) {
+                alert('⚠️ تنبيه: الطالب لم ينجز الورد بالكامل؛ تم ضغط المتبقي لضمان الختم في الموعد.');
             }
-            showToast('✅ تم تسجيل الإنجاز المختلف', 'success');
+            
+            showToast('✅ تم تسجيل الإنجاز وإعادة الجدولة', 'success');
             document.getElementById('diff-completion-modal').remove();
+            if (window.openRateStudent) window.openRateStudent(studentId);
         } catch (e) {
             console.error(e);
             showToast('خطأ في الحفظ', 'error');
@@ -743,8 +808,8 @@ window.CurriculumManager = (function() {
 
     return {
         loadStudentPlan,
-        openPlanModal: async (studentId) => {
-            const plan = await loadStudentPlan(studentId);
+        openPlanModal: async (studentId, type = 'memorization') => {
+            const plan = await loadStudentPlan(studentId, type);
             renderPlanManagerModal(studentId, plan);
         },
         closeModal,
@@ -760,7 +825,8 @@ window.CurriculumManager = (function() {
         submitDifferentCompletion,
         openIntensiveDayModal,
         updateIntensAyas,
-        submitIntensiveDay
+        submitIntensiveDay,
+        recalculatePlanAfterAchievement
     };
 })();
 

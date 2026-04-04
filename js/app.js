@@ -2965,59 +2965,73 @@ function openRateStudent(studentId) {
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : 'تقييم الطالب';
 
-    // Show plan if any (new curriculum system)
+    // Show plans if any (new curriculum system)
     const planDisplay = $('#rate-quran-plan-display');
     if (s && state.quranTrackingEnabled) {
-        CurriculumManager.loadStudentPlan(studentId).then(plan => {
-            if (plan) {
-                const today = $('#grading-date').value;
-                const schedule = CurriculumManager.generateDailySchedule(
-                    plan.startDate, plan.endDate, plan.startPage, plan.endPage, plan.weeklyPages
-                );
+        planDisplay.innerHTML = '<div class="text-xs text-gray-400 animate-pulse">جاري جلب ورد الطالب...</div>';
+        planDisplay.classList.remove('hidden');
+        
+        Promise.all([
+            CurriculumManager.loadStudentPlan(studentId, 'memorization'),
+            CurriculumManager.loadStudentPlan(studentId, 'review')
+        ]).then(async ([hifzPlan, reviewPlan]) => {
+            planDisplay.innerHTML = '';
+            const today = $('#grading-date').value;
+            
+            let hasAny = false;
+            const plans = [hifzPlan, reviewPlan].filter(p => p !== null);
+            
+            for (let plan of plans) {
+                const schedule = await CurriculumManager.generateDailySchedule(plan);
                 const todayEntry = schedule.find(d => d.date === today);
+                
                 if (todayEntry && todayEntry.sections && todayEntry.sections.length > 0) {
-                    // Store in temp for button handlers
-                    window._currentPlanContext = { plan, todayEntry, studentId, today };
+                    hasAny = true;
+                    const isHifz = plan.plan_type === 'memorization';
+                    const label = isHifz ? 'ورد الحفظ' : 'ورد المراجعة';
+                    const color = isHifz ? 'teal' : 'purple';
+                    const secText = todayEntry.sections.map(s => `${s.suraName}: (${s.fromAyah}-${s.toAyah})`).join(' | ');
                     
-                    const label = plan.planType === 'memorization' ? '📝 حفظ' : '🔄 مراجعة';
-                    const secText = todayEntry.sections.map(s => `${s.suraName}: آية ${s.fromAyah} - ${s.toAyah}`).join(' | ');
-                    planDisplay.innerHTML = `
-                        <div class="text-xs font-bold mb-1">${label} اليوم:</div>
-                        <div class="text-sm mb-2">${secText}</div>
-                        <div class="grid grid-cols-3 gap-2">
-                            <button onclick="window._completePlan()" class="py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition">✅ تم الإنجاز</button>
-                            <button onclick="window._showPlanQuran()" class="py-2 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-600 transition">📖 إظهار القرآن</button>
-                            <button onclick="window._differentCompletion()" class="py-2 bg-blue-500 text-white rounded-lg text-xs font-bold hover:bg-blue-600 transition">📝 إنجاز مختلف</button>
+                    const planHtml = `
+                        <div class="mb-3 p-3 bg-${color}-50 dark:bg-${color}-900/10 border border-${color}-100 dark:border-${color}-800 rounded-xl relative overflow-hidden">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-xs font-bold text-${color}-700 dark:text-${color}-400">${label}</span>
+                                <button onclick="CurriculumManager.showPaginatedQuranModal(${JSON.stringify(todayEntry.sections).replace(/"/g, '&quot;')})" class="text-[10px] bg-white dark:bg-gray-800 px-2 py-1 rounded-lg border shadow-sm flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i> القرآن</button>
+                            </div>
+                            <div class="text-sm font-bold mb-3 text-gray-800 dark:text-gray-100">${secText}</div>
+                            <div class="flex gap-2">
+                                <button onclick="window._handlePlanAction('${plan.id}', 'executed', '${plan.plan_type}', '${escape(JSON.stringify(todayEntry))}')" 
+                                        class="flex-1 py-2 bg-${color}-600 text-white text-[11px] font-bold rounded-lg shadow-sm hover:bg-${color}-700 transition">تم التنفيذ ✅</button>
+                                <button onclick="CurriculumManager.openDifferentCompletionModal(${JSON.stringify(plan).replace(/"/g, '&quot;')}, '${studentId}', '${today}', ${JSON.stringify(todayEntry).replace(/"/g, '&quot;')})" 
+                                        class="flex-1 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-[11px] font-bold rounded-lg hover:bg-gray-200 transition">إنجاز مختلف 📝</button>
+                            </div>
                         </div>
                     `;
-                    planDisplay.classList.remove('hidden');
-                    
-                    // Define handlers
-                    window._completePlan = () => {
-                        const ctx = window._currentPlanContext;
-                        CurriculumManager.markDayCompleted(ctx.plan.id, ctx.studentId, ctx.today, ctx.todayEntry);
-                    };
-                    window._showPlanQuran = () => {
-                        const ctx = window._currentPlanContext;
-                        const html = QuranService.getTextForSections(ctx.todayEntry.sections);
-                        CurriculumManager.showQuranModal(html);
-                    };
-                    window._differentCompletion = () => {
-                        const ctx = window._currentPlanContext;
-                        CurriculumManager.openDifferentCompletionModal(ctx.plan, ctx.studentId, ctx.today, ctx.todayEntry);
-                    };
-                } else {
-                    planDisplay.textContent = 'لا يوجد ورد مجدول لهذا اليوم';
-                    planDisplay.classList.remove('hidden');
+                    planDisplay.insertAdjacentHTML('beforeend', planHtml);
                 }
-            } else {
-                planDisplay.classList.add('hidden');
             }
+            
+            if (!hasAny) {
+                planDisplay.innerHTML = '<div class="text-xs text-gray-500 py-2 border-t border-dashed">لا يوجد ورد مجدول لهذا اليوم</div>';
+            }
+            lucide.createIcons();
         });
     } else {
         planDisplay.classList.add('hidden');
-        planDisplay.textContent = '';
     }
+
+    // New Plan Action Handler
+    window._handlePlanAction = async (planId, action, type, entryEncoded) => {
+        const entry = JSON.parse(unescape(entryEncoded));
+        const today = $('#grading-date').value;
+        
+        if (action === 'executed') {
+            await CurriculumManager.markDayCompleted(planId, studentId, today, entry);
+            showToast('✅ تم تسجيل إنجاز الورد بنجاح');
+            // Re-open to refresh UI
+            openRateStudent(studentId);
+        }
+    };
 
     // Init Quran Selectors in grading if enabled
     const quranSec = document.getElementById('rate-quran-section');
@@ -4210,8 +4224,9 @@ async function openStudentReport(studentId) {
         ? `<img src="${student.icon}" class="w-full h-full object-cover rounded-full">`
         : (student.icon || '👤');
 
-    // Fetch active student plans
+    // Fetch active student plans and actual records
     window._currentStudentPlannedDays = [];
+    window._currentStudentActualRecords = [];
     try {
         const plansQuery = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "student_plans"),
@@ -4225,14 +4240,20 @@ async function openStudentReport(studentId) {
         if (window.CurriculumManager && typeof window.CurriculumManager.generateDailySchedule === 'function') {
             for (let plan of plans) {
                 const schedule = await window.CurriculumManager.generateDailySchedule(plan);
-                const pending = schedule.filter(d => d.status === 'pending');
                 window._currentStudentPlannedDays = window._currentStudentPlannedDays.concat(
-                    pending.map(d => ({...d, planType: plan.plan_type}))
+                    schedule.map(d => ({...d, planType: plan.plan_type, planId: plan.id}))
                 );
             }
         }
+
+        const recordsQuery = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "plan_daily_records"),
+            window.firebaseOps.where("student_id", "==", studentId)
+        );
+        const recordsSnap = await window.firebaseOps.getDocs(recordsQuery);
+        recordsSnap.forEach(doc => window._currentStudentActualRecords.push({...doc.data(), id: doc.id}));
     } catch(e) {
-        console.error("Error loading plans for calendar:", e);
+        console.error("Error loading plans/records for calendar:", e);
     }
 
     // Save data globally for calendar interaction
