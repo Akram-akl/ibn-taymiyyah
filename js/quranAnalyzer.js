@@ -186,7 +186,11 @@ window.QuranService = (function() {
             html += `<p class="text-xs text-amber-700 dark:text-amber-400 mt-1">آية ${sec.fromAyah} إلى ${sec.toAyah}</p>`;
             html += `</div>`;
             html += `<div class="leading-[2.8] text-right font-quran">`;
-            html += ayahs.map(a => `${a.aya_text} <span class="text-amber-600 dark:text-amber-400 text-lg">﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾</span>`).join(' ');
+            html += ayahs.map(a => {
+                // إزالة أي أرقام أو أقواس مدمجة في نص الآية لمنع التكرار (الم 1 (1))
+                const cleanText = (a.aya_text || "").replace(/[0-9()\[\]{}﴿﴾]+$/g, "").trim();
+                return `${cleanText} <span class="text-amber-600 dark:text-amber-400 text-lg">﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾</span>`;
+            }).join(' ');
             html += `</div></div>`;
         });
         return html;

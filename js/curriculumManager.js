@@ -322,13 +322,23 @@ window.CurriculumManager = (function() {
         document.getElementById('plan-end-sura').innerHTML = opts;
         
         if (plan) {
-            document.getElementById('plan-start-sura').value = plan.start_sura || '';
-            await updateAyas('start');
-            document.getElementById('plan-start-aya').value = plan.start_ayah || '';
+            // دعم كلا التسميتين (snake_case vs camelCase) لضمان ظهور البيانات القديمة والجديدة
+            const startSura = plan.start_sura || plan.startSura;
+            const startAyah = plan.start_ayah || plan.startAyah;
+            const endSura = plan.end_sura || plan.endSura;
+            const endAyah = plan.end_ayah || plan.endAyah;
+
+            if (startSura) {
+                document.getElementById('plan-start-sura').value = startSura;
+                await updateAyas('start');
+                if (startAyah) document.getElementById('plan-start-aya').value = startAyah;
+            }
             
-            document.getElementById('plan-end-sura').value = plan.end_sura || '';
-            await updateAyas('end');
-            document.getElementById('plan-end-aya').value = plan.end_ayah || '';
+            if (endSura) {
+                document.getElementById('plan-end-sura').value = endSura;
+                await updateAyas('end');
+                if (endAyah) document.getElementById('plan-end-aya').value = endAyah;
+            }
         }
     }
 

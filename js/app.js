@@ -3043,19 +3043,9 @@ function openRateStudent(studentId) {
         }
     };
 
-    // Init Quran Selectors in grading if enabled
+    // القديم: تم استبداله بنظام الميزان والورد الآلي
     const quranSec = document.getElementById('rate-quran-section');
-    if (quranSec) {
-        if (state.quranTrackingEnabled) {
-            quranSec.classList.remove('hidden');
-            // Reset type to memorization
-            document.getElementById('rate-quran-type').value = 'memorization';
-            setQuranType('memorization');
-            initRateQuranSelectors();
-        } else {
-            quranSec.classList.add('hidden');
-        }
-    }
+    if (quranSec) quranSec.classList.add('hidden');
 
     // عرض التاريخ
     const dateVal = $('#grading-date').value;
