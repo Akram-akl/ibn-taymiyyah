@@ -4408,7 +4408,7 @@ async function openStudentReport(studentId) {
             </div>
 
             <!-- Contact Teacher -->
-            ${contactHTML}
+            ${!state.isTeacher ? contactHTML : ''}
         </div>
     `;
     lucide.createIcons();
@@ -4881,10 +4881,10 @@ updateStudentsListUI = function (filteredList) {
 
         return `
         <div class="p-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition group border-b border-gray-100 dark:border-gray-700 last:border-0">
-            <div onclick="openEditStudent('${student.id}')" class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xl shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden cursor-pointer shrink-0">
+            <div onclick="openStudentReport('${student.id}')" class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xl shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden cursor-pointer shrink-0">
                 ${iconHtml}
             </div>
-            <div class="flex-1 min-w-0" onclick="openEditStudent('${student.id}')" style="cursor:pointer">
+            <div class="flex-1 min-w-0" onclick="openStudentReport('${student.id}')" style="cursor:pointer">
                 <h4 class="font-bold text-gray-800 dark:text-gray-100 truncate">${student.name}</h4>
                 <div class="flex flex-wrap gap-1 text-xs text-gray-500 mt-0.5">
                     ${(state.isTeacher && student.studentNumber) ? `<span class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px] text-gray-500 tracking-wider">${student.studentNumber}</span>` : ''}
