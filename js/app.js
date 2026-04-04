@@ -4363,43 +4363,7 @@ async function openStudentReport(studentId) {
             </div>
             ` : ''}
 
-            <!-- Quran Recitation Log -->
-            ${(() => {
-                const quranRecords = scores.filter(s => s.quranSection).sort((a,b) => new Date(b.date) - new Date(a.date));
-                if (quranRecords.length > 0) {
-                    return `
-                     <div class="bg-white dark:bg-gray-800 rounded-2xl p-5 mb-5 shadow-sm border border-gray-100 dark:border-gray-700">
-                         <div class="flex items-center gap-2 mb-4">
-                             <div class="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
-                                 <i data-lucide="book" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i>
-                             </div>
-                             <h3 class="font-bold text-gray-800 dark:text-gray-100">سجل التسميع (قرآن)</h3>
-                         </div>
-                         <div class="space-y-3">
-                             ${quranRecords.map(r => `
-                                 <div class="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-100 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 transition-all shadow-sm">
-                                     <div class="flex justify-between items-start">
-                                         <div class="flex-1">
-                                             <div class="flex items-center gap-2 mb-2">
-                                                 <span class="text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm border ${r.quranType === 'review' ? 'bg-blue-600 text-white border-blue-500' : 'bg-emerald-600 text-white border-emerald-500'}">
-                                                     ${r.quranType === 'review' ? '🔄 مراجعة' : '📝 حفظ'}
-                                                 </span>
-                                                 <span class="text-[10px] font-bold text-gray-400">${r.date}</span>
-                                             </div>
-                                             <p class="font-bold text-sm text-gray-800 dark:text-gray-100">${r.quranSection}</p>
-                                         </div>
-                                         <div class="text-emerald-500">
-                                             <i data-lucide="check-circle-2" class="w-5 h-5"></i>
-                                         </div>
-                                     </div>
-                                 </div>
-                             `).join('')}
-                         </div>
-                     </div>
-                    `;
-                }
-                return '';
-            })()}
+            <!-- Quran Recitation Log Removed -->
 
 
             <!-- Visual Calendar -->
