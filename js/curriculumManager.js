@@ -153,7 +153,7 @@ window.CurriculumManager = (function() {
         return schedule;
     }
 
-    async function recalculatePlan(studentId, planId, nextSura, nextAyah, nextDateStr) {
+    async function recalculatePlan(studentId, planId, nextSura, nextAyah, nextDateStr, shouldExtendEnd = false) {
         try {
             const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
             const planSnap = await window.firebaseOps.getDoc(planRef);
@@ -162,30 +162,33 @@ window.CurriculumManager = (function() {
             const raw = planSnap.data();
             const plan = {
                 ...raw,
+                id: planId,
                 end_date: raw.end_date || raw.endDate,
                 start_date: raw.start_date || raw.startDate,
                 start_sura: raw.start_sura || raw.startSura,
                 start_ayah: raw.start_ayah || raw.startAyah
             };
 
+            let finalEndDate = plan.end_date;
+            
+            // إذا طلب التمديد (عند الغياب)، نقوم بزيادة تاريخ النهاية يوماً واحداً
+            if (shouldExtendEnd && plan.end_date) {
+                const eDate = new Date(plan.end_date);
+                eDate.setDate(eDate.getDate() + 1);
+                finalEndDate = eDate.toLocaleDateString('en-CA'); // YYYY-MM-DD
+            }
+
             // إذا انتهى الوقت، انتهت الخطة
-            if (new Date(nextDateStr) > new Date(plan.end_date)) {
+            if (new Date(nextDateStr) > new Date(finalEndDate)) {
                 await window.firebaseOps.updateDoc(planRef, { status: 'completed' });
                 return { warning: false, completed: true };
             }
 
-            // حساب الميزان الجديد للتنبيه
-            const newPlanData = { ...plan, start_date: nextDateStr, start_sura: nextSura, start_ayah: nextAyah };
-            const oldSchedule = await generateDailySchedule(plan); 
-            const newSchedule = await generateDailySchedule(newPlanData);
-            
-            const oldAvg = (oldSchedule[0]?.totalWeight || 1);
-            const newAvg = (newSchedule[0]?.totalWeight || 1);
-            const isHeavier = newAvg > oldAvg * 1.5;
-
             const updateData = {
                 start_date: nextDateStr,
                 startDate: nextDateStr,
+                end_date: finalEndDate,
+                endDate: finalEndDate,
                 start_sura: Number(nextSura),
                 startSura: Number(nextSura),
                 start_ayah: Number(nextAyah),
@@ -195,9 +198,10 @@ window.CurriculumManager = (function() {
 
             await window.firebaseOps.updateDoc(planRef, updateData);
 
-            return { warning: isHeavier, completed: false };
+            return { warning: false, completed: false };
         } catch (e) {
             console.error("Error recalculating plan:", e);
+            throw e;
         }
     }
 
@@ -624,7 +628,7 @@ window.CurriculumManager = (function() {
             };
             await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), absenceScore);
             
-            // 2. ترحيل الورد لليوم التالي لتبدأ الخطة من غد بنفس نقطة البداية
+            // 2. ترحيل الورد لليوم التالي مع تمديد تاريخ انتهاء الخطة يوماً واحداً
             const tomorrow = new Date();
             tomorrow.setDate(tomorrow.getDate() + 1);
             const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
@@ -632,12 +636,8 @@ window.CurriculumManager = (function() {
             // جلب الخطة الحالية لمعرفة السورة والآية الحالية
             const plan = await loadStudentPlan(studentId, todayEntry.planType || 'memorization');
             if (plan) {
-                const res = await recalculatePlan(studentId, plan.id, plan.start_sura, plan.start_ayah, tomorrowStr);
-                if (res && res.warning) {
-                    showToast('⚠️ تم ترحيل الورد؛ لاحظ زيادة مقدار الحفظ اليومي لضمان الختم في الموعد.', 'info');
-                } else {
-                    showToast('✅ تم تسجيل الغياب وترحيل الورد لليوم التالي', 'success');
-                }
+                await recalculatePlan(studentId, plan.id, plan.start_sura, plan.start_ayah, tomorrowStr, true);
+                showToast('✅ تم تسجيل الغياب وتمديد الخطة يوماً إضافياً', 'success');
             }
 
             if (window.openRateStudent) window.openRateStudent(studentId);

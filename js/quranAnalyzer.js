@@ -187,12 +187,9 @@ window.QuranService = (function() {
             html += `</div>`;
             html += `<div class="leading-[2.8] text-right font-quran">`;
             html += ayahs.map(a => {
-                // إزالة شاملة لأي أرقام أو رموز أصلية في النص لمنع التكرار (الم 1 (1))
-                // نستخدم Global Replace لحذف أي شيء يشبه رقم الآية أو القوس المزخرف الأصلي
-                const cleanText = (a.aya_text || "")
-                    .replace(/[0-9١-٩.\-\s\(\)\[\]{}﴿﴾]+/g, " ")
-                    .trim();
-                return `${cleanText} <span class="text-amber-600 dark:text-amber-400 text-lg">﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾</span>`;
+                // العودة لنص الآية الأصلي من المصدر (شامل الزخرفة والأرقام الأصلية)
+                const rawText = (a.aya_text || "").trim();
+                return `${rawText}`;
             }).join(' ');
             html += `</div></div>`;
         });
