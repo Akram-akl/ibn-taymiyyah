@@ -2987,23 +2987,33 @@ function openRateStudent(studentId) {
                 
                 if (todayEntry && todayEntry.sections && todayEntry.sections.length > 0) {
                     hasAny = true;
-                    const isHifz = plan.plan_type === 'memorization';
-                    const label = isHifz ? 'ورد الحفظ' : 'ورد المراجعة';
+                    const isHifz = (plan.plan_type || plan.planType) === 'memorization';
+                    const label = isHifz ? '📖 ورد الحفظ المقرّر' : '🔄 ورد المراجعة المقرّر';
                     const color = isHifz ? 'teal' : 'purple';
                     const secText = todayEntry.sections.map(s => `${s.suraName}: (${s.fromAyah}-${s.toAyah})`).join(' | ');
                     
                     const planHtml = `
-                        <div class="mb-3 p-3 bg-${color}-50 dark:bg-${color}-900/10 border border-${color}-100 dark:border-${color}-800 rounded-xl relative overflow-hidden">
-                            <div class="flex justify-between items-center mb-2">
-                                <span class="text-xs font-bold text-${color}-700 dark:text-${color}-400">${label}</span>
-                                <button onclick="CurriculumManager.showPaginatedQuranModal(${JSON.stringify(todayEntry.sections).replace(/"/g, '&quot;')})" class="text-[10px] bg-white dark:bg-gray-800 px-2 py-1 rounded-lg border shadow-sm flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i> القرآن</button>
+                        <div class="mb-4 p-4 bg-${color}-50 dark:bg-${color}-900/10 border-2 border-${color}-100 dark:border-${color}-800 rounded-2xl relative overflow-hidden">
+                            <div class="flex justify-between items-center mb-3">
+                                <span class="text-xs font-black text-${color}-700 dark:text-${color}-400 uppercase tracking-wider">${label}</span>
+                                <button onclick="CurriculumManager.showPaginatedQuranModal(${JSON.stringify(todayEntry.sections).replace(/"/g, '&quot;')})" 
+                                        class="text-[10px] bg-white dark:bg-gray-800 px-3 py-1.5 rounded-xl border shadow-sm flex items-center gap-2 hover:bg-gray-50 transition">
+                                    <i data-lucide="book-open" class="w-3.5 h-3.5"></i> فتح المصحف
+                                </button>
                             </div>
-                            <div class="text-sm font-bold mb-3 text-gray-800 dark:text-gray-100">${secText}</div>
+                            <div class="text-base font-black mb-4 text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                                <i data-lucide="hash" class="w-4 h-4 text-${color}-400"></i>
+                                ${secText}
+                            </div>
                             <div class="flex gap-2">
-                                <button onclick="window._handlePlanAction('${plan.id}', 'executed', '${plan.plan_type}', '${escape(JSON.stringify(todayEntry))}')" 
-                                        class="flex-1 py-2 bg-${color}-600 text-white text-[11px] font-bold rounded-lg shadow-sm hover:bg-${color}-700 transition">تم التنفيذ ✅</button>
+                                <button onclick="window._handlePlanAction('${plan.id}', 'executed', '${plan.plan_type || plan.planType}', '${escape(JSON.stringify(todayEntry))}')" 
+                                        class="flex-[2] py-3 bg-${color}-600 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-${color}-700 active:scale-95 transition">
+                                    تم التنفيذ ✅
+                                </button>
                                 <button onclick="CurriculumManager.openDifferentCompletionModal(${JSON.stringify(plan).replace(/"/g, '&quot;')}, '${studentId}', '${today}', ${JSON.stringify(todayEntry).replace(/"/g, '&quot;')})" 
-                                        class="flex-1 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-[11px] font-bold rounded-lg hover:bg-gray-200 transition">إنجاز مختلف 📝</button>
+                                        class="flex-1 py-3 bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-200 border-2 border-gray-100 dark:border-gray-600 text-xs font-bold rounded-xl hover:bg-gray-50 transition">
+                                    أنجزت غيره
+                                </button>
                             </div>
                         </div>
                     `;
@@ -4507,20 +4517,27 @@ window.renderStudentCalendar = (year, month) => {
         }
         
         if (plannedTasks.length > 0) {
+            const hasHifz = plannedTasks.some(p => p.planType === 'memorization');
+            const hasReview = plannedTasks.some(p => p.planType === 'review');
+            
             if (!hasData) {
-                dayClass = 'bg-teal-50 dark:bg-teal-900/30 border-2 border-teal-200 dark:border-teal-700 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-teal-400 transition';
+                dayClass = 'bg-teal-50 dark:bg-teal-900/10 border border-teal-200 dark:border-teal-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-teal-400 transition';
             }
-            dayContentTags.push(`<span class="text-[10px] font-bold text-teal-600 mt-0.5 flex justify-center"><i data-lucide="book-open" class="w-3 h-3"></i></span>`);
+            
+            let dots = '';
+            if (hasHifz) dots += `<span class="w-1.5 h-1.5 rounded-full bg-teal-500"></span>`;
+            if (hasReview) dots += `<span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>`;
+            dayContentTags.push(`<div class="flex gap-1 mt-1">${dots}</div>`);
         }
 
         if (dayData || plannedTasks.length > 0) {
             dayContent = `<span class="text-xs font-bold ${hasData ? (dayClass.includes('red') ? 'text-red-700 dark:text-red-400' : (dayClass.includes('green') ? 'text-green-700 dark:text-green-400' : 'text-orange-700 dark:text-orange-400')) : 'text-teal-800 dark:text-teal-300'}">${i}</span>`;
-            dayContent += `<div class="flex gap-1 items-center justify-center">` + dayContentTags.join('') + `</div>`;
+            dayContent += `<div class="flex flex-col items-center justify-center">` + dayContentTags.join('') + `</div>`;
             calendarDaysHTML += `<div class="${dayClass}" onclick="showDayDetails('${dateStr}')">${dayContent}</div>`;
         } else if (dateStr === todayDate.toISOString().split('T')[0]) {
              dayClass = 'bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-400 dark:border-blue-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center relative';
              dayContent = `<span class="text-xs font-bold text-blue-700 dark:text-blue-400">${i}</span>`;
-             calendarDaysHTML += `<div class="${dayClass}">${dayContent}</div>`;
+             calendarDaysHTML += `<div class="${dayClass}" onclick="showDayDetails('${dateStr}')">${dayContent}</div>`;
         } else {
              calendarDaysHTML += `<div class="${dayClass}">${dayContent}</div>`;
         }

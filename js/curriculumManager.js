@@ -29,7 +29,13 @@ window.CurriculumManager = (function() {
     async function generateDailySchedule(planData) {
         if (!planData) return [];
         
-        const { start_date, end_date, start_sura, start_ayah, end_sura, end_ayah } = planData;
+        // دعم الحقول القديمة والجديدة (snake_case vs camelCase) لضمان التوافقية
+        const start_date = planData.start_date || planData.startDate;
+        const end_date = planData.end_date || planData.endDate;
+        const start_sura = planData.start_sura || planData.startSura;
+        const start_ayah = planData.start_ayah || planData.startAyah;
+        const end_sura = planData.end_sura || planData.endSura;
+        const end_ayah = planData.end_ayah || planData.endAyah;
         const STUDY_DAYS = [0, 1, 2, 3, 4]; // الأحد إلى الخميس
         
         if (!window.QuranService.isLoaded()) await window.QuranService.loadData();
@@ -218,7 +224,9 @@ window.CurriculumManager = (function() {
     }
 
     // بناء واجهة الخطة في نافذة الطالب
-    function renderPlanManagerModal(studentId, plan) {
+    function renderPlanManagerModal(studentId, plan, requestedType) {
+        const activeType = requestedType || (plan ? plan.plan_type : 'memorization');
+
         let html = `
             <div id="plan-manager-modal" class="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
                 <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -230,15 +238,25 @@ window.CurriculumManager = (function() {
                     <div class="space-y-4">
                         <input type="hidden" id="plan-id" value="${plan ? plan.id : ''}">
                         
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="flex-1">
-                                <label class="block text-xs font-bold text-gray-500 mb-1">نوع الخطة</label>
-                                <select id="plan-type" onchange="CurriculumManager.openPlanModal('${studentId}', this.value)" class="w-full border rounded-xl px-3 py-2 bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600 text-sm font-bold">
-                                    <option value="memorization" ${plan && plan.plan_type === 'memorization' ? 'selected' : ''}>حفظ</option>
-                                    <option value="review" ${plan && plan.plan_type === 'review' ? 'selected' : ''}>مراجعة</option>
-                                </select>
+                        <div class="mb-4">
+                            <label class="block text-xs font-bold text-gray-500 mb-2">نوع الخطة المراد عرضها:</label>
+                            <div class="grid grid-cols-2 gap-2 p-1 bg-gray-100 dark:bg-gray-700/50 rounded-xl">
+                                <button type="button" onclick="CurriculumManager.openPlanModal('${studentId}', 'memorization')" 
+                                    class="py-2.5 rounded-lg text-sm font-bold transition ${activeType === 'memorization' ? 'bg-white dark:bg-gray-600 shadow-sm text-teal-600' : 'text-gray-500 hover:bg-gray-200'}">
+                                    📖 الحفظ
+                                </button>
+                                <button type="button" onclick="CurriculumManager.openPlanModal('${studentId}', 'review')" 
+                                    class="py-2.5 rounded-lg text-sm font-bold transition ${activeType === 'review' ? 'bg-white dark:bg-gray-600 shadow-sm text-purple-600' : 'text-gray-500 hover:bg-gray-200'}">
+                                    🔄 المراجعة
+                                </button>
                             </div>
-                            <div></div>
+                            <input type="hidden" id="plan-type" value="${activeType}">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3" id="plan-type-display">
+                            <div class="col-span-2 p-2 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 rounded-lg text-center">
+                                <span class="text-xs font-bold text-blue-700 dark:text-blue-400">تحرير تفاصيل خطة ${activeType === 'memorization' ? 'الحفظ' : 'المراجعة'}</span>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">
@@ -304,13 +322,13 @@ window.CurriculumManager = (function() {
         document.getElementById('plan-end-sura').innerHTML = opts;
         
         if (plan) {
-            document.getElementById('plan-start-sura').value = plan.startSura;
+            document.getElementById('plan-start-sura').value = plan.start_sura || '';
             await updateAyas('start');
-            document.getElementById('plan-start-aya').value = plan.startAyah;
+            document.getElementById('plan-start-aya').value = plan.start_ayah || '';
             
-            document.getElementById('plan-end-sura').value = plan.endSura;
+            document.getElementById('plan-end-sura').value = plan.end_sura || '';
             await updateAyas('end');
-            document.getElementById('plan-end-aya').value = plan.endAyah;
+            document.getElementById('plan-end-aya').value = plan.end_ayah || '';
         }
     }
 
@@ -806,12 +824,16 @@ window.CurriculumManager = (function() {
         }
     }
 
+    async function openPlanModal(studentId, type = 'memorization') {
+        currentStudentId = studentId;
+        const plan = await loadStudentPlan(studentId, type);
+        renderPlanManagerModal(studentId, plan, type);
+    }
+
     return {
         loadStudentPlan,
-        openPlanModal: async (studentId, type = 'memorization') => {
-            const plan = await loadStudentPlan(studentId, type);
-            renderPlanManagerModal(studentId, plan);
-        },
+        openPlanModal,
+        renderPlanManagerModal,
         closeModal,
         updateAyas,
         submitPlan,
