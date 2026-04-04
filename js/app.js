@@ -4538,6 +4538,14 @@ window.showDayDetails = (dateStr) => {
     let html = `<div class="space-y-3">`;
 
     if (plannedTasks.length > 0) {
+        plannedTasks.forEach((p, idx) => {
+            let sectionsText = '';
+            if (p.sections && p.sections.length > 0) {
+                sectionsText = p.sections.map(s => `${s.suraName}: آية ${s.fromAyah} - ${s.toAyah}`).join(' | ');
+            }
+            window[`_tempPlanSection_${idx}`] = p.sections;
+            window[`_tempPlanObj_${idx}`] = p;
+
             const isDone = dayScores.some(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
             const isAbsent = dayScores.some(s => s.criteriaId === 'ABSENCE_RECORD');
 
@@ -4581,7 +4589,6 @@ window.showDayDetails = (dateStr) => {
                 ` : ''}
             </div>
             `;
-            window[`_tempPlanObj_${idx}`] = p;
         });
     }
 
