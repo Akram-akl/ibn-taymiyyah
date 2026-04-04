@@ -187,8 +187,11 @@ window.QuranService = (function() {
             html += `</div>`;
             html += `<div class="leading-[2.8] text-right font-quran">`;
             html += ayahs.map(a => {
-                // إزالة أي أرقام أو أقواس مدمجة في نص الآية لمنع التكرار (الم 1 (1))
-                const cleanText = (a.aya_text || "").replace(/[0-9()\[\]{}﴿﴾]+$/g, "").trim();
+                // إزالة أي أرقام، أقواس، أو زخارف قديمة مدمجة في نص الآية لمنع التكرار (الم 1 (1))
+                // نقوم بحذف الأرقام والرموز في بداية ونهاية النص
+                const cleanText = (a.aya_text || "")
+                    .replace(/^[0-9١-٩.\-\s]+|[0-9١-٩.\-\s\(\)\[\]{}﴿﴾]+$/g, "")
+                    .trim();
                 return `${cleanText} <span class="text-amber-600 dark:text-amber-400 text-lg">﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾</span>`;
             }).join(' ');
             html += `</div></div>`;

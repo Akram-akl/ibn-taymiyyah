@@ -153,40 +153,21 @@ window.CurriculumManager = (function() {
         return schedule;
     }
 
-    async function recalculatePlanAfterAchievement(studentId, planId, actualEndSura, actualEndAyah) {
+    async function recalculatePlan(studentId, planId, nextSura, nextAyah, nextDateStr) {
         try {
-            // 1. جلب الخطة الحالية
             const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
             const planSnap = await window.firebaseOps.getDoc(planRef);
             if (!planSnap.exists()) return;
             const plan = planSnap.data();
 
-            // 2. تحديد الآية التالية للإنجاز الفعلي
-            if (!window.QuranService.isLoaded()) await window.QuranService.loadData();
-            const allAyas = window.QuranService.getAyas(actualEndSura);
-            const currIdx = allAyas.findIndex(a => a.aya_no == actualEndAyah);
-            
-            let nextSura = actualEndSura;
-            let nextAyah = actualEndAyah + 1;
-            
-            if (currIdx === allAyas.length - 1) {
-                nextSura = actualEndSura + 1;
-                nextAyah = 1;
-            }
-
-            // 3. تحديث الخطة لتبدأ من الغد بالمقطع المتبقي
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            const tomorrowStr = tomorrow.toISOString().split('T')[0];
-
-            if (new Date(tomorrowStr) > new Date(plan.end_date)) {
-                // إذا انتهى الوقت، انتهت الخطة
+            // إذا انتهى الوقت، انتهت الخطة
+            if (new Date(nextDateStr) > new Date(plan.end_date)) {
                 await window.firebaseOps.updateDoc(planRef, { status: 'completed' });
                 return { warning: false, completed: true };
             }
 
-            // حساب الوزن الجديد للتأكد من عدم وجود ضغط كبير
-            const newPlanData = { ...plan, start_date: tomorrowStr, start_sura: nextSura, start_ayah: nextAyah };
+            // حساب الميزان الجديد للتنبيه
+            const newPlanData = { ...plan, start_date: nextDateStr, start_sura: nextSura, start_ayah: nextAyah };
             const oldSchedule = await generateDailySchedule(plan); 
             const newSchedule = await generateDailySchedule(newPlanData);
             
@@ -195,7 +176,7 @@ window.CurriculumManager = (function() {
             const isHeavier = newAvg > oldAvg * 1.5;
 
             await window.firebaseOps.updateDoc(planRef, {
-                start_date: tomorrowStr,
+                start_date: nextDateStr,
                 start_sura: nextSura,
                 start_ayah: nextAyah,
                 updated_at: new Date().toISOString()
@@ -205,6 +186,26 @@ window.CurriculumManager = (function() {
         } catch (e) {
             console.error("Error recalculating plan:", e);
         }
+    }
+
+    async function recalculatePlanAfterAchievement(studentId, planId, actualEndSura, actualEndAyah) {
+        if (!window.QuranService.isLoaded()) await window.QuranService.loadData();
+        const allAyas = window.QuranService.getAyas(actualEndSura);
+        const currIdx = allAyas.findIndex(a => a.aya_no == actualEndAyah);
+        
+        let nextSura = actualEndSura;
+        let nextAyah = actualEndAyah + 1;
+        
+        if (currIdx === allAyas.length - 1) {
+            nextSura = actualEndSura + 1;
+            nextAyah = 1;
+        }
+
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toLocaleDateString('en-CA'); // YYYY-MM-DD local
+
+        return await recalculatePlan(studentId, planId, nextSura, nextAyah, tomorrowStr);
     }
 
     async function savePlan(planData) {
@@ -599,7 +600,7 @@ window.CurriculumManager = (function() {
 
     async function markDayAbsent(planId, studentId, date, todayEntry) {
         try {
-            // تسجيل الغياب في جدول scores ليبقى الأثر موجوداً في الإحصائيات
+            // 1. تسجيل الغياب في جدول scores ليبقى الأثر موجوداً في الإحصائيات
             const absenceScore = {
                 student_id: studentId,
                 criteria_id: 'ABSENCE_RECORD',
@@ -610,10 +611,26 @@ window.CurriculumManager = (function() {
             };
             await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), absenceScore);
             
-            showToast('تم تسجيل الغياب وخصم النقاط', 'info');
+            // 2. ترحيل الورد لليوم التالي لتبدأ الخطة من غد بنفس نقطة البداية
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
+            
+            // جلب الخطة الحالية لمعرفة السورة والآية الحالية
+            const plan = await loadStudentPlan(studentId, todayEntry.planType || 'memorization');
+            if (plan) {
+                const res = await recalculatePlan(studentId, plan.id, plan.start_sura, plan.start_ayah, tomorrowStr);
+                if (res && res.warning) {
+                    showToast('⚠️ تم ترحيل الورد؛ لاحظ زيادة مقدار الحفظ اليومي لضمان الختم في الموعد.', 'info');
+                } else {
+                    showToast('✅ تم تسجيل الغياب وترحيل الورد لليوم التالي', 'success');
+                }
+            }
+
+            if (window.openRateStudent) window.openRateStudent(studentId);
         } catch (e) {
             console.error(e);
-            showToast('خطأ في تسجيل الغياب', 'error');
+            showToast('خطأ في معالجة الغياب', 'error');
         }
     }
 
