@@ -25,42 +25,110 @@ window.CurriculumManager = (function() {
         }
     }
 
-    // حساب توزيع الصفحات بين تاريخين بناءً على صفحات كل يوم
-    function generateDailySchedule(startDateStr, endDateStr, startPage, endPage, weeklyPages) {
-        let schedule = [];
-        let currentDate = new Date(startDateStr);
-        let endDate = new Date(endDateStr);
-        let currentPage = startPage;
+    async function generateDailySchedule(planData) {
+        if (!planData) return [];
         
-        // الأيام: {sun: 1, mon: 1, tue: 1, wed: 1, thu: 1}
+        const { start_date, end_date, start_sura, start_ayah, end_sura, end_ayah, weekly_pages } = planData;
+        const STUDY_DAYS = [0, 1, 2, 3, 4]; // الأحد إلى الخميس
         const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-
-        while (currentDate <= endDate && currentPage <= endPage) {
-            let dayIndex = currentDate.getDay(); // 0-6
-            let dayName = dayNames[dayIndex];
+        
+        if (!window.QuranService.isLoaded()) await window.QuranService.loadData();
+        
+        // 1. الحصول على قائمة كاملة بالأيات في النطاق المحدد
+        const allSuras = window.QuranService.getSuras();
+        let allAyasInRange = [];
+        let capturing = false;
+        
+        for (const sura of allSuras) {
+            if (sura.number < Math.min(start_sura, end_sura)) continue;
+            if (sura.number > Math.max(start_sura, end_sura)) continue;
             
-            // إضافة صفحات هذا اليوم إذا كان يوم دراسة وله كمية
-            if (STUDY_DAYS.includes(dayIndex) && weeklyPages[dayName] > 0) {
-                let pagesForToday = parseFloat(weeklyPages[dayName]);
-                let targetEndPage = currentPage + pagesForToday - 1; // -1 لأن الصفحة الحالية محسوبة
+            const ayas = window.QuranService.getAyahs(sura.number);
+            for (const aya of ayas) {
+                // بداية النطاق
+                if (aya.sura_no == start_sura && aya.aya_no == start_ayah) capturing = true;
                 
-                // التأكد من عدم تجاوز النهاية الكلية
-                if (targetEndPage > endPage) {
-                    targetEndPage = endPage;
+                if (capturing) {
+                    allAyasInRange.push(aya);
                 }
-
-                schedule.push({
-                    date: currentDate.toISOString().split('T')[0],
-                    targetStartPage: currentPage,
-                    targetEndPage: targetEndPage,
-                    sections: window.QuranService.getSectionsForPageRange(Math.floor(currentPage), Math.ceil(targetEndPage))
-                });
                 
-                currentPage = targetEndPage + 1;
+                // نهاية النطاق
+                if (aya.sura_no == end_sura && aya.aya_no == end_ayah) {
+                    capturing = false;
+                    break;
+                }
             }
+            if (!capturing && allAyasInRange.length > 0) break;
+        }
+
+        if (allAyasInRange.length === 0) return [];
+
+        // 2. حساب عدد أيام الدراسة المتاحة
+        let studyDates = [];
+        let cDate = new Date(start_date);
+        let eDate = new Date(end_date);
+        while (cDate <= eDate) {
+            if (STUDY_DAYS.includes(cDate.getDay())) {
+                studyDates.push(cDate.toISOString().split('T')[0]);
+            }
+            cDate.setDate(cDate.getDate() + 1);
+        }
+
+        if (studyDates.length === 0) return [];
+
+        // 3. تقسيم الآيات على الأيام (Ayah-Aware)
+        // الفكرة: نقسم عدد الآيات الكلي على عدد الأيام للحصول على متوسط، 
+        // أو نقسم الصفحات. المستخدم طلب تقسيم الصفحات لكن مع مراعاة عدم قطع الآية.
+        
+        const totalAyas = allAyasInRange.length;
+        const ayasPerDay = Math.ceil(totalAyas / studyDates.length);
+        
+        let schedule = [];
+        let ayaIndex = 0;
+
+        for (let i = 0; i < studyDates.length; i++) {
+            if (ayaIndex >= totalAyas) break;
             
-            // الانتقال لليوم التالي
-            currentDate.setDate(currentDate.getDate() + 1);
+            let dayStartAya = allAyasInRange[ayaIndex];
+            let dayEndIndex = Math.min(ayaIndex + ayasPerDay - 1, totalAyas - 1);
+            
+            // مرونة: إذا كان هناك آية واحدة فقط متبقية لليوم التالي، نضمها لليوم الحالي
+            if (i === studyDates.length - 1) {
+                dayEndIndex = totalAyas - 1;
+            } else if (totalAyas - 1 - dayEndIndex <= 2) { 
+                // إذا بطل أقل من آيتين للنهاية ضمهما لليوم الحالي للراحة
+                dayEndIndex = totalAyas - 1;
+            }
+
+            let dayEndAya = allAyasInRange[dayEndIndex];
+            
+            // تجميع السور في هذا اليوم
+            let daySections = [];
+            let currentSura = null;
+            for (let j = ayaIndex; j <= dayEndIndex; j++) {
+                let a = allAyasInRange[j];
+                if (!currentSura || currentSura.suraNo !== a.sura_no) {
+                    currentSura = {
+                        suraNo: a.sura_no,
+                        suraName: a.sura_name_ar,
+                        fromAyah: a.aya_no,
+                        toAyah: a.aya_no
+                    };
+                    daySections.push(currentSura);
+                } else {
+                    currentSura.toAyah = a.aya_no;
+                }
+            }
+
+            schedule.push({
+                date: studyDates[i],
+                targetStartPage: dayStartAya.page,
+                targetEndPage: dayEndAya.page,
+                sections: daySections
+            });
+
+            ayaIndex = dayEndIndex + 1;
+            if (ayaIndex >= totalAyas) break;
         }
 
         return schedule;
@@ -120,17 +188,20 @@ window.CurriculumManager = (function() {
                         <!-- النطاق -->
                         <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-dashed">
                             <p class="text-xs font-bold mb-2">النطاق المطلوب إنجازه</p>
-                            <div class="grid grid-cols-2 gap-x-2 gap-y-2 mb-2">
-                                <label class="text-[10px] text-gray-500">من السورة / الآية</label>
-                                <label class="text-[10px] text-gray-500">إلى السورة / الآية</label>
-                                
-                                <div class="flex gap-1">
-                                    <select id="plan-start-sura" class="flex-1 bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 border rounded text-xs p-1" onchange="CurriculumManager.updateAyas('start')"></select>
-                                    <select id="plan-start-aya" class="flex-1 bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 border rounded text-xs p-1"></select>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-3 mb-2">
+                                <div>
+                                    <label class="text-[10px] text-gray-500 mb-1 block">من السورة / الآية</label>
+                                    <div class="flex gap-1">
+                                        <select id="plan-start-sura" class="flex-1 bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 border rounded text-xs p-1 min-w-0" onchange="CurriculumManager.updateAyas('start')"></select>
+                                        <select id="plan-start-aya" class="w-16 bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 border rounded text-xs p-1 min-w-0"></select>
+                                    </div>
                                 </div>
-                                <div class="flex gap-1">
-                                    <select id="plan-end-sura" class="flex-1 bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 border rounded text-xs p-1" onchange="CurriculumManager.updateAyas('end')"></select>
-                                    <select id="plan-end-aya" class="flex-1 bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 border rounded text-xs p-1"></select>
+                                <div>
+                                    <label class="text-[10px] text-gray-500 mb-1 block">إلى السورة / الآية</label>
+                                    <div class="flex gap-1">
+                                        <select id="plan-end-sura" class="flex-1 bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 border rounded text-xs p-1 min-w-0" onchange="CurriculumManager.updateAyas('end')"></select>
+                                        <select id="plan-end-aya" class="w-16 bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 border rounded text-xs p-1 min-w-0"></select>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -138,7 +209,7 @@ window.CurriculumManager = (function() {
                     </div>
                     
                     <div class="flex gap-2 mt-6">
-                        <button onclick="CurriculumManager.closeModal()" class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold">إلغاء</button>
+                        <button onclick="CurriculumManager.closeModal()" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl font-bold hover:bg-gray-200 transition">إلغاء</button>
                         <button onclick="CurriculumManager.submitPlan('${studentId}')" class="flex-1 py-3 bg-teal-600 text-white hover:bg-teal-700 rounded-xl font-bold shadow-lg">حفظ الخطة</button>
                     </div>
                 </div>
@@ -506,7 +577,7 @@ window.CurriculumManager = (function() {
                     </div>
                 </div>
                 <div class="flex gap-2">
-                    <button onclick="document.getElementById('diff-completion-modal').remove()" class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold">إلغاء</button>
+                    <button onclick="document.getElementById('diff-completion-modal').remove()" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl font-bold hover:bg-gray-200 transition">إلغاء</button>
                     <button onclick="CurriculumManager.submitDifferentCompletion('${plan.id}','${studentId}','${date}')" class="flex-1 py-3 bg-blue-600 text-white hover:bg-blue-700 rounded-xl font-bold">حفظ</button>
                 </div>
             </div>
@@ -608,7 +679,7 @@ window.CurriculumManager = (function() {
                     </div>
                 </div>
                 <div class="flex gap-2">
-                    <button onclick="document.getElementById('intensive-day-modal').remove()" class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold">إلغاء</button>
+                    <button onclick="document.getElementById('intensive-day-modal').remove()" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl font-bold hover:bg-gray-200 transition">إلغاء</button>
                     <button onclick="CurriculumManager.submitIntensiveDay('${plan.id}','${studentId}','${date}')" class="flex-1 py-3 bg-purple-600 text-white hover:bg-purple-700 rounded-xl font-bold">حفظ</button>
                 </div>
             </div>
