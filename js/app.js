@@ -2970,6 +2970,8 @@ function openRateStudent(studentId) {
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : 'تقييم الطالب';
 
+    const today = $('#grading-date').value;
+
     // Show plans if any (new curriculum system)
     const planDisplay = $('#rate-quran-plan-display');
     if (s && state.quranTrackingEnabled) {
