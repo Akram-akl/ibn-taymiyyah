@@ -150,7 +150,6 @@ ALTER TABLE teachers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_days ENABLE ROW LEVEL SECURITY;
 ALTER TABLE group_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE student_plans ENABLE ROW LEVEL SECURITY;
-ALTER TABLE plan_daily_records ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
 -- Create Policies (Using DROP IF EXISTS for idempotency)
@@ -227,14 +226,7 @@ CREATE POLICY "Allow public insert student_plans" ON student_plans FOR INSERT WI
 CREATE POLICY "Allow public update student_plans" ON student_plans FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete student_plans" ON student_plans FOR DELETE USING (true);
 
-DROP POLICY IF EXISTS "Allow public read plan_daily_records" ON plan_daily_records;
-DROP POLICY IF EXISTS "Allow public insert plan_daily_records" ON plan_daily_records;
-DROP POLICY IF EXISTS "Allow public update plan_daily_records" ON plan_daily_records;
-DROP POLICY IF EXISTS "Allow public delete plan_daily_records" ON plan_daily_records;
-CREATE POLICY "Allow public read plan_daily_records" ON plan_daily_records FOR SELECT USING (true);
-CREATE POLICY "Allow public insert plan_daily_records" ON plan_daily_records FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update plan_daily_records" ON plan_daily_records FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete plan_daily_records" ON plan_daily_records FOR DELETE USING (true);
+
 
 -- =====================================================
 -- Enable Realtime
@@ -265,9 +257,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'student_plans') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE student_plans;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'plan_daily_records') THEN
-        ALTER PUBLICATION supabase_realtime ADD TABLE plan_daily_records;
-    END IF;
+
 END $$;
 
 -- =====================================================
@@ -287,8 +277,7 @@ CREATE INDEX IF NOT EXISTS idx_group_scores_competition_id ON group_scores(compe
 CREATE INDEX IF NOT EXISTS idx_student_plans_student_id ON student_plans(student_id);
 CREATE INDEX IF NOT EXISTS idx_student_plans_student_status ON student_plans(student_id, status);
 CREATE INDEX IF NOT EXISTS idx_student_plans_level ON student_plans(level);
-CREATE INDEX IF NOT EXISTS idx_plan_daily_records_plan_id ON plan_daily_records(plan_id);
-CREATE INDEX IF NOT EXISTS idx_plan_daily_records_student_date ON plan_daily_records(student_id, date);
+
 
 -- Create trigger functions for updated_at
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()

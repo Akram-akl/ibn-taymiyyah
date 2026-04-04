@@ -153,46 +153,46 @@ window.CurriculumManager = (function() {
         return schedule;
     }
 
-    async function recalculatePlan(studentId, planId, nextSura, nextAyah, nextDateStr, shouldExtendEnd = false) {
+    async function recalculatePlan(studentId, planId, nextSura, nextAyah, nextDateStr, forceExtend = false) {
         try {
             const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
             const planSnap = await window.firebaseOps.getDoc(planRef);
             if (!planSnap.exists()) return;
-            // توحيد الحقول (Normalize) لضمان التعامل مع snake_case و camelCase
+            
             const raw = planSnap.data();
             const plan = {
                 ...raw,
-                id: planId,
                 end_date: raw.end_date || raw.endDate,
                 start_date: raw.start_date || raw.startDate,
                 start_sura: raw.start_sura || raw.startSura,
-                start_ayah: raw.start_ayah || raw.startAyah
+                start_ayah: raw.start_ayah || raw.startAyah,
+                start_page: Number(raw.start_page || raw.startPage || 0)
             };
 
             let finalEndDate = plan.end_date;
             
-            // إذا طلب التمديد (عند الغياب)، نقوم بزيادة تاريخ النهاية يوماً واحداً
-            if (shouldExtendEnd && plan.end_date) {
+            // حساب الانحراف عن الخطة (هل الطالب متأخر أم متقدم؟)
+            const nextDate = new Date(nextDateStr);
+            const endDate = new Date(plan.end_date);
+            
+            // إذا كان هناك تأخير (غياب أو إنجاز أقل) أو طلب تمديد صريح
+            if (forceExtend) {
                 const eDate = new Date(plan.end_date);
                 eDate.setDate(eDate.getDate() + 1);
-                finalEndDate = eDate.toLocaleDateString('en-CA'); // YYYY-MM-DD
+                finalEndDate = eDate.toLocaleDateString('en-CA');
             }
 
-            // إذا انتهى الوقت، انتهت الخطة
-            if (new Date(nextDateStr) > new Date(finalEndDate)) {
+            // إذا انتهى الوقت كلياً
+            if (nextDate > new Date(finalEndDate)) {
                 await window.firebaseOps.updateDoc(planRef, { status: 'completed' });
                 return { warning: false, completed: true };
             }
 
             const updateData = {
                 start_date: nextDateStr,
-                startDate: nextDateStr,
                 end_date: finalEndDate,
-                endDate: finalEndDate,
                 start_sura: Number(nextSura),
-                startSura: Number(nextSura),
                 start_ayah: Number(nextAyah),
-                startAyah: Number(nextAyah),
                 updated_at: new Date().toISOString()
             };
 
@@ -207,22 +207,41 @@ window.CurriculumManager = (function() {
 
     async function recalculatePlanAfterAchievement(studentId, planId, actualEndSura, actualEndAyah) {
         if (!window.QuranService.isLoaded()) await window.QuranService.loadData();
-        const allAyas = window.QuranService.getAyas(actualEndSura);
-        const currIdx = allAyas.findIndex(a => a.aya_no == actualEndAyah);
         
+        const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
+        const planSnap = await window.firebaseOps.getDoc(planRef);
+        const planRaw = planSnap.data();
+        const planEndDate = planRaw.end_date || planRaw.endDate;
+        
+        // حساب الآية التالية
+        const allAyas = window.QuranService.getAyahs(actualEndSura);
+        const currIdx = allAyas.findIndex(a => a.aya_no == actualEndAyah);
         let nextSura = actualEndSura;
         let nextAyah = actualEndAyah + 1;
-        
         if (currIdx === allAyas.length - 1) {
-            nextSura = actualEndSura + 1;
+            nextSura = Number(actualEndSura) + 1;
             nextAyah = 1;
         }
 
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowStr = tomorrow.toLocaleDateString('en-CA'); // YYYY-MM-DD local
+        const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
 
-        return await recalculatePlan(studentId, planId, nextSura, nextAyah, tomorrowStr);
+        // المقارنة مع ما كان مخططاً له اليوم (لمعرفة هل نمدد أم لا)
+        // إذا كان المقدار المنجز أقل من المقرر اليومي، نمدد يوماً واحداً
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        const fullSchedule = await generateDailySchedule(planSnap.data());
+        const todayTarget = fullSchedule.find(d => d.date === todayStr);
+        
+        let shouldExtend = false;
+        if (todayTarget && todayTarget.sections && todayTarget.sections.length > 0) {
+            const lastPlanned = todayTarget.sections[todayTarget.sections.length - 1];
+            const pPage = window.QuranService.getPageForAyah(lastPlanned.suraNo, lastPlanned.toAyah);
+            const aPage = window.QuranService.getPageForAyah(actualEndSura, actualEndAyah);
+            if (aPage < pPage) shouldExtend = true;
+        }
+
+        return await recalculatePlan(studentId, planId, nextSura, nextAyah, tomorrowStr, shouldExtend);
     }
 
     async function savePlan(planData) {
@@ -605,13 +624,28 @@ window.CurriculumManager = (function() {
 
     async function markDayCompleted(planId, studentId, date, todayEntry) {
         try {
-            // تقديم الخطة زمنياً فور الضغط على تم الإنجاز دون الحاجة لسجلات إضافية
+            // 1. إضافة سجل في جدول scores ليظهر اللون الأخضر للجميع
+            const cId = todayEntry.planType === 'review' ? 'QURAN_REVIEW' : 'QURAN_MEMORIZATION';
+            const cName = todayEntry.planType === 'review' ? 'تسميع مراجعة' : 'تسميع حفظ';
+            const scoreData = {
+                student_id: studentId,
+                criteria_id: cId,
+                criteria_name: cName,
+                points: 10, // نقاط افتراضية
+                date: date,
+                timestamp: Date.now()
+            };
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), scoreData);
+
+            // 2. ترحيل الخطة زمنياً
             const lastSec = todayEntry.sections[todayEntry.sections.length - 1];
             await recalculatePlanAfterAchievement(studentId, planId, lastSec.suraNo, lastSec.toAyah);
-            showToast('✅ تم تسجيل إنجاز اليوم بنجاح وتقديم الخطة', 'success');
+            
+            showToast('✅ تم الحفظ بنجاح وتحديث الخطة', 'success');
+            if (window.openRateStudent) window.openRateStudent(studentId);
         } catch (e) {
             console.error(e);
-            showToast('خطأ في تسجيل الإنجاز', 'error');
+            showToast('خطأ في الحفظ', 'error');
         }
     }
 

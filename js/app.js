@@ -4538,12 +4538,9 @@ window.showDayDetails = (dateStr) => {
     let html = `<div class="space-y-3">`;
 
     if (plannedTasks.length > 0) {
-        plannedTasks.forEach((p, idx) => {
-            let sectionsText = '';
-            if (p.sections && p.sections.length > 0) {
-                sectionsText = p.sections.map(s => `${s.suraName}: آية ${s.fromAyah} - ${s.toAyah}`).join(' | ');
-            }
-            window[`_tempPlanSection_${idx}`] = p.sections;
+            const isDone = dayScores.some(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
+            const isAbsent = dayScores.some(s => s.criteriaId === 'ABSENCE_RECORD');
+
             html += `
             <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
                 <div class="flex justify-between items-center mb-2">
@@ -4554,15 +4551,37 @@ window.showDayDetails = (dateStr) => {
                 <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
                     <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع المطلوب:</p>
                     <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${sectionsText}</p>
-                    ${state.isParent ? '' : `
-                    <button onclick="if(window.CurriculumManager) window.CurriculumManager.showPaginatedQuranModal(window['_tempPlanSection_${idx}'])" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
-                        <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
-                    </button>
+                    
+                    ${isDone ? `
+                        <div class="w-full py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-center font-bold text-sm flex items-center justify-center gap-2">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i> تم التنفيذ بنجاح
+                        </div>
+                    ` : isAbsent ? `
+                        <div class="w-full py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-center font-bold text-sm flex items-center justify-center gap-2">
+                            <i data-lucide="clock" class="w-4 h-4"></i> تم التأجيل (غياب)
+                        </div>
+                    ` : state.isTeacher ? `
+                        <div class="flex flex-col gap-2">
+                            <button onclick="if(window.CurriculumManager) window.CurriculumManager.markDayCompleted('${p.planId}','${window._currentStudentData.id}','${dateStr}', window['_tempPlanObj_${idx}'])" 
+                                class="w-full py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold transition">تم التنفيذ</button>
+                            <div class="flex gap-2">
+                                <button onclick="if(window.CurriculumManager) window.CurriculumManager.openDifferentCompletionModal(window['_tempPlanObj_${idx}'], '${window._currentStudentData.id}','${dateStr}', window['_tempPlanObj_${idx}'])" 
+                                    class="flex-1 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-[10px] font-bold transition">انجزت غيره</button>
+                                <button onclick="if(window.CurriculumManager) window.CurriculumManager.markDayAbsent('${p.planId}','${window._currentStudentData.id}','${dateStr}', window['_tempPlanObj_${idx}'])" 
+                                    class="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-[10px] font-bold transition">تسجيل غياب</button>
+                            </div>
+                        </div>
+                    ` : `
+                        <button onclick="if(window.CurriculumManager) window.CurriculumManager.showPaginatedQuranModal(window['_tempPlanSection_${idx}'])" 
+                            class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
+                            <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
+                        </button>
                     `}
                 </div>
                 ` : ''}
             </div>
             `;
+            window[`_tempPlanObj_${idx}`] = p;
         });
     }
 
