@@ -256,14 +256,99 @@ window.CurriculumManager = (function() {
             status: 'active'
         };
 
-        try {
-            await savePlan(planData);
-            showToast('تم حفظ الخطة بنجاح', 'success');
-            closeModal();
-            if (window.openStudentReport) window.openStudentReport(studentId);
-        } catch (e) {
-            showToast('خطأ في الحفظ', 'error');
+        showPlanPreview(planData);
+    }
+
+    async function showPlanPreview(planData) {
+        if (!window.CurriculumManager || typeof window.CurriculumManager.generateDailySchedule !== 'function') {
+            showToast('خطأ في تحميل محرك الخطط', 'error');
+            return;
         }
+
+        const schedule = await window.CurriculumManager.generateDailySchedule(planData);
+        if (!schedule || schedule.length === 0) {
+            showToast('تعذر توليد جدول لهذه التواريخ', 'error');
+            return;
+        }
+
+        let scheduleHtml = `
+            <div class="overflow-x-auto border rounded-xl">
+                <table class="w-full text-sm text-right text-gray-500 dark:text-gray-400">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                        <tr>
+                            <th class="px-3 py-2 border-b">التاريخ</th>
+                            <th class="px-3 py-2 border-b">المقرر المطلوب</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+        `;
+
+        schedule.forEach(day => {
+            let taskText = 'يوم دراسي';
+            if (day.sections && day.sections.length > 0) {
+                taskText = day.sections.map(s => `${s.suraName} (${s.fromAyah}-${s.toAyah})`).join(' | ');
+            }
+            scheduleHtml += `
+                <tr class="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
+                    <td class="px-3 py-2 font-bold">${day.date}</td>
+                    <td class="px-3 py-2 text-xs">${taskText}</td>
+                </tr>
+            `;
+        });
+
+        scheduleHtml += `</tbody></table></div>`;
+
+        let previewModal = document.getElementById('plan-preview-modal');
+        if (previewModal) previewModal.remove();
+
+        const html = `
+            <div id="plan-preview-modal" class="fixed inset-0 bg-black/60 z-[210] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl flex flex-col max-h-[90vh]">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-lg text-teal-600">📋 معاينة جدول الخطة</h3>
+                        <button onclick="document.getElementById('plan-preview-modal').remove()" class="text-gray-400 hover:text-gray-600"><i data-lucide="x"></i></button>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto mb-6 pr-1">
+                        <p class="text-xs text-gray-500 mb-4 bg-teal-50 dark:bg-teal-900/20 p-3 rounded-lg border border-teal-100 dark:border-teal-800">
+                            سيتم تقسيم <b>${planData.end_page - planData.start_page + 1} صفحة</b> على <b>${schedule.length} أيام دراسة</b> بمعدل <b>${planData.weekly_pages.sun} صفحة يومياً</b>.
+                        </p>
+                        ${scheduleHtml}
+                    </div>
+
+                    <div class="flex gap-3">
+                        <button onclick="document.getElementById('plan-preview-modal').remove()" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl font-bold hover:bg-gray-200 transition">
+                            إلغاء / تعديل
+                        </button>
+                        <button id="confirm-save-plan-btn" class="flex-1 py-3 bg-teal-600 text-white rounded-xl font-bold shadow-lg hover:bg-teal-700 transition">
+                            موافق واعتماد
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', html);
+        lucide.createIcons();
+
+        document.getElementById('confirm-save-plan-btn').onclick = async () => {
+            const btn = document.getElementById('confirm-save-plan-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto"></i>';
+            lucide.createIcons();
+            
+            try {
+                await savePlan(planData);
+                showToast('تمت الموافقة وحفظ الخطة بنجاح', 'success');
+                document.getElementById('plan-preview-modal').remove();
+                closeModal();
+                if (window.openStudentReport) window.openStudentReport(planData.student_id);
+            } catch (e) {
+                showToast('خطأ في الحفظ', 'error');
+                btn.disabled = false;
+                btn.textContent = 'موافق واعتماد';
+            }
+        };
     }
 
     function closeModal() {

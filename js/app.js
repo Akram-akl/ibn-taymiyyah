@@ -1019,10 +1019,10 @@ function updateStudentsListUI() {
 
             return `
             <div class="p-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition group border-b border-gray-100 dark:border-gray-700 last:border-0">
-                <div onclick="openEditStudent('${student.id}')" class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xl shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden cursor-pointer shrink-0">
+                <div onclick="openStudentReport('${student.id}')" class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xl shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden cursor-pointer shrink-0">
                     ${iconHtml}
                 </div>
-                <div class="flex-1 min-w-0" onclick="openEditStudent('${student.id}')" style="cursor:pointer">
+                <div class="flex-1 min-w-0" onclick="openStudentReport('${student.id}')" style="cursor:pointer">
                     <h4 class="font-bold text-gray-800 dark:text-gray-100 truncate">${student.name}</h4>
                     <div class="flex flex-wrap gap-1 text-xs text-gray-500 mt-0.5">
                         ${(state.isTeacher && student.studentNumber) ? `<span class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px] text-gray-500 tracking-wider">${student.studentNumber}</span>` : ''}
@@ -4288,6 +4288,13 @@ async function openStudentReport(studentId) {
                 العودة لقائمة الأبناء
             </button>
         `;
+    } else if (state.isTeacher) {
+        topButtonsHTML = `
+            <button onclick="renderStudents()" class="flex items-center gap-2 text-gray-500 hover:text-teal-600 mb-4 font-bold">
+                <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                العودة لقائمة الطلاب
+            </button>
+        `;
     } else if (isStudent) {
         topButtonsHTML = ``;
     }
@@ -4460,37 +4467,35 @@ window.renderStudentCalendar = (year, month) => {
         let dayClass = 'bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
         let dayContent = `<span class="text-xs font-bold text-gray-400">${i}</span>`;
         
+        let hasData = false;
+        let dayContentTags = [];
+        
         if (dayData) {
+            hasData = true;
             const isAbsence = dayData.criteria.some(c => c && c.indexOf('غياب') !== -1);
             if (isAbsence) {
                 dayClass = 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-red-400 transition';
-                dayContent = `
-                    <span class="text-xs font-bold text-red-700 dark:text-red-400">${i}</span>
-                    <span class="text-[10px] mt-0.5" title="${dayData.criteria.join(', ')}">❌</span>
-                `;
+                dayContentTags.push(`<span class="text-[10px] mt-0.5" title="${dayData.criteria.join(', ')}">❌</span>`);
             } else if (dayData.points > 0) {
                 dayClass = 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-green-400 transition';
-                dayContent = `
-                    <span class="text-xs font-bold text-green-700 dark:text-green-400">${i}</span>
-                    <span class="text-[10px] font-bold text-green-600 mt-0.5" title="${dayData.criteria.join(', ')}">+${dayData.points}</span>
-                `;
+                dayContentTags.push(`<span class="text-[10px] font-bold text-green-600 mt-0.5" title="${dayData.criteria.join(', ')}">+${dayData.points}</span>`);
             } else if (dayData.points < 0) {
                 dayClass = 'bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-orange-400 transition';
-                dayContent = `
-                    <span class="text-xs font-bold text-orange-700 dark:text-orange-400">${i}</span>
-                    <span class="text-[10px] font-bold text-orange-600 mt-0.5" title="${dayData.criteria.join(', ')}">${dayData.points}</span>
-                `;
+                dayContentTags.push(`<span class="text-[10px] font-bold text-orange-600 mt-0.5" title="${dayData.criteria.join(', ')}">${dayData.points}</span>`);
             }
-            
-            // Add click handler for days with data
+        }
+        
+        if (plannedTasks.length > 0) {
+            if (!hasData) {
+                dayClass = 'bg-teal-50 dark:bg-teal-900/30 border-2 border-teal-200 dark:border-teal-700 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-teal-400 transition';
+            }
+            dayContentTags.push(`<span class="text-[10px] font-bold text-teal-600 mt-0.5 flex justify-center"><i data-lucide="book-open" class="w-3 h-3"></i></span>`);
+        }
+
+        if (dayData || plannedTasks.length > 0) {
+            dayContent = `<span class="text-xs font-bold ${hasData ? (dayClass.includes('red') ? 'text-red-700 dark:text-red-400' : (dayClass.includes('green') ? 'text-green-700 dark:text-green-400' : 'text-orange-700 dark:text-orange-400')) : 'text-teal-800 dark:text-teal-300'}">${i}</span>`;
+            dayContent += `<div class="flex gap-1 items-center justify-center">` + dayContentTags.join('') + `</div>`;
             calendarDaysHTML += `<div class="${dayClass}" onclick="showDayDetails('${dateStr}')">${dayContent}</div>`;
-        } else if (plannedTasks.length > 0) {
-            dayClass = 'bg-teal-50 dark:bg-teal-900/30 border-2 border-teal-200 dark:border-teal-700 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-teal-400 transition';
-            dayContent = `
-                <span class="text-xs font-bold text-teal-800 dark:text-teal-300">${i}</span>
-                <span class="text-[10px] font-bold text-teal-600 mt-0.5 flex justify-center"><i data-lucide="book-open" class="w-3 h-3"></i></span>
-            `;
-            calendarDaysHTML += `<div class="${dayClass}" onclick="showPlannedDayDetails('${dateStr}')">${dayContent}</div>`;
         } else if (dateStr === todayDate.toISOString().split('T')[0]) {
              dayClass = 'bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-400 dark:border-blue-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center relative';
              dayContent = `<span class="text-xs font-bold text-blue-700 dark:text-blue-400">${i}</span>`;
@@ -4529,47 +4534,79 @@ window.renderStudentCalendar = (year, month) => {
 window.showDayDetails = (dateStr) => {
     const scores = window._currentStudentScores || [];
     const dayScores = scores.filter(s => s.date === dateStr);
-    if (dayScores.length === 0) return;
-
-    // Group by criteriaId to avoid duplicates - keep last entry per criteriaId
-    const grouped = {};
-    dayScores.forEach(s => { grouped[s.criteriaId || s.criteriaName || Math.random()] = s; });
-    const uniqueScores = Object.values(grouped);
+    const plannedTasks = (window._currentStudentPlannedDays || []).filter(p => p.date === dateStr);
+    
+    if (dayScores.length === 0 && plannedTasks.length === 0) return;
 
     let html = `<div class="space-y-3">`;
 
-    uniqueScores.forEach(s => {
-        const isPositive = s.points > 0;
-        const isAbsence = s.criteriaId === 'ABSENCE_RECORD';
-        const isQuran = s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW';
-
-        let badge = '';
-        if (isQuran) {
-            badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-teal-100 text-teal-700">${s.criteriaId === 'QURAN_MEMORIZATION' ? '📝 حفظ' : '🔄 مراجعة'}</span>`;
-        } else if (isAbsence) {
-            badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-red-100 text-red-700">غياب ❌</span>`;
-        } else {
-            badge = `<span class="text-sm font-bold px-2 py-1 rounded-lg ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${isPositive ? '+' : ''}${s.points}</span>`;
-        }
-
-        html += `
-        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
-            <div class="flex justify-between items-center mb-2">
-                <span class="font-bold text-sm text-gray-800 dark:text-gray-100">${s.criteriaName || (isAbsence ? 'غياب' : 'تقييم')}</span>
-                ${badge}
+    if (plannedTasks.length > 0) {
+        plannedTasks.forEach((p, idx) => {
+            let sectionsText = '';
+            if (p.sections && p.sections.length > 0) {
+                sectionsText = p.sections.map(s => `${s.suraName}: آية ${s.fromAyah} - ${s.toAyah}`).join(' | ');
+            }
+            window[`_tempPlanSection_${idx}`] = p.sections;
+            html += `
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-bold text-sm text-gray-800 dark:text-gray-100">المقرر المطلوب</span>
+                    <span class="text-xs font-bold px-2 py-1 rounded-lg bg-teal-100 text-teal-700">${p.planType === 'review' ? '🔄 مراجعة' : '📝 حفظ'}</span>
+                </div>
+                ${sectionsText ? `
+                <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
+                    <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع المطلوب:</p>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${sectionsText}</p>
+                    ${state.isParent ? '' : `
+                    <button onclick="if(window.CurriculumManager) window.CurriculumManager.showPaginatedQuranModal(window['_tempPlanSection_${idx}'])" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
+                        <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
+                    </button>
+                    `}
+                </div>
+                ` : ''}
             </div>
-            ${s.quranSection ? `
-            <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
-                <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع:</p>
-                <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${s.quranSection}</p>
-                <button onclick="window._openQuranForScore('${s.id}')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
-                    <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
-                </button>
+            `;
+        });
+    }
+
+    if (dayScores.length > 0) {
+        const grouped = {};
+        dayScores.forEach(s => { grouped[s.criteriaId || s.criteriaName || Math.random()] = s; });
+        const uniqueScores = Object.values(grouped);
+
+        uniqueScores.forEach(s => {
+            const isPositive = s.points > 0;
+            const isAbsence = s.criteriaId === 'ABSENCE_RECORD';
+            const isQuran = s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW';
+
+            let badge = '';
+            if (isQuran) {
+                badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-teal-100 text-teal-700">${s.criteriaId === 'QURAN_MEMORIZATION' ? '📝 حفظ' : '🔄 مراجعة'}</span>`;
+            } else if (isAbsence) {
+                badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-red-100 text-red-700">غياب ❌</span>`;
+            } else {
+                badge = `<span class="text-sm font-bold px-2 py-1 rounded-lg ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${isPositive ? '+' : ''}${s.points}</span>`;
+            }
+
+            html += `
+            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-bold text-sm text-gray-800 dark:text-gray-100">${s.criteriaName || (isAbsence ? 'غياب' : 'تقييم')}</span>
+                    ${badge}
+                </div>
+                ${s.quranSection ? `
+                <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
+                    <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع:</p>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${s.quranSection}</p>
+                    <button onclick="window._openQuranForScore('${s.id}')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
+                        <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
+                    </button>
+                </div>
+                ` : ''}
             </div>
-            ` : ''}
-        </div>
-        `;
-    });
+            `;
+        });
+    }
 
     html += `</div>`;
 
@@ -4611,62 +4648,6 @@ window.showDayDetails = (dateStr) => {
         // Use pagination
         window.CurriculumManager.showPaginatedQuranModal(sections);
     };
-};
-
-window.showPlannedDayDetails = (dateStr) => {
-    const plannedTasks = (window._currentStudentPlannedDays || []).filter(p => p.date === dateStr);
-    if (plannedTasks.length === 0) return;
-
-    let html = `<div class="space-y-3">`;
-    plannedTasks.forEach((p, idx) => {
-        let sectionsText = '';
-        if (p.sections && p.sections.length > 0) {
-            sectionsText = p.sections.map(s => `${s.suraName}: آية ${s.fromAyah} - ${s.toAyah}`).join(' | ');
-        }
-        
-        // save p temporarily to window so we can view its quran text
-        window[`_tempPlanSection_${idx}`] = p.sections;
-
-        html += `
-        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
-            <div class="flex justify-between items-center mb-2">
-                <span class="font-bold text-sm text-gray-800 dark:text-gray-100">المقرر المطلوب</span>
-                <span class="text-xs font-bold px-2 py-1 rounded-lg bg-teal-100 text-teal-700">${p.planType === 'review' ? '🔄 مراجعة' : '📝 حفظ'}</span>
-            </div>
-            ${sectionsText ? `
-            <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
-                <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع المطلوب:</p>
-                <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${sectionsText}</p>
-                <button onclick="if(window.CurriculumManager) window.CurriculumManager.showPaginatedQuranModal(window['_tempPlanSection_${idx}'])" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
-                    <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
-                </button>
-            </div>
-            ` : ''}
-        </div>
-        `;
-    });
-    html += `</div>`;
-
-    // Re-use modal code:
-    let modal = document.getElementById('day-scores-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'day-scores-modal';
-        document.body.appendChild(modal);
-    }
-    modal.className = 'fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
-    modal.innerHTML = `
-        <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
-            <div class="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-700 pb-3">
-                <h3 class="font-bold text-lg text-teal-700 dark:text-teal-400">📅 خطة يوم ${dateStr}</h3>
-                <button onclick="document.getElementById('day-scores-modal').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 rounded-full p-2">
-                    <i data-lucide="x" class="w-4 h-4"></i>
-                </button>
-            </div>
-            ${html}
-        </div>
-    `;
-    lucide.createIcons();
 };
 
 function contactTeacher(studentName, teacherPhone) {
