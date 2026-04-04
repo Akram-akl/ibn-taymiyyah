@@ -137,23 +137,7 @@ CREATE TABLE IF NOT EXISTS student_plans (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 9. Plan Daily Records Table (only stores actual events: completed, absent, intensive)
-CREATE TABLE IF NOT EXISTS plan_daily_records (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    plan_id UUID REFERENCES student_plans(id) ON DELETE CASCADE,
-    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
-    date TEXT NOT NULL,
-    planned_start_page NUMERIC,
-    planned_end_page NUMERIC,
-    planned_sections JSONB DEFAULT '[]'::jsonb,
-    actual_start_page NUMERIC,
-    actual_end_page NUMERIC,
-    actual_sections JSONB DEFAULT '[]'::jsonb,
-    status TEXT DEFAULT 'pending', -- 'completed', 'absent', 'activity_day', 'intensive', 'different'
-    notes TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- End of Schema
 
 -- =====================================================
 -- Enable Row Level Security (RLS)

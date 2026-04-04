@@ -587,37 +587,10 @@ window.CurriculumManager = (function() {
 
     async function markDayCompleted(planId, studentId, date, todayEntry) {
         try {
-            // Check if record already exists
-            const q = window.firebaseOps.query(
-                window.firebaseOps.collection(window.db, "plan_daily_records"),
-                window.firebaseOps.where("plan_id", "==", planId),
-                window.firebaseOps.where("date", "==", date)
-            );
-            const snap = await window.firebaseOps.getDocs(q);
-            
-            const data = {
-                plan_id: planId,
-                student_id: studentId,
-                date: date,
-                planned_start_page: todayEntry.targetStartPage,
-                planned_end_page: todayEntry.targetEndPage,
-                planned_sections: todayEntry.sections || [],
-                actual_start_page: todayEntry.targetStartPage,
-                actual_end_page: todayEntry.targetEndPage,
-                actual_sections: todayEntry.sections || [],
-                status: 'completed'
-            };
-
-            if (!snap.empty) {
-                await window.firebaseOps.updateDoc(
-                    window.firebaseOps.doc(window.db, "plan_daily_records", snap.docs[0].id), data
-                );
-            } else {
-                await window.firebaseOps.addDoc(
-                    window.firebaseOps.collection(window.db, "plan_daily_records"), data
-                );
-            }
-            showToast('✅ تم تسجيل إنجاز اليوم بنجاح', 'success');
+            // تقديم الخطة زمنياً فور الضغط على تم الإنجاز دون الحاجة لسجلات إضافية
+            const lastSec = todayEntry.sections[todayEntry.sections.length - 1];
+            await recalculatePlanAfterAchievement(studentId, planId, lastSec.suraNo, lastSec.toAyah);
+            showToast('✅ تم تسجيل إنجاز اليوم بنجاح وتقديم الخطة', 'success');
         } catch (e) {
             console.error(e);
             showToast('خطأ في تسجيل الإنجاز', 'error');
@@ -626,19 +599,18 @@ window.CurriculumManager = (function() {
 
     async function markDayAbsent(planId, studentId, date, todayEntry) {
         try {
-            const data = {
-                plan_id: planId,
+            // تسجيل الغياب في جدول scores ليبقى الأثر موجوداً في الإحصائيات
+            const absenceScore = {
                 student_id: studentId,
+                criteria_id: 'ABSENCE_RECORD',
+                criteria_name: 'غياب',
+                points: -5, // خصم نقاط للغياب
                 date: date,
-                planned_start_page: todayEntry.targetStartPage,
-                planned_end_page: todayEntry.targetEndPage,
-                planned_sections: todayEntry.sections || [],
-                status: 'absent'
+                notes: 'غائب عن ورد القرآن الكريم'
             };
-            await window.firebaseOps.addDoc(
-                window.firebaseOps.collection(window.db, "plan_daily_records"), data
-            );
-            showToast('تم تسجيل الغياب', 'info');
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), absenceScore);
+            
+            showToast('تم تسجيل الغياب وخصم النقاط', 'info');
         } catch (e) {
             console.error(e);
             showToast('خطأ في تسجيل الغياب', 'error');
@@ -729,7 +701,7 @@ window.CurriculumManager = (function() {
                 updated_at: new Date().toISOString()
             };
 
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "plan_daily_records"), data);
+            // إنجاز مختلف: نقوم فقط بتقديم الخطة إلى النقطة التي وصل إليها الطالب
             
             const result = await recalculatePlanAfterAchievement(studentId, planId, endSura, endAyah);
             if (result && result.warning) {
@@ -745,94 +717,7 @@ window.CurriculumManager = (function() {
         }
     }
 
-    // === يوم مكثف ===
-    function openIntensiveDayModal(plan, studentId, date) {
-        let old = document.getElementById('intensive-day-modal');
-        if (old) old.remove();
-
-        let html = `
-        <div id="intensive-day-modal" class="fixed inset-0 bg-black/60 z-[250] flex items-center justify-center p-4" onclick="if(event.target===this)this.remove()">
-            <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-                <h3 class="font-bold text-lg mb-2 flex items-center gap-2">⚡ يوم مكثف</h3>
-                <p class="text-xs text-gray-500 mb-3">الطالب أنجز أكثر من المعتاد. حدد ما أنجزه فعلياً:</p>
-                <div class="grid grid-cols-2 gap-2 mb-3">
-                    <div>
-                        <label class="text-[10px] text-gray-500">من السورة / الآية</label>
-                        <div class="flex gap-1">
-                            <select id="intens-start-sura" class="flex-1 bg-gray-50 border rounded text-xs p-1.5" onchange="CurriculumManager.updateIntensAyas('start')"></select>
-                            <select id="intens-start-aya" class="flex-1 bg-gray-50 border rounded text-xs p-1.5"></select>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="text-[10px] text-gray-500">إلى السورة / الآية</label>
-                        <div class="flex gap-1">
-                            <select id="intens-end-sura" class="flex-1 bg-gray-50 border rounded text-xs p-1.5" onchange="CurriculumManager.updateIntensAyas('end')"></select>
-                            <select id="intens-end-aya" class="flex-1 bg-gray-50 border rounded text-xs p-1.5"></select>
-                        </div>
-                    </div>
-                </div>
-                <div class="flex gap-2">
-                    <button onclick="document.getElementById('intensive-day-modal').remove()" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl font-bold hover:bg-gray-200 transition">إلغاء</button>
-                    <button onclick="CurriculumManager.submitIntensiveDay('${plan.id}','${studentId}','${date}')" class="flex-1 py-3 bg-purple-600 text-white hover:bg-purple-700 rounded-xl font-bold">حفظ</button>
-                </div>
-            </div>
-        </div>`;
-        document.body.insertAdjacentHTML('beforeend', html);
-        initIntensSelectors();
-    }
-
-    async function initIntensSelectors() {
-        if (!QuranService.isLoaded()) await QuranService.loadData();
-        const suras = QuranService.getSuras();
-        let opts = '<option value="">--</option>';
-        suras.forEach(s => opts += `<option value="${s.number}">${s.number}. ${s.name}</option>`);
-        document.getElementById('intens-start-sura').innerHTML = opts;
-        document.getElementById('intens-end-sura').innerHTML = opts;
-    }
-
-    async function updateIntensAyas(prefix) {
-        const sura = document.getElementById(`intens-${prefix}-sura`).value;
-        const sel = document.getElementById(`intens-${prefix}-aya`);
-        if (!sura) { sel.innerHTML = ''; return; }
-        const ayas = QuranService.getAyahs(sura);
-        sel.innerHTML = ayas.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
-    }
-
-    async function submitIntensiveDay(planId, studentId, date) {
-        const ss = document.getElementById('intens-start-sura').value;
-        const sa = document.getElementById('intens-start-aya').value;
-        const es = document.getElementById('intens-end-sura').value;
-        const ea = document.getElementById('intens-end-aya').value;
-        if (!ss || !sa || !es || !ea) { showToast('حدد النطاق بالكامل', 'error'); return; }
-
-        const actualStartPage = QuranService.getPageForAyah(ss, sa);
-        const actualEndPage = QuranService.getPageForAyah(es, ea);
-        const sections = QuranService.getSectionsForPageRange(actualStartPage, actualEndPage);
-
-        try {
-            const data = {
-                plan_id: planId, student_id: studentId, date: date,
-                actual_start_page: actualStartPage, actual_end_page: actualEndPage,
-                actual_sections: sections, status: 'intensive'
-            };
-            const q = window.firebaseOps.query(
-                window.firebaseOps.collection(window.db, "plan_daily_records"),
-                window.firebaseOps.where("plan_id", "==", planId),
-                window.firebaseOps.where("date", "==", date)
-            );
-            const snap = await window.firebaseOps.getDocs(q);
-            if (!snap.empty) {
-                await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "plan_daily_records", snap.docs[0].id), data);
-            } else {
-                await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "plan_daily_records"), data);
-            }
-            showToast('⚡ تم تسجيل اليوم المكثف', 'success');
-            document.getElementById('intensive-day-modal').remove();
-        } catch (e) {
-            console.error(e);
-            showToast('خطأ في الحفظ', 'error');
-        }
-    }
+    // === إزالة وظائف المكثف المحذوفة ===
 
     async function openPlanModal(studentId, type = 'memorization') {
         currentStudentId = studentId;
@@ -855,10 +740,6 @@ window.CurriculumManager = (function() {
         openDifferentCompletionModal,
         updateDiffAyas,
         submitDifferentCompletion,
-        openIntensiveDayModal,
-        updateIntensAyas,
-        submitIntensiveDay,
         recalculatePlanAfterAchievement
     };
 })();
-

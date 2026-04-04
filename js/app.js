@@ -2166,8 +2166,13 @@ async function submitQuranRecord() {
 
     const quranType = document.getElementById('rate-quran-type').value || 'memorization';
     const startSuraEl = document.getElementById('rate-quran-start-sura');
-    const startAyaEl  = document.getElementById('rate-quran-start-aya');
-    const endSuraEl   = document.getElementById('rate-quran-end-sura');
+            // تقديم الخطة زمنياً فور الضغط على تم الإنجاز
+            if (window.CurriculumManager && window.CurriculumManager.recalculatePlanAfterAchievement) {
+                const lastSec = todayEntry.sections[todayEntry.sections.length - 1];
+                await CurriculumManager.recalculatePlanAfterAchievement(studentId, planId, lastSec.suraNo, lastSec.toAyah);
+            }
+            showToast('✅ تم تسجيل إنجاز اليوم بنجاح وتقديم الخطة', 'success');
+
     const endAyaEl    = document.getElementById('rate-quran-end-aya');
 
     if (!startSuraEl.value || !startAyaEl.value || !endSuraEl.value || !endAyaEl.value) {
@@ -4590,9 +4595,6 @@ window.showDayDetails = (dateStr) => {
                 <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
                     <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع:</p>
                     <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${s.quranSection}</p>
-                    <button onclick="window._openQuranForScore('${s.id}')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
-                        <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
-                    </button>
                 </div>
                 ` : ''}
             </div>
@@ -4622,24 +4624,7 @@ window.showDayDetails = (dateStr) => {
     `;
     lucide.createIcons();
 
-    window._openQuranForScore = (scoreId) => {
-        const score = uniqueScores.find(s => s.id === scoreId);
-        if (!score || !score.quranStartSura || !score.quranEndSura) {
-            showToast('التفاصيل الدقيقة للآيات غير متوفرة لهذا السجل القديم', 'error');
-            return;
-        }
-        if (!window.QuranService || !window.CurriculumManager || !window.CurriculumManager.showPaginatedQuranModal) {
-            showToast('برجاء الانتظار لحين تحميل المصحف', 'error');
-            return;
-        }
-        
-        let startPage = window.QuranService.getPageForAyah(score.quranStartSura, score.quranStartAyah);
-        let endPage = window.QuranService.getPageForAyah(score.quranEndSura, score.quranEndAyah);
-        let sections = window.QuranService.getSectionsForPageRange(startPage, endPage);
-        
-        // Use pagination
-        window.CurriculumManager.showPaginatedQuranModal(sections);
-    };
+    // Removed legacy Quran log functions
 };
 
 function contactTeacher(studentName, teacherPhone) {
