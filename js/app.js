@@ -1137,7 +1137,7 @@ function renderSettings() {
         <div class="space-y-4 animate-fade-in">
              <h2 class="text-xl font-bold mb-4">الإعدادات</h2>
              
-             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
+             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm mb-4">
                  <div class="flex items-center justify-between">
                      <div class="flex items-center gap-3">
                          <div class="bg-gray-100 dark:bg-gray-700 p-2 rounded-lg">
@@ -1149,6 +1149,22 @@ function renderSettings() {
                          <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.darkMode ? 'left-6' : 'left-1'} transition-all duration-300 shadow-sm"></div>
                      </button>
                  </div>
+                 
+                 ${state.isTeacher ? `
+                 <div class="flex items-center justify-between pt-4 mt-4 border-t border-gray-100 dark:border-gray-700">
+                     <div class="flex items-center gap-3">
+                         <div class="bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded-lg">
+                             <i data-lucide="book-open" class="w-5 h-5 text-indigo-600 dark:text-indigo-400"></i>
+                         </div>
+                         <div>
+                             <span class="font-bold text-sm block">تفعيل التسميع وتقييم الخطط</span>
+                         </div>
+                     </div>
+                     <div id="quran-reader-toggle-container">
+                         <div class="text-center text-gray-400"><i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto"></i></div>
+                     </div>
+                 </div>
+                 ` : ''}
              </div>
 
 
@@ -1197,7 +1213,54 @@ function renderSettings() {
     // Load existing teachers list
     if (state.isTeacher) {
         loadTeachersList();
+        loadQuranToggle();
         loadGlobalStudyDays();
+    }
+}
+
+async function loadQuranToggle() {
+    const container = document.getElementById('quran-reader-toggle-container');
+    if (!container) return;
+    try {
+        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "level_settings"), window.firebaseOps.where("level", "==", state.currentLevel), window.firebaseOps.where("feature_name", "==", "quran_reader"));
+        const snap = await window.firebaseOps.getDocs(q);
+        let isEnabled = true;
+        if (!snap.empty && snap.docs[0].data().is_enabled !== undefined) {
+            isEnabled = snap.docs[0].data().is_enabled;
+        }
+        window.state.quranEnabled = isEnabled;
+        
+        container.innerHTML = `
+            <button onclick="toggleQuranReaderFeature(${!isEnabled})" class="w-12 h-7 ${isEnabled ? 'bg-indigo-600' : 'bg-gray-200'} rounded-full relative transition-colors duration-300">
+                 <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${isEnabled ? 'left-6' : 'left-1'} transition-all duration-300 shadow-sm"></div>
+            </button>
+        `;
+    } catch (e) { console.error(e); }
+}
+
+async function toggleQuranReaderFeature(setToEnable) {
+    const container = document.getElementById('quran-reader-toggle-container');
+    container.innerHTML = '<div class="text-center text-gray-400"><i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto"></i></div>';
+    if (window.lucide) window.lucide.createIcons();
+    
+    try {
+        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "level_settings"), window.firebaseOps.where("level", "==", state.currentLevel), window.firebaseOps.where("feature_name", "==", "quran_reader"));
+        const snap = await window.firebaseOps.getDocs(q);
+        
+        const data = { level: state.currentLevel, feature_name: 'quran_reader', is_enabled: setToEnable, updated_at: new Date() };
+        if (!snap.empty) {
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "level_settings", snap.docs[0].id), data);
+        } else {
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "level_settings"), data);
+        }
+        window.state.quranEnabled = setToEnable;
+        
+        showToast(setToEnable ? 'تم تفعيل التسميع' : 'تم إيقاف ميزة التسميع', 'success');
+        loadQuranToggle();
+    } catch(e) {
+        console.error(e);
+        showToast('خطأ في الإعدادات', 'error');
+        loadQuranToggle();
     }
 }
 
@@ -1206,11 +1269,11 @@ async function loadGlobalStudyDays() {
     if (!container) return;
     
     try {
-        const docRef = window.firebaseOps.doc(window.db, "level_settings", state.currentLevel);
-        const snap = await window.firebaseOps.getDoc(docRef);
+        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "level_settings"), window.firebaseOps.where("level", "==", state.currentLevel), window.firebaseOps.where("feature_name", "==", "study_days"));
+        const snap = await window.firebaseOps.getDocs(q);
         let defaultDays = [0, 1, 2, 3, 4];
-        if (snap.exists() && snap.data().study_days) {
-            defaultDays = snap.data().study_days;
+        if (!snap.empty && snap.docs[0].data().settings && snap.docs[0].data().settings.days) {
+            defaultDays = snap.docs[0].data().settings.days;
         }
         
         container.innerHTML = [
@@ -1242,8 +1305,15 @@ async function saveGlobalStudyDays() {
         if (btn) btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>';
         if (window.lucide) window.lucide.createIcons();
         
-        const docRef = window.firebaseOps.doc(window.db, "level_settings", state.currentLevel);
-        await window.firebaseOps.setDoc(docRef, { study_days: selectedDays, updated_at: new Date() }, { merge: true });
+        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "level_settings"), window.firebaseOps.where("level", "==", state.currentLevel), window.firebaseOps.where("feature_name", "==", "study_days"));
+        const snap = await window.firebaseOps.getDocs(q);
+        
+        const data = { level: state.currentLevel, feature_name: 'study_days', settings: { days: selectedDays }, updated_at: new Date() };
+        if (!snap.empty) {
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "level_settings", snap.docs[0].id), data);
+        } else {
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "level_settings"), data);
+        }
         
         showToast('تم حفظ إعدادات الأيام بنجاح', 'success');
         if (btn) btn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> حفظ الأيام الافتراضية';
@@ -1459,6 +1529,14 @@ function getStudentModalHTML() {
                      
                      <input type="hidden" id="student-memorization">
                      <input type="hidden" id="student-review">
+
+                     <div id="student-plan-management-section" class="hidden mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 mb-4">
+                         <label class="block text-sm font-bold mb-2 flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4 text-teal-600"></i> إدارة الخطط القرآنية</label>
+                         <div class="grid grid-cols-2 gap-2">
+                             <button type="button" onclick="closeModal('student-modal'); window.CurriculumManager.openPlanModal(document.getElementById('student-id').value, 'memorization')" class="py-2.5 bg-teal-50 text-teal-700 rounded-xl text-xs font-bold hover:bg-teal-100 transition border border-teal-200 flex justify-center items-center gap-1"><i data-lucide="book" class="w-4 h-4"></i> خطة الحفظ</button>
+                             <button type="button" onclick="closeModal('student-modal'); window.CurriculumManager.openPlanModal(document.getElementById('student-id').value, 'review')" class="py-2.5 bg-purple-50 text-purple-700 rounded-xl text-xs font-bold hover:bg-purple-100 transition border border-purple-200 flex justify-center items-center gap-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i> خطة المراجعة</button>
+                         </div>
+                     </div>
 
 
                      
@@ -1905,6 +1983,7 @@ function openAddStudentModal() {
     $('#student-form').reset();
     $('#student-modal-title').textContent = 'إضافة طالب جديد';
     $('#save-student-text').textContent = 'حفظ';
+    if ($('#student-plan-management-section')) $('#student-plan-management-section').classList.add('hidden');
     
     toggleModal('student-modal', true);
 }
@@ -1961,6 +2040,12 @@ async function openEditStudent(id) {
     $('#student-modal-title').textContent = 'تعديل بيانات الطالب';
     $('#save-student-text').textContent = 'تحديث';
 
+    if (state.isTeacher && window.state.quranEnabled !== false && $('#student-plan-management-section')) {
+        $('#student-plan-management-section').classList.remove('hidden');
+        if (window.lucide) window.lucide.createIcons();
+    } else if ($('#student-plan-management-section')) {
+        $('#student-plan-management-section').classList.add('hidden');
+    }
 
     toggleModal('student-modal', true);
 }
@@ -2752,8 +2837,11 @@ function openRateStudent(studentId) {
     lucide.createIcons();
 
     // استدعاء نظام الخطط لعرض الورد اليومي
-    if (window.CurriculumManager) {
+    const planDisplay = document.getElementById('rate-quran-plan-display');
+    if (window.CurriculumManager && window.state.quranEnabled !== false) {
         CurriculumManager.renderDailyPlanForGrader(studentId, dateVal);
+    } else if (planDisplay) {
+        planDisplay.classList.add('hidden');
     }
 }
 
@@ -4154,7 +4242,7 @@ window.renderStudentCalendar = (year, month) => {
             }
         }
         
-        if (plannedTasks.length > 0) {
+        if (plannedTasks.length > 0 && window.state.quranEnabled !== false) {
             const hasHifz = plannedTasks.some(p => p.planType === 'memorization');
             const hasReview = plannedTasks.some(p => p.planType === 'review');
             

@@ -230,9 +230,14 @@ window.CurriculumManager = (function() {
         let defaultDays = [0, 1, 2, 3, 4];
         if (window.state && window.state.currentLevel) {
             try {
-                const snap = await window.firebaseOps.getDoc(window.firebaseOps.doc(window.db, "level_settings", window.state.currentLevel));
-                if (snap.exists() && snap.data().study_days) {
-                    defaultDays = snap.data().study_days;
+                const q = window.firebaseOps.query(
+                    window.firebaseOps.collection(window.db, "level_settings"),
+                    window.firebaseOps.where("level", "==", window.state.currentLevel),
+                    window.firebaseOps.where("feature_name", "==", "study_days")
+                );
+                const snap = await window.firebaseOps.getDocs(q);
+                if (!snap.empty && snap.docs[0].data().settings && snap.docs[0].data().settings.days) {
+                    defaultDays = snap.docs[0].data().settings.days;
                 }
             } catch (e) {
                 console.error("Error loading level default days", e);
