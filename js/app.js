@@ -1245,66 +1245,6 @@ async function toggleQuranReaderFeature(setToEnable) {
     }
 }
 
-async function loadGlobalStudyDays() {
-    const container = document.getElementById('global-study-days-container');
-    if (!container) return;
-    
-    try {
-        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "level_settings"), window.firebaseOps.where("level", "==", state.currentLevel), window.firebaseOps.where("feature_name", "==", "study_days"));
-        const snap = await window.firebaseOps.getDocs(q);
-        let defaultDays = [0, 1, 2, 3, 4];
-        if (!snap.empty && snap.docs[0].data().settings && snap.docs[0].data().settings.days) {
-            defaultDays = snap.docs[0].data().settings.days;
-        }
-        
-        container.innerHTML = [
-            {val: 0, label: 'الأحد'}, {val: 1, label: 'الإثنين'}, {val: 2, label: 'الثلاثاء'},
-            {val: 3, label: 'الأربعاء'}, {val: 4, label: 'الخميس'}, {val: 5, label: 'الجمعة'}, {val: 6, label: 'السبت'}
-        ].map(d => `
-            <label class="flex items-center gap-1.5 text-xs bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded-lg cursor-pointer border border-gray-100 dark:border-gray-600 hover:bg-gray-100 transition">
-                <input type="checkbox" value="${d.val}" class="global-study-day-cb w-4 h-4 text-indigo-600 rounded bg-white" ${defaultDays.includes(d.val) ? 'checked' : ''}>
-                <span class="font-bold whitespace-nowrap">${d.label}</span>
-            </label>
-        `).join('');
-    } catch (e) {
-        console.error(e);
-        container.innerHTML = '<p class="text-xs text-red-500 mt-2">خطأ في تحميل الأيام الافتراضية</p>';
-    }
-}
-
-async function saveGlobalStudyDays() {
-    const boxes = document.querySelectorAll('.global-study-day-cb:checked');
-    const selectedDays = Array.from(boxes).map(b => parseInt(b.value));
-    
-    if (selectedDays.length === 0) {
-        showToast('يرجى اختيار يوم دراسة واحد على الأقل', 'error');
-        return;
-    }
-    
-    try {
-        const btn = document.querySelector('button[onclick="saveGlobalStudyDays()"]');
-        if (btn) btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>';
-        if (window.lucide) window.lucide.createIcons();
-        
-        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "level_settings"), window.firebaseOps.where("level", "==", state.currentLevel), window.firebaseOps.where("feature_name", "==", "study_days"));
-        const snap = await window.firebaseOps.getDocs(q);
-        
-        const data = { level: state.currentLevel, featureName: 'study_days', settings: { days: selectedDays }, updatedAt: new Date() };
-        if (!snap.empty) {
-            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "level_settings", snap.docs[0].id), data);
-        } else {
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "level_settings"), data);
-        }
-        
-        showToast('تم حفظ إعدادات الأيام بنجاح', 'success');
-        if (btn) btn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> حفظ الأيام الافتراضية';
-        if (window.lucide) window.lucide.createIcons();
-    } catch(e) {
-        console.error(e);
-        showToast('خطأ في الحفظ', 'error');
-    }
-}
-
 function forceUpdateApp() {
     showToast("جاري التحديث الشامل...");
 
@@ -1626,48 +1566,34 @@ function getCompetitionModalsHTML() {
                                                 <button type="button" onclick="addCriteriaItem()" class="text-teal-600 text-sm font-bold flex items-center gap-1">+ إضافة معيار</button>
                                             </div>
 
-                                            <div class="mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                                                <h4 class="font-bold text-sm text-emerald-800 dark:text-emerald-300 mb-3 flex items-center gap-2">
-                                                    <i data-lucide="book" class="w-4 h-4"></i>
-                                                    نقاط الخطط القرآنية (تلقائي)
-                                                </h4>
-                                                <div class="grid grid-cols-2 gap-3 mb-3">
-                                                    <div>
-                                                        <label class="block text-[10px] font-bold mb-1">نقاط الحفظ (موجب)</label>
-                                                        <input type="number" id="comp-memorization-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2 text-center text-sm" value="3">
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-[10px] font-bold mb-1">نقاط المراجعة (موجب)</label>
-                                                        <input type="number" id="comp-review-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2 text-center text-sm" value="2">
-                                                    </div>
-                                                </div>
-                                                <div class="grid grid-cols-2 gap-3">
-                                                    <div>
-                                                        <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ الحفظ (سالب)</label>
-                                                        <input type="number" id="comp-memorization-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-center text-sm text-red-600" value="1">
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ المراجعة (سالب)</label>
-                                                        <input type="number" id="comp-review-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-center text-sm text-red-600" value="1">
-                                                    </div>
-                                                </div>
-                                            </div>
+                                             <div class="mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800">
+                                                 <h4 class="font-bold text-sm text-emerald-800 dark:text-emerald-300 mb-3 flex items-center gap-2">
+                                                     <i data-lucide="book" class="w-4 h-4"></i>
+                                                     مكافآت وخصومات الخطط القرآنية
+                                                 </h4>
+                                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                                                     <div>
+                                                         <label class="block text-[10px] font-bold mb-1">نقاط إنجاز الحفظ (+)</label>
+                                                         <input type="number" id="comp-memorization-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2.5 text-center text-sm font-bold text-emerald-700" value="3">
+                                                     </div>
+                                                     <div>
+                                                         <label class="block text-[10px] font-bold mb-1">نقاط إنجاز المراجعة (+)</label>
+                                                         <input type="number" id="comp-review-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2.5 text-center text-sm font-bold text-emerald-700" value="2">
+                                                     </div>
+                                                 </div>
+                                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                     <div>
+                                                         <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ الحفظ (-)</label>
+                                                         <input type="number" id="comp-memorization-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2.5 text-center text-sm font-bold text-red-600" value="1">
+                                                     </div>
+                                                     <div>
+                                                         <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ المراجعة (-)</label>
+                                                         <input type="number" id="comp-review-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2.5 text-center text-sm font-bold text-red-600" value="1">
+                                                     </div>
+                                                 </div>
+                                             </div>
 
                                             <div class="mb-4 bg-orange-50 dark:bg-orange-900/10 p-4 rounded-xl border border-orange-100 dark:border-orange-800">
-                                                <h4 class="font-bold text-sm text-orange-800 dark:text-orange-300 mb-3 flex items-center gap-2">
-                                                    <i data-lucide="user-x" class="w-4 h-4"></i>
-                                                    إعدادات خصم الغياب
-                                                </h4>
-                                                <div class="grid grid-cols-2 gap-3">
-                                                    <div>
-                                                        <label class="block text-xs font-bold mb-1">بعذر (نقاط)</label>
-                                                        <input type="number" id="comp-absent-excuse" class="w-full bg-white dark:bg-gray-800 border border-orange-200 dark:border-orange-700 rounded-lg px-3 py-2 text-center" value="1">
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-xs font-bold mb-1">بدون عذر (نقاط)</label>
-                                                        <input type="number" id="comp-absent-no-excuse" class="w-full bg-white dark:bg-gray-800 border border-orange-200 dark:border-orange-700 rounded-lg px-3 py-2 text-center" value="4">
-                                                    </div>
-                                                </div>
                                             </div>
                                             
                                             <div class="mb-4 bg-purple-50 dark:bg-purple-900/10 p-3 rounded-xl border border-purple-100 dark:border-purple-800">

@@ -228,27 +228,10 @@ window.CurriculumManager = (function() {
         const activeType = requestedType || (plan ? plan.plan_type : 'memorization');
 
         let defaultDays = [0, 1, 2, 3, 4];
-        if (window.state && window.state.currentLevel) {
-            try {
-                const q = window.firebaseOps.query(
-                    window.firebaseOps.collection(window.db, "level_settings"),
-                    window.firebaseOps.where("level", "==", window.state.currentLevel),
-                    window.firebaseOps.where("feature_name", "==", "study_days")
-                );
-                const snap = await window.firebaseOps.getDocs(q);
-                if (!snap.empty && snap.docs[0].data().settings && snap.docs[0].data().settings.days) {
-                    defaultDays = snap.docs[0].data().settings.days;
-                }
-            } catch (e) {
-                console.error("Error loading level default days", e);
-            }
-        }
         
         let alertHtml = '';
         const targetDays = (plan && plan.study_days) ? plan.study_days : defaultDays;
         
-        // Alert removed per user request
-
         let html = `
             <div id="plan-manager-modal" class="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
                 <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -456,13 +439,7 @@ window.CurriculumManager = (function() {
             end_ayah: Number(endAya),
             start_page: startPage,
             end_page: endPage,
-            weekly_pages: {
-                sun: pagesPerDay,
-                mon: pagesPerDay,
-                tue: pagesPerDay,
-                wed: pagesPerDay,
-                thu: pagesPerDay,
-            },
+// weekly_pages removed as requested
             study_days: study_days,
             level: state.currentLevel,
             status: 'active'
