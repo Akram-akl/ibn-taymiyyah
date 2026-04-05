@@ -153,16 +153,6 @@ CREATE TABLE IF NOT EXISTS plan_daily_records (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 10. Level Settings Table (Feature toggles per level)
-CREATE TABLE IF NOT EXISTS level_settings (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    level TEXT NOT NULL UNIQUE,
-    quran_tracking_enabled BOOLEAN DEFAULT FALSE,
-    settings JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- =====================================================
 -- Enable Row Level Security (RLS)
 -- =====================================================
@@ -175,7 +165,6 @@ ALTER TABLE activity_days ENABLE ROW LEVEL SECURITY;
 ALTER TABLE group_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE student_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_daily_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE level_settings ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
 -- Create Policies (Using DROP IF EXISTS for idempotency)
@@ -261,15 +250,6 @@ CREATE POLICY "Allow public insert plan_daily_records" ON plan_daily_records FOR
 CREATE POLICY "Allow public update plan_daily_records" ON plan_daily_records FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete plan_daily_records" ON plan_daily_records FOR DELETE USING (true);
 
-DROP POLICY IF EXISTS "Allow public read level_settings" ON level_settings;
-DROP POLICY IF EXISTS "Allow public insert level_settings" ON level_settings;
-DROP POLICY IF EXISTS "Allow public update level_settings" ON level_settings;
-DROP POLICY IF EXISTS "Allow public delete level_settings" ON level_settings;
-CREATE POLICY "Allow public read level_settings" ON level_settings FOR SELECT USING (true);
-CREATE POLICY "Allow public insert level_settings" ON level_settings FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update level_settings" ON level_settings FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete level_settings" ON level_settings FOR DELETE USING (true);
-
 -- =====================================================
 -- Enable Realtime
 -- =====================================================
@@ -302,9 +282,6 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'plan_daily_records') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE plan_daily_records;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'level_settings') THEN
-        ALTER PUBLICATION supabase_realtime ADD TABLE level_settings;
-    END IF;
 END $$;
 
 -- =====================================================
@@ -326,7 +303,6 @@ CREATE INDEX IF NOT EXISTS idx_student_plans_student_status ON student_plans(stu
 CREATE INDEX IF NOT EXISTS idx_student_plans_level ON student_plans(level);
 CREATE INDEX IF NOT EXISTS idx_plan_daily_records_plan_id ON plan_daily_records(plan_id);
 CREATE INDEX IF NOT EXISTS idx_plan_daily_records_student_date ON plan_daily_records(student_id, date);
-CREATE INDEX IF NOT EXISTS idx_level_settings_level ON level_settings(level);
 
 -- Create trigger functions for updated_at
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()
