@@ -3021,8 +3021,16 @@ function openRateStudent(studentId) {
                 }
             }
             
-            if (!hasAny) {
+            if (!hasAny && plans.length > 0) {
                 planDisplay.innerHTML = '<div class="text-xs text-gray-500 py-2 border-t border-dashed">لا يوجد ورد مجدول لهذا اليوم</div>';
+            } else if (!hasAny && plans.length === 0) {
+                // لا توجد خطة مسجلة → عرض التحديد اليدوي
+                planDisplay.classList.add('hidden');
+                const quranSec = document.getElementById('rate-quran-section');
+                if (quranSec) {
+                    quranSec.classList.remove('hidden');
+                    initRateQuranSelectors();
+                }
             }
             lucide.createIcons();
         });
@@ -3036,14 +3044,14 @@ function openRateStudent(studentId) {
         const today = $('#grading-date').value;
         
         if (action === 'executed') {
-            await CurriculumManager.markDayCompleted(planId, studentId, today, entry);
+            await CurriculumManager.markDayCompleted(planId, studentId, today, entry, type);
             showToast('✅ تم تسجيل إنجاز الورد بنجاح');
             // Re-open to refresh UI
             openRateStudent(studentId);
         }
     };
 
-    // القديم: تم استبداله بنظام الميزان والورد الآلي
+    // إخفاء التحديد اليدوي افتراضياً (سيظهر فقط إذا لم يكن هناك خطة)
     const quranSec = document.getElementById('rate-quran-section');
     if (quranSec) quranSec.classList.add('hidden');
 
@@ -4354,14 +4362,20 @@ async function openStudentReport(studentId) {
                 </div>
             </div>
 
-            <!-- Memorization Plan -->
-            ${student.memorizationPlan || student.reviewPlan ? `
-            <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border">
-                <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4 text-teal-600"></i> الخطة</h3>
-                ${student.memorizationPlan ? `<p class="text-sm mb-2"><span class="font-bold text-teal-600">الحفظ:</span> ${student.memorizationPlan}</p>` : ''}
-                ${student.reviewPlan ? `<p class="text-sm"><span class="font-bold text-purple-600">المراجعة:</span> ${student.reviewPlan}</p>` : ''}
+            <!-- بطاقات الخطط القرآنية (حفظ + مراجعة) -->
+            ${state.isTeacher && state.quranTrackingEnabled ? `
+            <div class="flex gap-2 mb-3">
+                <button onclick="CurriculumManager.openPlanModal('${studentId}', 'memorization')" class="flex-1 py-2.5 bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-400 rounded-xl text-xs font-bold hover:bg-teal-100 transition border border-teal-200 dark:border-teal-700 flex items-center justify-center gap-1">
+                    <i data-lucide="settings" class="w-3.5 h-3.5"></i> إدارة خطة الحفظ
+                </button>
+                <button onclick="CurriculumManager.openPlanModal('${studentId}', 'review')" class="flex-1 py-2.5 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 rounded-xl text-xs font-bold hover:bg-purple-100 transition border border-purple-200 dark:border-purple-700 flex items-center justify-center gap-1">
+                    <i data-lucide="settings" class="w-3.5 h-3.5"></i> إدارة خطة المراجعة
+                </button>
             </div>
             ` : ''}
+            <div id="student-plan-cards-container" class="space-y-4 mb-6">
+                <div class="text-center py-3 text-gray-400 text-xs animate-pulse">جاري تحميل الخطط...</div>
+            </div>
 
             <!-- Quran Recitation Log -->
             ${(() => {
@@ -4438,6 +4452,93 @@ async function openStudentReport(studentId) {
     setTimeout(() => {
         window.renderStudentCalendar(window._currentCalendarYear, window._currentCalendarMonth);
     }, 100);
+
+    // Populate Plan Cards (two independent cards)
+    setTimeout(async () => {
+        const cardsContainer = document.getElementById('student-plan-cards-container');
+        if (!cardsContainer || typeof CurriculumManager === 'undefined') {
+            if (cardsContainer) cardsContainer.innerHTML = '';
+            return;
+        }
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        let cardsHtml = '';
+
+        const planTypes = [
+            { type: 'memorization', label: '📖 خطة الحفظ', color: 'teal', icon: 'book' },
+            { type: 'review', label: '🔄 خطة المراجعة', color: 'purple', icon: 'refresh-cw' }
+        ];
+
+        for (const pt of planTypes) {
+            try {
+                const assignment = await CurriculumManager.getTodayAssignment(studentId, pt.type, todayStr);
+                if (!assignment || !assignment.plan) continue;
+
+                const plan = assignment.plan;
+                const todayEntry = assignment.todayEntry;
+                const isCompleted = assignment.isCompleted;
+
+                // حساب الإحصائيات
+                const stats = QuranService.getTotalStats(plan.start_sura, plan.start_ayah, plan.end_sura, plan.end_ayah);
+                const completedCount = assignment.completedDates.size;
+                const totalDays = assignment.schedule.length;
+                const progressPct = totalDays > 0 ? Math.round((completedCount / totalDays) * 100) : 0;
+
+                let todayContent = '';
+                if (todayEntry && todayEntry.sections && todayEntry.sections.length > 0) {
+                    const secText = todayEntry.sections.map(s => `${s.suraName}: (${s.fromAyah}-${s.toAyah})`).join(' | ');
+                    const sectionsJson = JSON.stringify(todayEntry.sections).replace(/"/g, '&quot;');
+
+                    todayContent = `
+                        <div class="mt-3 p-3 bg-white dark:bg-gray-700 rounded-xl border border-${pt.color}-200 dark:border-${pt.color}-700">
+                            <p class="text-xs font-bold text-gray-500 mb-1">ورد اليوم:</p>
+                            <p class="text-sm font-black text-gray-800 dark:text-gray-100 mb-2">${secText}</p>
+                            ${isCompleted ? `
+                                <div class="text-center py-2 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-700">
+                                    <span class="text-xs font-bold text-green-600 dark:text-green-400">✅ تم إنجاز ورد اليوم</span>
+                                </div>
+                            ` : `
+                                <button onclick="if(window.CurriculumManager) window.CurriculumManager.showPaginatedQuranModal(${sectionsJson})" 
+                                    class="w-full py-2.5 bg-${pt.color}-600 hover:bg-${pt.color}-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md">
+                                    <i data-lucide="book-open" class="w-4 h-4"></i> فتح المصحف
+                                </button>
+                            `}
+                        </div>
+                    `;
+                } else {
+                    todayContent = `
+                        <div class="mt-3 p-2 text-center text-xs text-gray-400 border-t border-dashed">
+                            لا يوجد ورد مجدول لهذا اليوم
+                        </div>
+                    `;
+                }
+
+                cardsHtml += `
+                    <div class="bg-${pt.color}-50 dark:bg-${pt.color}-900/10 rounded-2xl p-4 border-2 border-${pt.color}-100 dark:border-${pt.color}-800 shadow-sm">
+                        <div class="flex justify-between items-center mb-2">
+                            <h4 class="font-bold text-sm text-${pt.color}-700 dark:text-${pt.color}-400 flex items-center gap-2">
+                                <i data-lucide="${pt.icon}" class="w-4 h-4"></i>
+                                ${pt.label}
+                            </h4>
+                            <span class="text-[10px] font-bold bg-white dark:bg-gray-800 px-2 py-1 rounded-full border text-gray-500">${completedCount}/${totalDays} يوم</span>
+                        </div>
+                        <!-- Progress Bar -->
+                        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
+                            <div class="bg-${pt.color}-500 h-2 rounded-full transition-all" style="width: ${progressPct}%"></div>
+                        </div>
+                        <p class="text-[10px] text-gray-500 mb-1">${stats.totalAyahs} آية | ${stats.totalPages} صفحة</p>
+                        ${todayContent}
+                    </div>
+                `;
+
+            } catch (e) {
+                console.warn(`[PlanCard] Error for ${pt.type}:`, e);
+            }
+        }
+
+        cardsContainer.innerHTML = cardsHtml || '';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }, 200);
 }
 
 // ----------------------------------------
