@@ -1364,11 +1364,37 @@ function applyTheme() {
     }
 }
 
-function toggleQuranTracking() {
-    state.quranTrackingEnabled = !state.quranTrackingEnabled;
-    localStorage.setItem('quranTrackingEnabled', state.quranTrackingEnabled);
-    renderSettings(); // Re-render to update the toggle visual state
-    showToast(state.quranTrackingEnabled ? "تم تفعيل ميزة تتبع الحفظ بالقرآن" : "تم تعطيل ميزة تتبع الحفظ بالقرآن", "success");
+async function toggleQuranTracking() {
+    if (!state.currentLevel) return;
+    try {
+        const enabled = !state.quranTrackingEnabled;
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "level_settings"),
+            window.firebaseOps.where("level", "==", state.currentLevel)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        
+        if (!snap.empty) {
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "level_settings", snap.docs[0].id), {
+                quran_tracking_enabled: enabled,
+                updated_at: new Date().toISOString()
+            });
+        } else {
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "level_settings"), {
+                level: state.currentLevel,
+                quran_tracking_enabled: enabled,
+                updated_at: new Date().toISOString()
+            });
+        }
+        
+        state.quranTrackingEnabled = enabled; // Update local state anyway
+        // Logic for re-rendering if needed
+        // renderSettings(); // If it exists
+        showToast(enabled ? "تم تفعيل تتبع القرآن لهذه المرحلة" : "تم تعطيل تتبع القرآن لهذه المرحلة", "success");
+    } catch (e) {
+        console.error("Error toggling global tracking:", e);
+        showToast("خطأ في تحديث الإعدادات", "error");
+    }
 }
 
 // --- Modals HTML generation to keep JS clean ---
@@ -2983,15 +3009,22 @@ function openRateStudent(studentId) {
             CurriculumManager.loadStudentPlan(studentId, 'review'),
             window.firebaseOps.getDocs(window.firebaseOps.query(
                 window.firebaseOps.collection(window.db, "scores"),
-                window.firebaseOps.where("studentId", "==", studentId),
+                window.firebaseOps.where("student_id", "==", studentId),
                 window.firebaseOps.where("date", "==", today)
             ))
         ]).then(async ([hifzPlan, reviewPlan, scoresSnap]) => {
             // تحديث السجلات المحلية لهذه النافذة
             window._currentStudentScores = scoresSnap.docs.map(d => ({id: d.id, ...d.data()}));
             
-            planDisplay.innerHTML = '';
-            let hasAny = false;
+            planDisplay.innerHTML = `
+                <div id="hifz-plan-section" class="mb-6"></div>
+                <div id="review-plan-section" class="mb-6"></div>
+            `;
+            const hifzContainer = $('#hifz-plan-section');
+            const reviewContainer = $('#review-plan-section');
+            
+            let hasHifz = false;
+            let hasReview = false;
             const plans = [hifzPlan, reviewPlan].filter(p => p !== null);
             
             for (let plan of plans) {
@@ -2999,28 +3032,28 @@ function openRateStudent(studentId) {
                 const todayEntry = schedule.find(d => d.date === today);
                 
                 if (todayEntry && todayEntry.sections && todayEntry.sections.length > 0) {
-                    hasAny = true;
                     const isHifz = (plan.plan_type || plan.planType) === 'memorization';
-                    const label = isHifz ? '📖 ورد الحفظ المقرّر' : '🔄 ورد المراجعة المقرّر';
+                    if (isHifz) hasHifz = true; else hasReview = true;
+
+                    const label = isHifz ? '📖 ورد الحفظ المقرر' : '🔄 ورد المراجعة المقرر';
                     const color = isHifz ? 'teal' : 'purple';
                     const secText = todayEntry.sections.map(s => `${s.suraName}: (${s.fromAyah}-${s.toAyah})`).join(' | ');
                     
-                    // التحقق من حالة الإنجاز لهذا الورد تحديداً
-                    const planScoreId = (plan.plan_type || plan.planType) === 'review' ? 'QURAN_REVIEW' : 'QURAN_MEMORIZATION';
+                    const planScoreId = isHifz ? 'QURAN_MEMORIZATION' : 'QURAN_REVIEW';
                     const sScores = window._currentStudentScores || [];
                     const isDone = sScores.some(s => s.date === today && (s.criteria_id === planScoreId || s.criteriaId === planScoreId));
                     const isAbsent = sScores.some(s => s.date === today && (s.criteria_id === 'ABSENCE_RECORD' || s.criteriaId === 'ABSENCE_RECORD'));
 
                     let planHtml = `
-                        <div class="mb-4 p-4 bg-${color}-50 dark:bg-${color}-900/10 border-2 border-${color}-100 dark:border-${color}-800 rounded-2xl relative overflow-hidden">
+                        <div class="mb-4 p-4 bg-${color}-50 dark:bg-${color}-900/10 border-2 border-${color}-100 dark:border-${color}-800 rounded-2xl relative overflow-hidden animate-fade-in shadow-sm">
                             <div class="flex justify-between items-center mb-3">
                                 <span class="text-xs font-black text-${color}-700 dark:text-${color}-400 uppercase tracking-wider">${label}</span>
                                 <button onclick="CurriculumManager.showPaginatedQuranModal(${JSON.stringify(todayEntry.sections).replace(/"/g, '&quot;')})" 
-                                        class="text-[10px] bg-white dark:bg-gray-800 px-3 py-1.5 rounded-xl border shadow-sm flex items-center gap-2 hover:bg-gray-50 transition">
+                                        class="text-[10px] bg-white dark:bg-gray-800 px-3 py-1.5 rounded-xl border-2 border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-2 hover:bg-gray-50 active:scale-95 transition">
                                     <i data-lucide="book-open" class="w-3.5 h-3.5"></i> فتح المصحف
                                 </button>
                             </div>
-                            <div class="text-base font-black mb-4 text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                            <div class="text-base font-black mb-4 text-gray-800 dark:text-gray-100 flex items-center gap-2 leading-relaxed">
                                 <i data-lucide="hash" class="w-4 h-4 text-${color}-400"></i>
                                 ${secText}
                             </div>
@@ -3028,26 +3061,26 @@ function openRateStudent(studentId) {
 
                     if (isDone) {
                         planHtml += `
-                            <div class="w-full py-3 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-xl text-center font-black text-xs flex items-center justify-center gap-2 border border-green-200 dark:border-green-800 animate-fade-in">
+                            <div class="w-full py-3 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-xl text-center font-black text-xs flex items-center justify-center gap-2 border-2 border-green-200 dark:border-green-800">
                                 <i data-lucide="check-circle" class="w-4 h-4"></i> تم الإنجاز بنجاح
                             </div>
                         `;
                     } else if (isAbsent) {
                         planHtml += `
-                            <div class="w-full py-3 bg-orange-50 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 rounded-xl text-center font-black text-xs flex items-center justify-center gap-2 border border-orange-100 dark:border-orange-800 animate-fade-in">
-                                <i data-lucide="clock" class="w-4 h-4"></i> تم التأجيل (غياب)
+                            <div class="w-full py-3 bg-orange-50 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 rounded-xl text-center font-black text-xs flex items-center justify-center gap-2 border-2 border-orange-100 dark:border-orange-800">
+                                <i data-lucide="clock" class="w-4 h-4"></i> تم التأجيل (غائب)
                             </div>
                         `;
                     } else {
                         planHtml += `
                             <div class="flex flex-col gap-2">
                                 <button onclick="window._handlePlanAction('${plan.id}', 'executed', '${plan.plan_type || plan.planType}', '${escape(JSON.stringify(todayEntry))}')" 
-                                        class="w-full py-3 bg-${color}-600 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-${color}-700 active:scale-95 transition">
+                                        class="w-full py-3 bg-${color}-600 text-white text-xs font-black rounded-xl shadow-lg hover:bg-${color}-700 active:scale-[0.98] transition-all">
                                     تم التنفيذ ✅
                                 </button>
                                 <div class="flex gap-2">
                                     <button onclick="CurriculumManager.openDifferentCompletionModal(${JSON.stringify(plan).replace(/"/g, '&quot;')}, '${studentId}', '${today}', ${JSON.stringify(todayEntry).replace(/"/g, '&quot;')})" 
-                                            class="flex-1 py-2.5 bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-200 border-2 border-gray-100 dark:border-gray-600 text-[10px] font-black rounded-xl hover:bg-gray-50 transition">
+                                            class="flex-1 py-2.5 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-100 border-2 border-gray-100 dark:border-gray-600 text-[10px] font-black rounded-xl hover:bg-gray-50 transition">
                                         أنجزت غيره
                                     </button>
                                     <button onclick="window._handlePlanAction('${plan.id}', 'absent', '${plan.plan_type || plan.planType}', '${escape(JSON.stringify(todayEntry))}')" 
@@ -3060,12 +3093,16 @@ function openRateStudent(studentId) {
                     }
                     
                     planHtml += `</div>`;
-                    planDisplay.insertAdjacentHTML('beforeend', planHtml);
+                    if (isHifz) hifzContainer.insertAdjacentHTML('beforeend', planHtml);
+                    else reviewContainer.insertAdjacentHTML('beforeend', planHtml);
                 }
             }
             
-            if (!hasAny) {
-                planDisplay.innerHTML = '<div class="text-xs text-gray-500 py-2 border-t border-dashed">لا يوجد ورد مجدول لهذا اليوم</div>';
+            if (!hasHifz && !hasReview) {
+                planDisplay.innerHTML = '<div class="text-xs text-gray-500 py-4 text-center border-2 border-dashed rounded-2xl bg-gray-50 mb-4 font-bold">لا يوجد ورد مجدول لهذا اليوم أو لم يتم وضع خطة</div>';
+            } else {
+                if (!hasHifz) hifzContainer.innerHTML = '<p class="text-[10px] text-gray-400 font-bold mb-2">📖 لا يوجد ورد حفظ مقرر لليوم</p>';
+                if (!hasReview) reviewContainer.innerHTML = '<p class="text-[10px] text-gray-400 font-bold mb-2">🔄 لا يوجد ورد مراجعة مقرر لليوم</p>';
             }
             lucide.createIcons();
         });
@@ -3555,7 +3592,26 @@ function init() {
 function startGlobalDataSync() {
     if (!state.currentLevel) return;
 
-    // 1. Competitions Sync
+    // 1. Level Settings Sync (Global tracking per level)
+    if (window._levelSettingsUnsubscribe) window._levelSettingsUnsubscribe();
+    const qLevel = window.firebaseOps.query(
+        window.firebaseOps.collection(window.db, "level_settings"),
+        window.firebaseOps.where("level", "==", state.currentLevel)
+    );
+    window._levelSettingsUnsubscribe = window.firebaseOps.onSnapshot(qLevel, function (snap) {
+        if (!snap.empty) {
+            const data = snap.docs[0].data();
+            state.quranTrackingEnabled = data.quran_tracking_enabled === true;
+        } else {
+            state.quranTrackingEnabled = false;
+        }
+        // Update UI if on relevant screens
+        if (state.currentView === 'home' || state.currentView === 'students') {
+            router.render(state.currentView);
+        }
+    });
+
+    // 2. Competitions Sync
     if (competitionsUnsubscribe) competitionsUnsubscribe();
     const qComp = window.firebaseOps.query(
         window.firebaseOps.collection(window.db, "competitions"),
@@ -3574,13 +3630,11 @@ function startGlobalDataSync() {
             return bTime - aTime;
         });
         state.competitions = comps;
-        // If we are on competitions view, update UI
         if (state.currentView === 'competitions') updateCompetitionsListUI();
-        // Leaderboard depends on active comp
         calculateLeaderboard();
     });
 
-    // 2. Groups Sync
+    // 3. Groups Sync
     if (activeGroupsUnsubscribe) activeGroupsUnsubscribe();
     const qGroups = window.firebaseOps.query(window.firebaseOps.collection(window.db, "groups"));
     activeGroupsUnsubscribe = window.firebaseOps.onSnapshot(qGroups, function (snap) {

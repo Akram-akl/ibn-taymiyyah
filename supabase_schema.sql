@@ -137,7 +137,13 @@ CREATE TABLE IF NOT EXISTS student_plans (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- End of Schema
+-- 9. Level Settings Table
+CREATE TABLE IF NOT EXISTS level_settings (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    level TEXT NOT NULL UNIQUE,
+    quran_tracking_enabled BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- =====================================================
 -- Enable Row Level Security (RLS)
@@ -149,7 +155,13 @@ ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teachers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_days ENABLE ROW LEVEL SECURITY;
 ALTER TABLE group_scores ENABLE ROW LEVEL SECURITY;
-ALTER TABLE student_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE level_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read level_settings" ON level_settings;
+DROP POLICY IF EXISTS "Allow public insert level_settings" ON level_settings;
+DROP POLICY IF EXISTS "Allow public update level_settings" ON level_settings;
+CREATE POLICY "Allow public read level_settings" ON level_settings FOR SELECT USING (true);
+CREATE POLICY "Allow public insert level_settings" ON level_settings FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update level_settings" ON level_settings FOR UPDATE USING (true);
 
 -- =====================================================
 -- Create Policies (Using DROP IF EXISTS for idempotency)

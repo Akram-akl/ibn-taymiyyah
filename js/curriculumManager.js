@@ -623,100 +623,145 @@ window.CurriculumManager = (function() {
         renderPage();
     }
 
-    async function markDayCompleted(planId, studentId, date, todayEntry) {
+    async function markDayCompleted(planId, studentId, date, dayEntry, competitionId = null, groupId = null) {
         try {
-            // 1. إضافة سجل في جدول scores ليظهر اللون الأخضر للجميع
-            const cId = todayEntry.planType === 'review' ? 'QURAN_REVIEW' : 'QURAN_MEMORIZATION';
-            const cName = todayEntry.planType === 'review' ? 'تسميع مراجعة' : 'تسميع حفظ';
+            const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
+            const planSnap = await window.firebaseOps.getDoc(planRef);
+            if (!planSnap.exists()) return;
+            const pData = planSnap.data();
+
+            const sections = dayEntry.sections;
+            const lastSec = sections[sections.length - 1];
+            
+            const allAyas = window.QuranService.getAyahs(lastSec.suraNo);
+            const currIdx = allAyas.findIndex(a => a.aya_no == lastSec.toAyah);
+            let nextSura = Number(lastSec.suraNo);
+            let nextAyah = Number(lastSec.toAyah) + 1;
+            
+            if (currIdx === allAyas.length - 1) {
+                nextSura = nextSura + 1;
+                nextAyah = 1;
+            }
+
+            const tomorrow = new Date(date);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
+
+            const planType = pData.plan_type || pData.planType || 'memorization';
+            const planScoreId = planType === 'review' ? 'QURAN_REVIEW' : 'QURAN_MEMORIZATION';
+            const planScoreName = planType === 'review' ? 'تسميع مراجعة' : 'تسميع حفظ';
+            
             const scoreData = {
                 student_id: studentId,
-                criteria_id: cId,
-                criteria_name: cName,
-                points: 10, // نقاط افتراضية
+                competition_id: competitionId || window.currentGradingCompId || null,
+                group_id: groupId || window.currentGradingGroupId || null,
+                criteria_id: planScoreId,
+                criteria_name: planScoreName,
+                points: 10,
+                type: 'positive',
+                level: pData.level,
                 date: date,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                created_at: new Date().toISOString()
             };
             await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), scoreData);
 
-            // 2. ترحيل الخطة زمنياً
-            const lastSec = todayEntry.sections[todayEntry.sections.length - 1];
-            await recalculatePlanAfterAchievement(studentId, planId, lastSec.suraNo, lastSec.toAyah);
-            
-            showToast('✅ تم الحفظ بنجاح وتحديث الخطة', 'success');
+            await recalculatePlan(studentId, planId, nextSura, nextAyah, tomorrowStr, false);
+            showToast('✅ تم تسجيل الإنجاز بنجاح', 'success');
             if (window.openRateStudent) window.openRateStudent(studentId);
         } catch (e) {
-            console.error(e);
-            showToast('خطأ في الحفظ', 'error');
+            console.error("Error in markDayCompleted:", e);
+            showToast('خطأ في معالجة الإنجاز', 'error');
         }
     }
 
-    async function markDayAbsent(planId, studentId, date, todayEntry) {
+    async function markDayAbsent(planId, studentId, date, dayEntry, competitionId = null, groupId = null) {
         try {
-            // 1. تسجيل الغياب في جدول scores ليبقى الأثر موجوداً في الإحصائيات
-            const absenceScore = {
-                student_id: studentId,
-                criteria_id: 'ABSENCE_RECORD',
-                criteria_name: 'غياب',
-                points: -5, // خصم نقاط للغياب
-                date: date,
-                notes: 'غائب عن ورد القرآن الكريم'
-            };
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), absenceScore);
-            
-            // 2. ترحيل الورد لليوم التالي مع تمديد تاريخ انتهاء الخطة يوماً واحداً
-            const tomorrow = new Date();
+            const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
+            const planSnap = await window.firebaseOps.getDoc(planRef);
+            if (!planSnap.exists()) return;
+            const pData = planSnap.data();
+
+            const tomorrow = new Date(date);
             tomorrow.setDate(tomorrow.getDate() + 1);
             const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
-            
-            // جلب الخطة الحالية لمعرفة السورة والآية الحالية
-            const plan = await loadStudentPlan(studentId, todayEntry.planType || 'memorization');
-            if (plan) {
-                await recalculatePlan(studentId, plan.id, plan.start_sura, plan.start_ayah, tomorrowStr, true);
-                showToast('✅ تم تسجيل الغياب وتمديد الخطة يوماً إضافياً', 'success');
-            }
 
+            const scoreData = {
+                student_id: studentId,
+                competition_id: competitionId || window.currentGradingCompId || null,
+                group_id: groupId || window.currentGradingGroupId || null,
+                criteria_id: 'ABSENCE_RECORD',
+                criteria_name: 'غياب (تأجيل ورد)',
+                points: 0,
+                type: 'negative',
+                level: pData.level,
+                date: date,
+                timestamp: Date.now(),
+                created_at: new Date().toISOString()
+            };
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), scoreData);
+
+            const nextSura = pData.start_sura || pData.startSura;
+            const nextAyah = pData.start_ayah || pData.startAyah;
+            
+            await recalculatePlan(studentId, planId, nextSura, nextAyah, tomorrowStr, true);
+            showToast('✅ تم تسجيل الغياب وتأجيل الورد', 'success');
             if (window.openRateStudent) window.openRateStudent(studentId);
         } catch (e) {
-            console.error(e);
+            console.error("Error in markDayAbsent:", e);
             showToast('خطأ في معالجة الغياب', 'error');
         }
     }
 
     // === إنجاز مختلف ===
-    function openDifferentCompletionModal(plan, studentId, date, todayEntry) {
-        let old = document.getElementById('diff-completion-modal');
-        if (old) old.remove();
-
-        let html = `
-        <div id="diff-completion-modal" class="fixed inset-0 bg-black/60 z-[250] flex items-center justify-center p-4" onclick="if(event.target===this)this.remove()">
-            <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-                <h3 class="font-bold text-lg mb-4">📝 إنجاز مختلف</h3>
-                <p class="text-xs text-gray-500 mb-3">حدد ما أنجزه الطالب فعلياً (مختلف عن الخطة)</p>
-                <div class="grid grid-cols-2 gap-2 mb-3">
-                    <div>
-                        <label class="text-[10px] text-gray-500">من السورة / الآية</label>
-                        <div class="flex gap-1">
-                            <select id="diff-start-sura" class="flex-1 bg-gray-50 border rounded text-xs p-1.5" onchange="CurriculumManager.updateDiffAyas('start')"></select>
-                            <select id="diff-start-aya" class="flex-1 bg-gray-50 border rounded text-xs p-1.5"></select>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="text-[10px] text-gray-500">إلى السورة / الآية</label>
-                        <div class="flex gap-1">
-                            <select id="diff-end-sura" class="flex-1 bg-gray-50 border rounded text-xs p-1.5" onchange="CurriculumManager.updateDiffAyas('end')"></select>
-                            <select id="diff-end-aya" class="flex-1 bg-gray-50 border rounded text-xs p-1.5"></select>
-                        </div>
-                    </div>
+    function openDifferentCompletionModal(plan, studentId, date, entry) {
+        const container = document.createElement('div');
+        container.id = 'diff-completion-modal';
+        container.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm';
+        
+        container.innerHTML = `
+            <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl animate-scale-in">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-black text-gray-800 dark:text-gray-100 italic">ماذا أنجز الطالب اليوم؟</h3>
+                    <button onclick="document.getElementById('diff-completion-modal').remove()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
                 </div>
-                <div class="flex gap-2">
-                    <button onclick="document.getElementById('diff-completion-modal').remove()" class="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl font-bold hover:bg-gray-200 transition">إلغاء</button>
-                    <button onclick="CurriculumManager.submitDifferentCompletion('${plan.id}','${studentId}','${date}')" class="flex-1 py-3 bg-blue-600 text-white hover:bg-blue-700 rounded-xl font-bold">حفظ</button>
+
+                <div class="space-y-6">
+                    <div class="p-4 bg-teal-50 dark:bg-teal-900/20 rounded-2xl border border-teal-100 dark:border-teal-800">
+                        <p class="text-xs font-bold text-teal-600 mb-4 flex items-center gap-2">
+                             <i data-lucide="info" class="w-4 h-4"></i> حدد نقطة التوقف النهائية التي وصل إليها الطالب:
+                        </p>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-bold text-gray-500 block px-1">سورة النهاية</label>
+                                <select id="diff-end-sura" onchange="window.CurriculumManager.updateDiffAyas(this.value)"
+                                    class="w-full bg-white dark:bg-gray-700 border-2 border-gray-100 dark:border-gray-600 rounded-xl px-4 py-3 text-sm font-bold focus:border-teal-500 outline-none transition cursor-pointer">
+                                    ${window.QuranService.getSuras().map(s => `<option value="${s.id}" ${s.id == entry.sections[0].suraNo ? 'selected' : ''}>${s.id}. ${s.name}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-bold text-gray-500 block px-1">آية النهاية</label>
+                                <select id="diff-end-ayah" class="w-full bg-white dark:bg-gray-700 border-2 border-gray-100 dark:border-gray-600 rounded-xl px-4 py-3 text-sm font-bold focus:border-teal-500 outline-none transition cursor-pointer">
+                                    ${window.QuranService.getAyahs(entry.sections[0].suraNo).map(a => `<option value="${a.aya_no}" ${a.aya_no == entry.sections[entry.sections.length - 1].toAyah ? 'selected' : ''}>${a.aya_no}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button onclick="window.CurriculumManager.submitDifferentCompletion('${plan.id}', '${studentId}', '${date}')" 
+                        class="w-full py-4 bg-teal-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-teal-500/20 hover:bg-teal-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3">
+                        <i data-lucide="check-circle" class="w-6 h-6"></i>
+                        حفظ الإنجاز الفعلي
+                    </button>
+                    <p class="text-center text-[10px] text-gray-400 font-bold">سيتم إعادة جدولة بقية الخطة تلقائياً بناءً على هذا الإنجاز</p>
                 </div>
             </div>
-        </div>`;
-        document.body.insertAdjacentHTML('beforeend', html);
-        // Populate sura selectors
-        initDiffSelectors(todayEntry);
+        `;
+        document.body.appendChild(container);
+        lucide.createIcons();
     }
 
     async function initDiffSelectors(todayEntry) {
