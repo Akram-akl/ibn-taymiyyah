@@ -36,7 +36,7 @@ window.CurriculumManager = (function() {
         const start_ayah = planData.start_ayah || planData.startAyah;
         const end_sura = planData.end_sura || planData.endSura;
         const end_ayah = planData.end_ayah || planData.endAyah;
-        const STUDY_DAYS = [0, 1, 2, 3, 4]; // الأحد إلى الخميس
+        const STUDY_DAYS = planData.study_days || [0, 1, 2, 3, 4]; // الأيام المحددة للخطة
         
         if (!window.QuranService.isLoaded()) await window.QuranService.loadData();
         
@@ -224,8 +224,40 @@ window.CurriculumManager = (function() {
     }
 
     // بناء واجهة الخطة في نافذة الطالب
-    function renderPlanManagerModal(studentId, plan, requestedType) {
+    async function renderPlanManagerModal(studentId, plan, requestedType) {
         const activeType = requestedType || (plan ? plan.plan_type : 'memorization');
+
+        let defaultDays = [0, 1, 2, 3, 4];
+        if (window.state && window.state.currentLevel) {
+            try {
+                const snap = await window.firebaseOps.getDoc(window.firebaseOps.doc(window.db, "level_settings", window.state.currentLevel));
+                if (snap.exists() && snap.data().study_days) {
+                    defaultDays = snap.data().study_days;
+                }
+            } catch (e) {
+                console.error("Error loading level default days", e);
+            }
+        }
+        
+        let alertHtml = '';
+        const targetDays = (plan && plan.study_days) ? plan.study_days : defaultDays;
+        
+        if (plan && plan.study_days) {
+            const planDaysStr = [...plan.study_days].sort().join(',');
+            const defaultDaysStr = [...defaultDays].sort().join(',');
+            if (planDaysStr !== defaultDaysStr) {
+                alertHtml = `
+                <div class="bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 p-3 rounded-xl mt-3 flex items-start gap-3 relative">
+                    <i data-lucide="alert-triangle" class="w-5 h-5 text-orange-500 shrink-0 mt-0.5"></i>
+                    <div>
+                        <p class="text-sm font-bold text-orange-800 dark:text-orange-400">أيام الخطة مختلفة</p>
+                        <p class="text-xs text-orange-700 dark:text-orange-300 mt-1">تنبيه: أيام التسميع الخاصة بهذه الخطة تختلف عن أيام الحلقة الافتراضية.</p>
+                    </div>
+                    <button onclick="this.parentElement.remove()" class="absolute left-2 top-2 text-orange-400 hover:text-orange-600 hover:bg-orange-100 rounded-lg p-1 transition"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+                `;
+            }
+        }
 
         let html = `
             <div id="plan-manager-modal" class="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
@@ -268,6 +300,19 @@ window.CurriculumManager = (function() {
                                 <label class="block text-xs font-bold text-gray-500 mb-1">تاريخ النهاية المستهدف</label>
                                 <input type="date" id="plan-end-date" value="${plan ? plan.end_date : ''}" class="w-full border rounded-xl px-3 py-2 bg-gray-50 dark:bg-gray-700 dark:text-white dark:border-gray-600">
                             </div>
+                        </div>
+
+                        <!-- خيارات أيام الحلقة -->
+                        <div class="mb-4">
+                            <label class="block text-xs font-bold text-gray-500 mb-2">أيام الحلقة (الغياب سيُرحّل الورد تلقائياً):</label>
+                            <div class="flex flex-wrap gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-200 dark:border-gray-600" id="plan-study-days">
+                                <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="0" class="w-4 h-4 text-teal-600 rounded bg-white shadow-sm border-gray-300" ${targetDays.includes(0) ? 'checked' : ''}> الأحد</label>
+                                <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="1" class="w-4 h-4 text-teal-600 rounded bg-white shadow-sm border-gray-300" ${targetDays.includes(1) ? 'checked' : ''}> الإثنين</label>
+                                <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="2" class="w-4 h-4 text-teal-600 rounded bg-white shadow-sm border-gray-300" ${targetDays.includes(2) ? 'checked' : ''}> الثلاثاء</label>
+                                <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="3" class="w-4 h-4 text-teal-600 rounded bg-white shadow-sm border-gray-300" ${targetDays.includes(3) ? 'checked' : ''}> الأربعاء</label>
+                                <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="4" class="w-4 h-4 text-teal-600 rounded bg-white shadow-sm border-gray-300" ${targetDays.includes(4) ? 'checked' : ''}> الخميس</label>
+                            </div>
+                            ${alertHtml}
                         </div>
 
                         <!-- النطاق -->
@@ -384,10 +429,20 @@ window.CurriculumManager = (function() {
             showToast('تاريخ الانتهاء يجب أن يكون بعد تاريخ البدء', 'error'); return;
         }
 
+        const studyDaysCheckboxes = document.querySelectorAll('#plan-study-days input:checked');
+        const study_days = Array.from(studyDaysCheckboxes).map(cb => parseInt(cb.value));
+        if (study_days.length === 0) {
+            showToast('الرجاء اختيار يوم واحد على الأقل من أيام الحلقة', 'error'); return;
+        }
+        
+        if (study_days.length < 5) {
+            alert('تنبيه: أيام الحلقة أقل من 5 أيام. سيستمر النظام بناءً على الأيام المحددة فقط.');
+        }
+
         let studyDaysCount = 0;
         let cDate = new Date(sDate);
         while(cDate <= eDate) {
-            if (STUDY_DAYS.includes(cDate.getDay())) studyDaysCount++;
+            if (study_days.includes(cDate.getDay())) studyDaysCount++;
             cDate.setDate(cDate.getDate() + 1);
         }
 
@@ -418,6 +473,7 @@ window.CurriculumManager = (function() {
                 wed: pagesPerDay,
                 thu: pagesPerDay,
             },
+            study_days: study_days,
             level: state.currentLevel,
             status: 'active'
         };
@@ -585,9 +641,84 @@ window.CurriculumManager = (function() {
         renderPage();
     }
 
+    async function renderDailyPlanForGrader(studentId, dateVal) {
+        const displayDiv = document.getElementById('rate-quran-plan-display');
+        if (!displayDiv) return;
+
+        displayDiv.innerHTML = '<i data-lucide="loader-2" class="animate-spin w-4 h-4 mx-auto"></i>';
+        displayDiv.classList.remove('hidden');
+        if (window.lucide) window.lucide.createIcons();
+
+        try {
+            const plan = await loadStudentPlan(studentId, 'memorization');
+            if (!plan) {
+                 displayDiv.innerHTML = '<p class="text-sm text-gray-500">لا توجد خطة حفظ نشطة لهذا الطالب</p>';
+                 return;
+            }
+
+            const q = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "plan_daily_records"),
+                window.firebaseOps.where("plan_id", "==", plan.id),
+                window.firebaseOps.where("date", "==", dateVal)
+            );
+            const snap = await window.firebaseOps.getDocs(q);
+
+            if (!snap.empty) {
+                 const rec = snap.docs[0].data();
+                 if (rec.status === 'completed' || rec.status === 'intensive') {
+                      displayDiv.innerHTML = '<div class="text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 p-3 rounded-xl mb-2 font-bold flex items-center justify-center gap-2">✅ تم إنجاز وتسميع الورد اليومي</div>';
+                      return;
+                 } else if (rec.status === 'absent') {
+                      displayDiv.innerHTML = '<div class="text-red-700 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 p-3 rounded-xl mb-2 font-bold flex items-center justify-center gap-2">❌ تم تسجيل الغياب (وترحيل الورد)</div>';
+                      return;
+                 }
+            }
+
+            const schedule = await generateDailySchedule(plan);
+            const todayEntry = schedule.find(s => s.date === dateVal);
+            
+            if (!todayEntry) {
+                 displayDiv.innerHTML = '<p class="text-xs text-gray-500 mt-1">ليس يوم دراسة ضمن الخطة المجدولة</p>';
+                 return;
+            }
+
+            if (!todayEntry.sections || todayEntry.sections.length === 0) {
+                 displayDiv.innerHTML = '<p class="text-xs text-gray-500 mt-1">تم إنجاز الخطة</p>';
+                 return;
+            }
+
+            let firstSec = todayEntry.sections[0];
+            let lastSec = todayEntry.sections[todayEntry.sections.length - 1];
+            
+            if (!window.QuranService.isLoaded()) await window.QuranService.loadData();
+            let suraFrom = window.QuranService.getSuras().find(s => s.number == firstSec.suraNo)?.name || '';
+            let suraTo = window.QuranService.getSuras().find(s => s.number == lastSec.suraNo)?.name || '';
+
+            let html = `
+            <div class="mb-3 text-right">
+                <p class="text-[10px] font-bold text-gray-500 mb-1 flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i> الورد اليومي المطلوب:</p>
+                <div class="bg-gradient-to-l from-emerald-50 to-teal-50 text-emerald-900 dark:from-emerald-900/30 dark:to-teal-900/30 dark:text-emerald-200 px-4 py-3 text-sm rounded-xl border border-emerald-200/50 shadow-sm leading-relaxed">
+                    من <b>سورة ${suraFrom}</b> (آية ${firstSec.fromAyah})<br>
+                    إلى <b>سورة ${suraTo}</b> (آية ${lastSec.toAyah})
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick='CurriculumManager.markDayCompleted("${plan.id}", "${studentId}", "${dateVal}", ${JSON.stringify(todayEntry)})' class="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 shadow-md transition flex items-center justify-center gap-1"><i data-lucide="check-circle" class="w-4 h-4"></i> تم التنفيذ</button>
+                <button onclick='CurriculumManager.openDifferentCompletionModal(${JSON.stringify(plan)}, "${studentId}", "${dateVal}", ${JSON.stringify(todayEntry)})' class="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold hover:bg-blue-100 transition flex items-center justify-center gap-1"><i data-lucide="edit-3" class="w-4 h-4"></i> إنجاز مختلف</button>
+            </div>
+            `;
+
+            displayDiv.innerHTML = html;
+            if (window.lucide) window.lucide.createIcons();
+            
+        } catch (e) {
+            console.error(e);
+            displayDiv.innerHTML = '<p class="text-red-500 text-sm">خطأ في تحميل الورد</p>';
+        }
+    }
+
     async function markDayCompleted(planId, studentId, date, todayEntry) {
         try {
-            // Check if record already exists
             const q = window.firebaseOps.query(
                 window.firebaseOps.collection(window.db, "plan_daily_records"),
                 window.firebaseOps.where("plan_id", "==", planId),
@@ -617,10 +748,77 @@ window.CurriculumManager = (function() {
                     window.firebaseOps.collection(window.db, "plan_daily_records"), data
                 );
             }
+            
+            // Auto grade user points based on Comp Settings
+            if (window.submitScore && window.state && window.currentGradingCompId) {
+                const comp = window.state.competitions.find(c => c.id === window.currentGradingCompId);
+                if (comp && comp.memorizationPoints) {
+                    await window.submitScore('QURAN_MEM_SUCCESS', comp.memorizationPoints, 'تسميع الخطة', 'positive');
+                }
+            }
+            
             showToast('✅ تم تسجيل إنجاز اليوم بنجاح', 'success');
+            renderDailyPlanForGrader(studentId, date); // Refresh UI
         } catch (e) {
             console.error(e);
             showToast('خطأ في تسجيل الإنجاز', 'error');
+        }
+    }
+
+    async function shiftPlanForAbsence(studentId, dateVal) {
+        try {
+            const plan = await loadStudentPlan(studentId, 'memorization');
+            if (!plan) return;
+            
+            const q = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "plan_daily_records"),
+                window.firebaseOps.where("plan_id", "==", plan.id),
+                window.firebaseOps.where("date", "==", dateVal)
+            );
+            const snap = await window.firebaseOps.getDocs(q);
+            if (!snap.empty) return; // already graded or absent
+
+            const schedule = await generateDailySchedule(plan);
+            const todayEntry = schedule.find(s => s.date === dateVal);
+            
+            if (!todayEntry) return;
+
+            const data = {
+                plan_id: plan.id,
+                student_id: studentId,
+                date: dateVal,
+                planned_start_page: todayEntry.targetStartPage,
+                planned_end_page: todayEntry.targetEndPage,
+                planned_sections: todayEntry.sections || [],
+                status: 'absent'
+            };
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "plan_daily_records"), data);
+            
+            // Dynamic Shifting algorithm
+            const planRef = window.firebaseOps.doc(window.db, "student_plans", plan.id);
+            const studyDays = plan.study_days || [0, 1, 2, 3, 4];
+            
+            let nextDate = new Date(dateVal);
+            do { nextDate.setDate(nextDate.getDate() + 1); } while(!studyDays.includes(nextDate.getDay()));
+            
+            let newEndDate = new Date(plan.end_date);
+            do { newEndDate.setDate(newEndDate.getDate() + 1); } while(!studyDays.includes(newEndDate.getDay()));
+            
+            if (todayEntry.sections && todayEntry.sections.length > 0) {
+                await window.firebaseOps.updateDoc(planRef, {
+                    start_date: nextDate.toISOString().split('T')[0],
+                    end_date: newEndDate.toISOString().split('T')[0],
+                    start_sura: todayEntry.sections[0].suraNo,
+                    start_ayah: todayEntry.sections[0].fromAyah,
+                    updated_at: new Date().toISOString()
+                });
+            }
+            
+            showToast('تم إرجاء ورد الخطة الزمنية', 'info');
+            renderDailyPlanForGrader(studentId, dateVal); // Refresh UI
+            
+        } catch (e) {
+            console.error("shiftPlanForAbsence error:", e);
         }
     }
 
@@ -638,14 +836,46 @@ window.CurriculumManager = (function() {
             await window.firebaseOps.addDoc(
                 window.firebaseOps.collection(window.db, "plan_daily_records"), data
             );
-            showToast('تم تسجيل الغياب', 'info');
+            
+            // === خوارزمية الترحيل والإزاحة (Dynamic Shifting) ===
+            // نؤجل النهاية بيوم دراسي واحد، ونعدل بداية الورد لغدٍ كأنه اليوم
+            const planRef = window.firebaseOps.doc(window.db, "student_plans", planId);
+            const planSnap = await window.firebaseOps.getDoc(planRef);
+            if (planSnap.exists()) {
+                const plan = planSnap.data();
+                const studyDays = plan.study_days || [0, 1, 2, 3, 4];
+                
+                // حساب اليوم الدراسي التالي
+                let nextDate = new Date(date);
+                do {
+                    nextDate.setDate(nextDate.getDate() + 1);
+                } while(!studyDays.includes(nextDate.getDay()));
+                
+                // حساب يوم النهاية الجديد بإضافة يوم دراسي واحد للآخر
+                let newEndDate = new Date(plan.end_date);
+                do {
+                    newEndDate.setDate(newEndDate.getDate() + 1);
+                } while(!studyDays.includes(newEndDate.getDay()));
+                
+                if (todayEntry.sections && todayEntry.sections.length > 0) {
+                    await window.firebaseOps.updateDoc(planRef, {
+                        start_date: nextDate.toISOString().split('T')[0],
+                        end_date: newEndDate.toISOString().split('T')[0],
+                        start_sura: todayEntry.sections[0].suraNo,
+                        start_ayah: todayEntry.sections[0].fromAyah,
+                        updated_at: new Date().toISOString()
+                    });
+                }
+            }
+
+            showToast('تم تسجيل الغياب وترحيل ورد وتواريخ الخطة', 'info');
         } catch (e) {
             console.error(e);
             showToast('خطأ في تسجيل الغياب', 'error');
         }
     }
 
-    // === إنجاز مختلف ===
+    // === إنجاز مختلف (زيادة أو نقصان) ===
     function openDifferentCompletionModal(plan, studentId, date, todayEntry) {
         let old = document.getElementById('diff-completion-modal');
         if (old) old.remove();
@@ -653,12 +883,12 @@ window.CurriculumManager = (function() {
         let html = `
         <div id="diff-completion-modal" class="fixed inset-0 bg-black/60 z-[250] flex items-center justify-center p-4" onclick="if(event.target===this)this.remove()">
             <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-                <h3 class="font-bold text-lg mb-4">📝 إنجاز مختلف</h3>
-                <p class="text-xs text-gray-500 mb-3">حدد ما أنجزه الطالب فعلياً (مختلف عن الخطة)</p>
+                <h3 class="font-bold text-lg mb-4 text-blue-600">📝 إنجاز مختلف (متقدم / متأخر)</h3>
+                <p class="text-xs text-gray-500 mb-3">حدد ما أنجزه الطالب فعلياً. سيقوم النظام تلقائياً بترحيل المتبقى لأيام قادمة أو تقديم الورد الجديد بناءً على هذا التغيير.</p>
                 <div class="grid grid-cols-2 gap-2 mb-3">
                     <div>
-                        <label class="text-[10px] text-gray-500">من السورة / الآية</label>
-                        <div class="flex gap-1">
+                        <label class="text-[10px] font-bold text-gray-600">من السورة / الآية (نقطة البداية)</label>
+                        <div class="flex gap-1 mt-1">
                             <select id="diff-start-sura" class="flex-1 bg-gray-50 border rounded text-xs p-1.5" onchange="CurriculumManager.updateDiffAyas('start')"></select>
                             <select id="diff-start-aya" class="flex-1 bg-gray-50 border rounded text-xs p-1.5"></select>
                         </div>
@@ -736,9 +966,21 @@ window.CurriculumManager = (function() {
                 alert('⚠️ تنبيه: الطالب لم ينجز الورد بالكامل؛ تم ضغط المتبقي لضمان الختم في الموعد.');
             }
             
+            // Auto grade user points based on Comp Settings
+            if (window.submitScore && window.state && window.currentGradingCompId) {
+                const comp = window.state.competitions.find(c => c.id === window.currentGradingCompId);
+                // IF warning is true, they achieved less, maybe penalize? Or just standard mem points but with warning.
+                // Let's give them the memorization points since they achieved *something* but alert the teacher.
+                if (comp && comp.memorizationPoints) {
+                    await window.submitScore('QURAN_MEM_PARTIAL', comp.memorizationPoints, 'تسميع إنجاز مختلف', 'positive');
+                }
+            }
+
             showToast('✅ تم تسجيل الإنجاز وإعادة الجدولة', 'success');
             document.getElementById('diff-completion-modal').remove();
-            if (window.openRateStudent) window.openRateStudent(studentId);
+            
+            // Refresh
+            renderDailyPlanForGrader(studentId, date);
         } catch (e) {
             console.error(e);
             showToast('خطأ في الحفظ', 'error');
@@ -844,6 +1086,8 @@ window.CurriculumManager = (function() {
         loadStudentPlan,
         openPlanModal,
         renderPlanManagerModal,
+        renderDailyPlanForGrader,
+        shiftPlanForAbsence,
         closeModal,
         updateAyas,
         submitPlan,

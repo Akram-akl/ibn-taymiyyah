@@ -1157,6 +1157,19 @@ function renderSettings() {
              ${teacherInfoHTML}
 
              ${state.isTeacher ? `
+             <!-- Level Settings (Study Days) -->
+             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border mb-4 mt-4">
+                 <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="calendar-days" class="w-5 h-5 text-indigo-600"></i> أيام الحلقة الافتراضية</h3>
+                 <p class="text-[10px] text-gray-500 mb-3">الأيام الافتراضية لخطط التسميع. في حال كانت خطة الطالب تختلف عن هذه الأيام، سيظهر تنبيه يمكنك إخفاؤه.</p>
+                 <div class="flex flex-wrap gap-2 mb-3" id="global-study-days-container">
+                     <div class="w-full text-center text-gray-400 py-2"><i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto"></i></div>
+                 </div>
+                 <button onclick="saveGlobalStudyDays()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2">
+                     <i data-lucide="save" class="w-4 h-4"></i>
+                     حفظ الأيام الافتراضية
+                 </button>
+             </div>
+
              <!-- Export & Tools -->
              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
                  <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="wrench" class="w-5 h-5 text-teal-600"></i> أدوات</h3>
@@ -1184,6 +1197,60 @@ function renderSettings() {
     // Load existing teachers list
     if (state.isTeacher) {
         loadTeachersList();
+        loadGlobalStudyDays();
+    }
+}
+
+async function loadGlobalStudyDays() {
+    const container = document.getElementById('global-study-days-container');
+    if (!container) return;
+    
+    try {
+        const docRef = window.firebaseOps.doc(window.db, "level_settings", state.currentLevel);
+        const snap = await window.firebaseOps.getDoc(docRef);
+        let defaultDays = [0, 1, 2, 3, 4];
+        if (snap.exists() && snap.data().study_days) {
+            defaultDays = snap.data().study_days;
+        }
+        
+        container.innerHTML = [
+            {val: 0, label: 'الأحد'}, {val: 1, label: 'الإثنين'}, {val: 2, label: 'الثلاثاء'},
+            {val: 3, label: 'الأربعاء'}, {val: 4, label: 'الخميس'}, {val: 5, label: 'الجمعة'}, {val: 6, label: 'السبت'}
+        ].map(d => `
+            <label class="flex items-center gap-1.5 text-xs bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded-lg cursor-pointer border border-gray-100 dark:border-gray-600 hover:bg-gray-100 transition">
+                <input type="checkbox" value="${d.val}" class="global-study-day-cb w-4 h-4 text-indigo-600 rounded bg-white" ${defaultDays.includes(d.val) ? 'checked' : ''}>
+                <span class="font-bold whitespace-nowrap">${d.label}</span>
+            </label>
+        `).join('');
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p class="text-xs text-red-500 mt-2">خطأ في تحميل الأيام الافتراضية</p>';
+    }
+}
+
+async function saveGlobalStudyDays() {
+    const boxes = document.querySelectorAll('.global-study-day-cb:checked');
+    const selectedDays = Array.from(boxes).map(b => parseInt(b.value));
+    
+    if (selectedDays.length === 0) {
+        showToast('يرجى اختيار يوم دراسة واحد على الأقل', 'error');
+        return;
+    }
+    
+    try {
+        const btn = document.querySelector('button[onclick="saveGlobalStudyDays()"]');
+        if (btn) btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>';
+        if (window.lucide) window.lucide.createIcons();
+        
+        const docRef = window.firebaseOps.doc(window.db, "level_settings", state.currentLevel);
+        await window.firebaseOps.setDoc(docRef, { study_days: selectedDays, updated_at: new Date() }, { merge: true });
+        
+        showToast('تم حفظ إعدادات الأيام بنجاح', 'success');
+        if (btn) btn.innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> حفظ الأيام الافتراضية';
+        if (window.lucide) window.lucide.createIcons();
+    } catch(e) {
+        console.error(e);
+        showToast('خطأ في الحفظ', 'error');
     }
 }
 
@@ -1500,6 +1567,33 @@ function getCompetitionModalsHTML() {
                                                 <button type="button" onclick="addCriteriaItem()" class="text-teal-600 text-sm font-bold flex items-center gap-1">+ إضافة معيار</button>
                                             </div>
 
+                                            <div class="mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800">
+                                                <h4 class="font-bold text-sm text-emerald-800 dark:text-emerald-300 mb-3 flex items-center gap-2">
+                                                    <i data-lucide="book" class="w-4 h-4"></i>
+                                                    نقاط الخطط القرآنية (تلقائي)
+                                                </h4>
+                                                <div class="grid grid-cols-2 gap-3 mb-3">
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1">نقاط الحفظ (موجب)</label>
+                                                        <input type="number" id="comp-memorization-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2 text-center text-sm" value="3">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1">نقاط المراجعة (موجب)</label>
+                                                        <input type="number" id="comp-review-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2 text-center text-sm" value="2">
+                                                    </div>
+                                                </div>
+                                                <div class="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ الحفظ (سالب)</label>
+                                                        <input type="number" id="comp-memorization-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-center text-sm text-red-600" value="1">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ المراجعة (سالب)</label>
+                                                        <input type="number" id="comp-review-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-center text-sm text-red-600" value="1">
+                                                    </div>
+                                                </div>
+                                            </div>
+
                                             <div class="mb-4 bg-orange-50 dark:bg-orange-900/10 p-4 rounded-xl border border-orange-100 dark:border-orange-800">
                                                 <h4 class="font-bold text-sm text-orange-800 dark:text-orange-300 mb-3 flex items-center gap-2">
                                                     <i data-lucide="user-x" class="w-4 h-4"></i>
@@ -1812,79 +1906,10 @@ function openAddStudentModal() {
     $('#student-modal-title').textContent = 'إضافة طالب جديد';
     $('#save-student-text').textContent = 'حفظ';
     
-    const quranSection = document.getElementById('quran-plan-section');
-    if (quranSection) {
-        quranSection.classList.add('hidden'); // Plans are added after saving a student
-    }
-    
     toggleModal('student-modal', true);
 }
 
-async function initQuranPlanSelectors() {
-    if (typeof QuranService === 'undefined') {
-        console.error("QuranService is undefined");
-        return;
-    }
-    await QuranService.loadData();
-    const suras = QuranService.getSuras();
-    if (!suras || suras.length === 0) {
-        console.warn("No suras loaded yet, retrying in 500ms...");
-        setTimeout(initQuranPlanSelectors, 500);
-        return;
-    }
 
-    let opts = '<option value="">السورة..</option>';
-    suras.forEach(s => { opts += `<option value="${s.number}">${s.number}. ${s.name}</option>`; });
-    
-    const selects = ['plan-mem-start-sura', 'plan-mem-end-sura', 'plan-rev-start-sura', 'plan-rev-end-sura'];
-    selects.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.innerHTML = opts;
-        }
-    });
-}
-
-async function buildPlanText(type) {
-    let prefix = type === 'memorization' ? 'plan-mem' : 'plan-rev';
-    const sSura = document.getElementById(`${prefix}-start-sura`);
-    const sAya  = document.getElementById(`${prefix}-start-aya`);
-    const eSura = document.getElementById(`${prefix}-end-sura`);
-    const eAya  = document.getElementById(`${prefix}-end-aya`);
-    
-    if(!sSura.value || !sAya.value || !eSura.value || !eAya.value) {
-        showToast('يرجى تحديد النطاق كاملاً (سورة وآية بداية ونهاية)', 'error');
-        return;
-    }
-    
-    // Validate order: start must come before end in Mushaf order
-    const startSuraNum = parseInt(sSura.value);
-    const endSuraNum = parseInt(eSura.value);
-    const startAyaNum = parseInt(sAya.value);
-    const endAyaNum = parseInt(eAya.value);
-    
-    if (startSuraNum > endSuraNum || (startSuraNum === endSuraNum && startAyaNum > endAyaNum)) {
-        showToast('يجب أن تكون النهاية بعد البداية بالترتيب الصحيح للمصحف', 'error');
-        return;
-    }
-    
-    const _sSurahName = sSura.options[sSura.selectedIndex].text.replace(/^[0-9.]+\s*/, '');
-    const _eSurahName = eSura.options[eSura.selectedIndex].text.replace(/^[0-9.]+\s*/, '');
-    
-    let text = sSura.value === eSura.value ? 
-        `${_sSurahName} (آية ${sAya.value} - ${eAya.value})` : 
-        `من ${_sSurahName} (${sAya.value}) إلى ${_eSurahName} (${eAya.value})`;
-        
-    const hiddenInputId = type === 'memorization' ? 'student-memorization' : 'student-review';
-    document.getElementById(hiddenInputId).value = text;
-    
-    const displayId = type === 'memorization' ? 'student-mem-display' : 'student-rev-display';
-    const displayEl = document.getElementById(displayId);
-    displayEl.textContent = 'الخطة: ' + text;
-    displayEl.classList.remove('hidden');
-    
-    showToast('تم اعتماد الخطة');
-}
 
 async function openEditStudent(id) {
     const student = state.students.find(s => s.id === id);
@@ -1915,16 +1940,12 @@ async function openEditStudent(id) {
     $('#student-id').value = student.id;
     $('#student-name').value = student.name;
     $('#student-number').value = student.studentNumber || '';
-    $('#student-memorization').value = student.memorizationPlan || '';
-    $('#student-review').value = student.reviewPlan || '';
     $('#student-emoji').value = student.icon || '👤';
     $('#student-password-edit').value = student.password || '';
 
     // إعداد حالة القراءة فقط للطالب
     const isTeacher = state.isTeacher;
     $('#student-number').disabled = !isTeacher;
-    $('#student-memorization').disabled = !isTeacher;
-    $('#student-review').disabled = !isTeacher;
     $('#student-password-edit').disabled = !isTeacher;
 
     // الاسم والصورة مسموح بتعديلهم
@@ -1940,17 +1961,6 @@ async function openEditStudent(id) {
     $('#student-modal-title').textContent = 'تعديل بيانات الطالب';
     $('#save-student-text').textContent = 'تحديث';
 
-    const quranSection = document.getElementById('quran-plan-section');
-    if (quranSection) {
-        if (state.quranTrackingEnabled && state.isTeacher && id) {
-            quranSection.classList.remove('hidden');
-            document.getElementById('btn-manage-curriculum').onclick = () => {
-                CurriculumManager.openPlanModal(id);
-            };
-        } else {
-            quranSection.classList.add('hidden');
-        }
-    }
 
     toggleModal('student-modal', true);
 }
@@ -1972,249 +1982,7 @@ async function performDeleteStudent() {
     } catch (err) { console.error(err); showToast("خطأ في الحذف", "error"); }
 }
 
-// === QURAN INTEGRATION ===
-async function initRateQuranSelectors() {
-    const suraSelect = document.getElementById('quran-sura-select');
-    if (!suraSelect || suraSelect.options.length > 1) return; // already initialized
-
-    if (typeof QuranService === 'undefined') {
-        console.warn("QuranService is not available.");
-        return;
-    }
-
-    const loadSpan = document.createElement('option');
-    loadSpan.textContent = "جاري التحميل...";
-    suraSelect.innerHTML = '';
-    suraSelect.appendChild(loadSpan);
-
-    await QuranService.loadData();
-    const suras = QuranService.getSuras();
-    suraSelect.innerHTML = '<option value="">اختر السورة..</option>';
-    suras.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.number;
-        opt.textContent = `${s.number}. ${s.name}`;
-        suraSelect.appendChild(opt);
-    });
-}
-
-async function updateQuranPlanAyaSelectors() {
-    const suraSelect = document.getElementById('quran-sura-select');
-    const ayaFrom = document.getElementById('quran-aya-from');
-    const ayaTo = document.getElementById('quran-aya-to');
-    
-    if(!suraSelect || !ayaFrom || !ayaTo) return;
-
-    if (!suraSelect.value) {
-        ayaFrom.innerHTML = '';
-        ayaTo.innerHTML = '';
-        ayaFrom.disabled = true;
-        ayaTo.disabled = true;
-        return;
-    }
-
-    const suraNo = parseInt(suraSelect.value);
-    await QuranService.loadData();
-    const ayas = QuranService.getAyahs(suraNo);
-    
-    let optionsHTML = '';
-    ayas.forEach(a => {
-        optionsHTML += `<option value="${a.aya_no}">${a.aya_no}</option>`;
-    });
-
-    ayaFrom.innerHTML = optionsHTML;
-    ayaTo.innerHTML = optionsHTML;
-    
-    ayaFrom.disabled = false;
-    ayaTo.disabled = false;
-    
-    // Set default "to" to the last aya
-    if (ayas.length > 0) {
-        ayaTo.value = ayas[ayas.length - 1].aya_no;
-    }
-}
-
-function applyQuranPlan() {
-    const suraSelect = document.getElementById('quran-sura-select');
-    const ayaFrom = document.getElementById('quran-aya-from');
-    const ayaTo = document.getElementById('quran-aya-to');
-    const memoInput = document.getElementById('student-memorization');
-    
-    if (!suraSelect.value) {
-        showToast('الرجاء اختيار السورة أولاً', 'error');
-        return;
-    }
-    
-    const suraName = suraSelect.options[suraSelect.selectedIndex].text.split('. ')[1];
-    const fromLine = ayaFrom.value;
-    const toLine = ayaTo.value;
-    
-    // Append to existing, or overwrite depending on preference. Let's merge nicely.
-    const planText = `سورة ${suraName} من آية ${fromLine} إلى ${toLine}`;
-    if (memoInput.value.trim() === '') {
-        memoInput.value = planText;
-    } else {
-        memoInput.value = memoInput.value.trim() + ' | ' + planText;
-    }
-    
-    showToast('تم اعتماد المقطع في الخطة', 'success');
-}
-
-
 // === GROUPS ===
-// Assuming groups are sub-collections or root collections with competitionId?
-// For simplicity in this flat structure, let's say groups are root but have 'competitionId'.
-
-// Set Quran type (memorization/review) UI
-function setQuranType(type) {
-    document.getElementById('rate-quran-type').value = type;
-    const hifzBtn = document.getElementById('btn-type-hifz');
-    const murajaBtn = document.getElementById('btn-type-muraja');
-    if (type === 'memorization') {
-        hifzBtn.className = 'py-2 rounded-lg text-xs font-bold border-2 border-emerald-400 bg-emerald-100 text-emerald-700';
-        murajaBtn.className = 'py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500';
-    } else {
-        murajaBtn.className = 'py-2 rounded-lg text-xs font-bold border-2 border-blue-400 bg-blue-100 text-blue-700';
-        hifzBtn.className = 'py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500';
-    }
-}
-
-// Initialize both sura selectors
-async function initRateQuranSelectors() {
-    const startSura = document.getElementById('rate-quran-start-sura');
-    if (!startSura || startSura.options.length > 1) return;
-
-    if (typeof QuranService === 'undefined') return;
-    await QuranService.loadData();
-    const suras = QuranService.getSuras();
-
-    let opts = '';
-    suras.forEach(s => { opts += `<option value="${s.number}">${s.number}. ${s.name}</option>`; });
-
-    document.getElementById('rate-quran-start-sura').innerHTML = '<option value="">السورة..</option>' + opts;
-    document.getElementById('rate-quran-end-sura').innerHTML = '<option value="">السورة..</option>' + opts;
-}
-
-// Update ayah selectors for any prefix
-async function updateQuranAyas(prefix) {
-    const suraId = prefix === 'start' ? 'rate-quran-start-sura' : 
-                   prefix === 'end' ? 'rate-quran-end-sura' : 
-                   `${prefix}-sura`;
-    const ayaId  = prefix === 'start' ? 'rate-quran-start-aya' : 
-                   prefix === 'end' ? 'rate-quran-end-aya' : 
-                   `${prefix}-aya`;
-    const suraSelect = document.getElementById(suraId);
-    const ayaSelect  = document.getElementById(ayaId);
-    if (!suraSelect || !ayaSelect) return;
-
-    if (!suraSelect.value) {
-        ayaSelect.innerHTML = '<option value="">الآية..</option>';
-        ayaSelect.disabled = true;
-        return;
-    }
-
-    if (typeof QuranService === 'undefined') return;
-    await QuranService.loadData();
-    const ayas = QuranService.getAyahs(parseInt(suraSelect.value));
-    ayaSelect.innerHTML = ayas.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
-    ayaSelect.disabled = false;
-    if ((prefix === 'end' || prefix.endsWith('end')) && ayas.length > 0) {
-        ayaSelect.value = ayas[ayas.length - 1].aya_no;
-    }
-}
-
-// Submit Quran record independently (separate from criteria scores)
-async function submitQuranRecord() {
-    if (!currentRateStudentId || !currentGradingCompId) return;
-
-    const dateVal = $('#grading-date').value;
-    if (!dateVal) { showToast('يرجى اختيار التاريخ', 'error'); return; }
-
-    const quranType = document.getElementById('rate-quran-type').value || 'memorization';
-    const startSuraEl = document.getElementById('rate-quran-start-sura');
-    const startAyaEl  = document.getElementById('rate-quran-start-aya');
-    const endSuraEl   = document.getElementById('rate-quran-end-sura');
-    const endAyaEl    = document.getElementById('rate-quran-end-aya');
-
-    if (!startSuraEl.value || !startAyaEl.value || !endSuraEl.value || !endAyaEl.value) {
-        showToast('يرجى تحديد المقطع كاملاً (سورة وآية بداية ونهاية)', 'error'); return;
-    }
-
-    const startSuraNo = parseInt(startSuraEl.value);
-    const startAya    = parseInt(startAyaEl.value);
-    const endSuraNo   = parseInt(endSuraEl.value);
-    const endAya      = parseInt(endAyaEl.value);
-    
-    // Validate that start Sura/Ayah is before or equal to End Sura/Ayah (Ascending order)
-    if (startSuraNo > endSuraNo || (startSuraNo === endSuraNo && startAya > endAya)) {
-        showToast('يجب أن تكون النهاية بعد البداية بالترتيب الصحيح للمصحف', 'error');
-        return;
-    }
-
-    const startSuraName = startSuraEl.options[startSuraEl.selectedIndex].text.replace(/^\d+\.\s*/, '');
-    const endSuraName   = endSuraEl.options[endSuraEl.selectedIndex].text.replace(/^\d+\.\s*/, '');
-
-    const typeName = quranType === 'memorization' ? 'حفظ قرآن' : 'مراجعة قرآن';
-    const sectionText = startSuraNo === endSuraNo
-        ? `سورة ${startSuraName} (${startAya} - ${endAya})`
-        : `سورة ${startSuraName} (${startAya}) → سورة ${endSuraName} (${endAya})`;
-
-    // Build Uthmanic text
-    let quranText = '';
-    if (typeof QuranService !== 'undefined' && QuranService.isLoaded()) {
-        if (startSuraNo === endSuraNo) {
-            const ayas = QuranService.getAyahs(startSuraNo).filter(a => a.aya_no >= startAya && a.aya_no <= endAya);
-            quranText = ayas.map(a => `${a.aya_text} ﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾`).join(' ');
-        } else {
-            const startAyas = QuranService.getAyahs(startSuraNo).filter(a => a.aya_no >= startAya);
-            const endAyas   = QuranService.getAyahs(endSuraNo).filter(a => a.aya_no <= endAya);
-            quranText = [...startAyas, ...endAyas].map(a => `${a.aya_text} ﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾`).join(' ');
-        }
-    }
-
-    const data = {
-        studentId: currentRateStudentId,
-        competitionId: currentGradingCompId,
-        groupId: currentGradingGroupId,
-        criteriaId: quranType === 'memorization' ? 'QURAN_MEMORIZATION' : 'QURAN_REVIEW',
-        criteriaName: typeName,
-        points: 0,
-        quranType,
-        quranStartSura: startSuraNo,
-        quranStartAyah: startAya,
-        quranEndSura: endSuraNo,
-        quranEndAyah: endAya,
-        quranSection: sectionText,
-        quranText,
-        type: 'quran',
-        level: state.currentLevel,
-        date: dateVal,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        timestamp: Date.now()
-    };
-
-    try {
-        // Check if record already exists for this student+date+type
-        const q = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, 'scores'),
-            window.firebaseOps.where('studentId', '==', currentRateStudentId),
-            window.firebaseOps.where('date', '==', dateVal),
-            window.firebaseOps.where('criteriaId', '==', data.criteriaId)
-        );
-        const snap = await window.firebaseOps.getDocs(q);
-        if (!snap.empty) {
-            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, 'scores', snap.docs[0].id), data);
-        } else {
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, 'scores'), data);
-        }
-        showToast(`✅ تم حفظ ${typeName}: ${sectionText}`, 'success');
-    } catch(e) {
-        console.error(e);
-        showToast('خطأ في حفظ المقطع القرآني', 'error');
-    }
-}
-
 
 let currentManageCompId = null;
 
@@ -2777,7 +2545,6 @@ function openGradingSession(compId, keepDate = false) {
             container.innerHTML = '<p class="text-center text-gray-400 py-8">لا توجد مجموعات. أضف مجموعات أولاً من قائمة المسابقات.</p>';
             return;
         }
-
         let html = `
         <div class="mb-4">
             <button onclick="openActivityCheckModal('ALL')" class="w-full bg-purple-600 text-white px-4 py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-purple-700 transition flex items-center justify-center gap-2">
@@ -2873,38 +2640,38 @@ function openGroupGrading(groupId) {
         }
 
         let html = `
-                                                <div class="sticky top-0 bg-white dark:bg-gray-800 py-2 mb-3 border-b flex justify-between items-center">
-                                                    <div>
-                                                        <button onclick="openGradingSession('${currentGradingCompId}')" class="text-teal-600 font-bold text-sm flex items-center gap-1">
-                                                            <i data-lucide="arrow-right" class="w-4 h-4"></i>
-                                                            العودة
-                                                        </button>
-                                                        <h4 class="font-bold mt-1">${group.name}</h4>
-                                                    </div>
-                                                    <button onclick="openGroupPointsModal()" class="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-amber-200 transition flex items-center gap-1 border border-amber-300">
-                                                        <i data-lucide="sparkles" class="w-3 h-3"></i>
-                                                        نقاط للمجموعة
-                                                    </button>
-                                                </div>
-                                                <div class="space-y-2">
-                                                    `;
+            <div class="sticky top-0 bg-white dark:bg-gray-800 py-2 mb-3 border-b flex justify-between items-center">
+                <div>
+                    <button onclick="openGradingSession('${currentGradingCompId}')" class="text-teal-600 font-bold text-sm flex items-center gap-1">
+                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                        العودة
+                    </button>
+                    <h4 class="font-bold mt-1">${group.name}</h4>
+                </div>
+                <button onclick="openGroupPointsModal()" class="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg text-xs font-bold shadow hover:bg-amber-200 transition flex items-center gap-1 border border-amber-300">
+                    <i data-lucide="sparkles" class="w-3 h-3"></i>
+                    نقاط للمجموعة
+                </button>
+            </div>
+            <div class="space-y-2">
+        `;
 
         groupStudents.forEach(s => {
             const isImg = s.icon && s.icon.startsWith('data:image');
             const iconHtml = isImg ? `<img src="${s.icon}" class="w-full h-full object-cover rounded-full">` : (s.icon || '👤');
 
             html += `
-                                                        <div onclick="openRateStudent('${s.id}')" class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-xl cursor-pointer hover:bg-gray-100 transition">
-                                                            <div class="flex items-center gap-3">
-                                                                <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center border overflow-hidden">${iconHtml}</div>
-                                                                <div>
-                                                                    <h4 class="font-bold text-sm">${s.name}</h4>
-                                                                    <p class="text-xs text-gray-500">${s.studentNumber || ''}</p>
-                                                                </div>
-                                                            </div>
-                                                            <i data-lucide="chevron-left" class="text-gray-400"></i>
-                                                        </div>
-                                                        `;
+                <div onclick="openRateStudent('${s.id}')" class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-xl cursor-pointer hover:bg-gray-100 transition">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center border overflow-hidden">${iconHtml}</div>
+                        <div>
+                            <h4 class="font-bold text-sm">${s.name}</h4>
+                            <p class="text-xs text-gray-500">${s.studentNumber || ''}</p>
+                        </div>
+                    </div>
+                    <i data-lucide="chevron-left" class="text-gray-400"></i>
+                </div>
+            `;
         });
 
         html += '</div>';
@@ -2931,85 +2698,7 @@ function openRateStudent(studentId) {
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : 'تقييم الطالب';
 
-    // Show plans if any (new curriculum system)
-    const planDisplay = $('#rate-quran-plan-display');
-    if (s && state.quranTrackingEnabled) {
-        planDisplay.innerHTML = '<div class="text-xs text-gray-400 animate-pulse">جاري جلب ورد الطالب...</div>';
-        planDisplay.classList.remove('hidden');
-        
-        Promise.all([
-            CurriculumManager.loadStudentPlan(studentId, 'memorization'),
-            CurriculumManager.loadStudentPlan(studentId, 'review')
-        ]).then(async ([hifzPlan, reviewPlan]) => {
-            planDisplay.innerHTML = '';
-            const today = $('#grading-date').value;
-            
-            let hasAny = false;
-            const plans = [hifzPlan, reviewPlan].filter(p => p !== null);
-            
-            for (let plan of plans) {
-                const schedule = await CurriculumManager.generateDailySchedule(plan);
-                const todayEntry = schedule.find(d => d.date === today);
-                
-                if (todayEntry && todayEntry.sections && todayEntry.sections.length > 0) {
-                    hasAny = true;
-                    const isHifz = (plan.plan_type || plan.planType) === 'memorization';
-                    const label = isHifz ? '📖 ورد الحفظ المقرّر' : '🔄 ورد المراجعة المقرّر';
-                    const color = isHifz ? 'teal' : 'purple';
-                    const secText = todayEntry.sections.map(s => `${s.suraName}: (${s.fromAyah}-${s.toAyah})`).join(' | ');
-                    
-                    const planHtml = `
-                        <div class="mb-4 p-4 bg-${color}-50 dark:bg-${color}-900/10 border-2 border-${color}-100 dark:border-${color}-800 rounded-2xl relative overflow-hidden">
-                            <div class="flex justify-between items-center mb-3">
-                                <span class="text-xs font-black text-${color}-700 dark:text-${color}-400 uppercase tracking-wider">${label}</span>
-                                <button onclick="CurriculumManager.showPaginatedQuranModal(${JSON.stringify(todayEntry.sections).replace(/"/g, '&quot;')})" 
-                                        class="text-[10px] bg-white dark:bg-gray-800 px-3 py-1.5 rounded-xl border shadow-sm flex items-center gap-2 hover:bg-gray-50 transition">
-                                    <i data-lucide="book-open" class="w-3.5 h-3.5"></i> فتح المصحف
-                                </button>
-                            </div>
-                            <div class="text-base font-black mb-4 text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                                <i data-lucide="hash" class="w-4 h-4 text-${color}-400"></i>
-                                ${secText}
-                            </div>
-                            <div class="flex gap-2">
-                                <button onclick="window._handlePlanAction('${plan.id}', 'executed', '${plan.plan_type || plan.planType}', '${escape(JSON.stringify(todayEntry))}')" 
-                                        class="flex-[2] py-3 bg-${color}-600 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-${color}-700 active:scale-95 transition">
-                                    تم التنفيذ ✅
-                                </button>
-                                <button onclick="CurriculumManager.openDifferentCompletionModal(${JSON.stringify(plan).replace(/"/g, '&quot;')}, '${studentId}', '${today}', ${JSON.stringify(todayEntry).replace(/"/g, '&quot;')})" 
-                                        class="flex-1 py-3 bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-200 border-2 border-gray-100 dark:border-gray-600 text-xs font-bold rounded-xl hover:bg-gray-50 transition">
-                                    أنجزت غيره
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                    planDisplay.insertAdjacentHTML('beforeend', planHtml);
-                }
-            }
-            
-            if (!hasAny) {
-                planDisplay.innerHTML = '<div class="text-xs text-gray-500 py-2 border-t border-dashed">لا يوجد ورد مجدول لهذا اليوم</div>';
-            }
-            lucide.createIcons();
-        });
-    } else {
-        planDisplay.classList.add('hidden');
-    }
-
-    // New Plan Action Handler
-    window._handlePlanAction = async (planId, action, type, entryEncoded) => {
-        const entry = JSON.parse(unescape(entryEncoded));
-        const today = $('#grading-date').value;
-        
-        if (action === 'executed') {
-            await CurriculumManager.markDayCompleted(planId, studentId, today, entry);
-            showToast('✅ تم تسجيل إنجاز الورد بنجاح');
-            // Re-open to refresh UI
-            openRateStudent(studentId);
-        }
-    };
-
-    // القديم: تم استبداله بنظام الميزان والورد الآلي
+    // Hide old quran plan section if it exists
     const quranSec = document.getElementById('rate-quran-section');
     if (quranSec) quranSec.classList.add('hidden');
 
@@ -3061,6 +2750,11 @@ function openRateStudent(studentId) {
 
     toggleModal('rate-student-modal', true);
     lucide.createIcons();
+
+    // استدعاء نظام الخطط لعرض الورد اليومي
+    if (window.CurriculumManager) {
+        CurriculumManager.renderDailyPlanForGrader(studentId, dateVal);
+    }
 }
 
 async function submitScore(criteriaId, points, criteriaName, type) {
@@ -3335,8 +3029,6 @@ async function handleSaveStudent(e) {
         studentNumber: studentNumber,
         parentPhone: studentNumber, // Same as studentNumber for parent lookup
         level: state.currentLevel,  // Level for parent to see
-        memorizationPlan: $('#student-memorization').value,
-        reviewPlan: $('#student-review').value,
         icon: imageBase64, // Store Base64 Image
         password: $('#student-password-edit').value, // Student Password
         updatedAt: new Date()
@@ -3407,6 +3099,10 @@ async function openEditCompetition(id) {
         $('#competition-id').value = id;
         $('#competition-name').value = data.name || '';
         $('#competition-emoji').value = data.icon || '🏆';
+        $('#comp-memorization-points').value = data.memorizationPoints || 3;
+        $('#comp-review-points').value = data.reviewPoints || 2;
+        $('#comp-memorization-negative-points').value = data.memorizationNegativePoints || 1;
+        $('#comp-review-negative-points').value = data.reviewNegativePoints || 1;
         $('#comp-absent-excuse').value = data.absentExcuse || 1;
         $('#comp-absent-no-excuse').value = data.absentNoExcuse || 4;
         $('#comp-activity-points').value = data.activityPoints || 0;
@@ -3582,6 +3278,12 @@ async function handleSaveCompetition(e) {
         const id = document.getElementById('competition-id').value;
         const name = document.getElementById('competition-name').value;
         const icon = document.getElementById('competition-emoji').value;
+        
+        const memorizationPoints = parseInt(document.getElementById('comp-memorization-points').value) || 3;
+        const reviewPoints = parseInt(document.getElementById('comp-review-points').value) || 2;
+        const memorizationNegativePoints = parseInt(document.getElementById('comp-memorization-negative-points').value) || 1;
+        const reviewNegativePoints = parseInt(document.getElementById('comp-review-negative-points').value) || 1;
+
         const absentExcuse = parseInt(document.getElementById('comp-absent-excuse').value) || 1;
         const absentNoExcuse = parseInt(document.getElementById('comp-absent-no-excuse').value) || 4;
         const activityPoints = parseInt(document.getElementById('comp-activity-points').value) || 0;
@@ -3607,6 +3309,10 @@ async function handleSaveCompetition(e) {
             name,
             icon,
             criteria: criteriaVals,
+            memorizationPoints,
+            reviewPoints,
+            memorizationNegativePoints,
+            reviewNegativePoints,
             absentExcuse,
             absentNoExcuse,
             activityPoints,
@@ -3731,6 +3437,12 @@ async function confirmAbsence(type) {
     var absenceModal = document.getElementById('absence-modal');
     if (absenceModal) absenceModal.remove();
 
+    // إرجاء وتحديث الخطة الزمنية في حال كانت موجودة
+    if (window.CurriculumManager && currentRateStudentId && typeof $('#grading-date') !== 'undefined') {
+        const dVal = $('#grading-date').value;
+        await CurriculumManager.shiftPlanForAbsence(currentRateStudentId, dVal);
+    }
+    
     // Notify Parent via WhatsApp
     var student = state.students.find(function (s) { return s.id === currentRateStudentId; });
     if (student && student.studentNumber) {
@@ -4190,37 +3902,7 @@ async function openStudentReport(studentId) {
         ? `<img src="${student.icon}" class="w-full h-full object-cover rounded-full">`
         : (student.icon || '👤');
 
-    // Fetch active student plans and actual records
-    window._currentStudentPlannedDays = [];
-    window._currentStudentActualRecords = [];
-    try {
-        const plansQuery = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "student_plans"),
-            window.firebaseOps.where("student_id", "==", studentId),
-            window.firebaseOps.where("status", "==", "active")
-        );
-        const plansSnap = await window.firebaseOps.getDocs(plansQuery);
-        const plans = [];
-        plansSnap.forEach(doc => plans.push({...doc.data(), id: doc.id}));
-        
-        if (window.CurriculumManager && typeof window.CurriculumManager.generateDailySchedule === 'function') {
-            for (let plan of plans) {
-                const schedule = await window.CurriculumManager.generateDailySchedule(plan);
-                window._currentStudentPlannedDays = window._currentStudentPlannedDays.concat(
-                    schedule.map(d => ({...d, planType: plan.plan_type, planId: plan.id}))
-                );
-            }
-        }
 
-        const recordsQuery = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "plan_daily_records"),
-            window.firebaseOps.where("student_id", "==", studentId)
-        );
-        const recordsSnap = await window.firebaseOps.getDocs(recordsQuery);
-        recordsSnap.forEach(doc => window._currentStudentActualRecords.push({...doc.data(), id: doc.id}));
-    } catch(e) {
-        console.error("Error loading plans/records for calendar:", e);
-    }
 
     // Save data globally for calendar interaction
     window._currentStudentData = student;
@@ -4528,40 +4210,10 @@ window.renderStudentCalendar = (year, month) => {
 window.showDayDetails = (dateStr) => {
     const scores = window._currentStudentScores || [];
     const dayScores = scores.filter(s => s.date === dateStr);
-    const plannedTasks = (window._currentStudentPlannedDays || []).filter(p => p.date === dateStr);
     
-    if (dayScores.length === 0 && plannedTasks.length === 0) return;
+    if (dayScores.length === 0) return;
 
     let html = `<div class="space-y-3">`;
-
-    if (plannedTasks.length > 0) {
-        plannedTasks.forEach((p, idx) => {
-            let sectionsText = '';
-            if (p.sections && p.sections.length > 0) {
-                sectionsText = p.sections.map(s => `${s.suraName}: آية ${s.fromAyah} - ${s.toAyah}`).join(' | ');
-            }
-            window[`_tempPlanSection_${idx}`] = p.sections;
-            html += `
-            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 border border-gray-100 dark:border-gray-600">
-                <div class="flex justify-between items-center mb-2">
-                    <span class="font-bold text-sm text-gray-800 dark:text-gray-100">المقرر المطلوب</span>
-                    <span class="text-xs font-bold px-2 py-1 rounded-lg bg-teal-100 text-teal-700">${p.planType === 'review' ? '🔄 مراجعة' : '📝 حفظ'}</span>
-                </div>
-                ${sectionsText ? `
-                <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
-                    <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع المطلوب:</p>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${sectionsText}</p>
-                    ${state.isParent ? '' : `
-                    <button onclick="if(window.CurriculumManager) window.CurriculumManager.showPaginatedQuranModal(window['_tempPlanSection_${idx}'])" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
-                        <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
-                    </button>
-                    `}
-                </div>
-                ` : ''}
-            </div>
-            `;
-        });
-    }
 
     if (dayScores.length > 0) {
         const grouped = {};
@@ -4630,17 +4282,12 @@ window.showDayDetails = (dateStr) => {
             showToast('التفاصيل الدقيقة للآيات غير متوفرة لهذا السجل القديم', 'error');
             return;
         }
-        if (!window.QuranService || !window.CurriculumManager || !window.CurriculumManager.showPaginatedQuranModal) {
+        if (!window.QuranService) {
             showToast('برجاء الانتظار لحين تحميل المصحف', 'error');
             return;
         }
         
-        let startPage = window.QuranService.getPageForAyah(score.quranStartSura, score.quranStartAyah);
-        let endPage = window.QuranService.getPageForAyah(score.quranEndSura, score.quranEndAyah);
-        let sections = window.QuranService.getSectionsForPageRange(startPage, endPage);
-        
-        // Use pagination
-        window.CurriculumManager.showPaginatedQuranModal(sections);
+        showToast('تفاصيل الآيات: ' + score.quranSection, 'success');
     };
 };
 
