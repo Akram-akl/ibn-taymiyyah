@@ -247,22 +247,7 @@ window.CurriculumManager = (function() {
         let alertHtml = '';
         const targetDays = (plan && plan.study_days) ? plan.study_days : defaultDays;
         
-        if (plan && plan.study_days) {
-            const planDaysStr = [...plan.study_days].sort().join(',');
-            const defaultDaysStr = [...defaultDays].sort().join(',');
-            if (planDaysStr !== defaultDaysStr) {
-                alertHtml = `
-                <div class="bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 p-3 rounded-xl mt-3 flex items-start gap-3 relative">
-                    <i data-lucide="alert-triangle" class="w-5 h-5 text-orange-500 shrink-0 mt-0.5"></i>
-                    <div>
-                        <p class="text-sm font-bold text-orange-800 dark:text-orange-400">أيام الخطة مختلفة</p>
-                        <p class="text-xs text-orange-700 dark:text-orange-300 mt-1">تنبيه: أيام التسميع الخاصة بهذه الخطة تختلف عن أيام الحلقة الافتراضية.</p>
-                    </div>
-                    <button onclick="this.parentElement.remove()" class="absolute left-2 top-2 text-orange-400 hover:text-orange-600 hover:bg-orange-100 rounded-lg p-1 transition"><i data-lucide="x" class="w-4 h-4"></i></button>
-                </div>
-                `;
-            }
-        }
+        // Alert removed per user request
 
         let html = `
             <div id="plan-manager-modal" class="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
