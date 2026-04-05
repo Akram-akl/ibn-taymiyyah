@@ -187,9 +187,9 @@ window.QuranService = (function() {
             html += `</div>`;
             html += `<div class="leading-[2.8] text-right font-quran">`;
             html += ayahs.map(a => {
-                // العودة لنص الآية الأصلي من المصدر (شامل الزخرفة والأرقام الأصلية)
-                const rawText = (a.aya_text || "").trim();
-                return `${rawText}`;
+                // إزالة أي أرقام أو أقواس مدمجة في نص الآية لمنع التكرار (الم 1 (1))
+                const cleanText = (a.aya_text || "").replace(/[0-9()\[\]{}﴿﴾]+$/g, "").trim();
+                return `${cleanText} <span class="text-amber-600 dark:text-amber-400 text-lg">﴿${Number(a.aya_no).toLocaleString('ar-EG')}﴾</span>`;
             }).join(' ');
             html += `</div></div>`;
         });
