@@ -1365,35 +1365,37 @@ function applyTheme() {
 }
 
 async function toggleQuranTracking() {
-    if (!state.currentLevel) return;
-    try {
-        const enabled = !state.quranTrackingEnabled;
-        const q = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "level_settings"),
-            window.firebaseOps.where("level", "==", state.currentLevel)
-        );
-        const snap = await window.firebaseOps.getDocs(q);
-        
-        if (!snap.empty) {
-            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "level_settings", snap.docs[0].id), {
-                quran_tracking_enabled: enabled,
-                updated_at: new Date().toISOString()
-            });
-        } else {
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "level_settings"), {
-                level: state.currentLevel,
-                quran_tracking_enabled: enabled,
-                updated_at: new Date().toISOString()
-            });
+    const enabled = !state.quranTrackingEnabled;
+    
+    // Always update local state + localStorage first (instant)
+    state.quranTrackingEnabled = enabled;
+    localStorage.setItem('quranTrackingEnabled', enabled);
+    showToast(enabled ? "تم تفعيل تتبع القرآن" : "تم تعطيل تتبع القرآن", "success");
+    
+    // Then try to sync to DB (background, non-blocking)
+    if (state.currentLevel) {
+        try {
+            const q = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "level_settings"),
+                window.firebaseOps.where("level", "==", state.currentLevel)
+            );
+            const snap = await window.firebaseOps.getDocs(q);
+            
+            if (!snap.empty) {
+                await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "level_settings", snap.docs[0].id), {
+                    quran_tracking_enabled: enabled
+                });
+            } else {
+                await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "level_settings"), {
+                    level: state.currentLevel,
+                    quran_tracking_enabled: enabled
+                });
+            }
+            console.log("Level settings synced to DB successfully");
+        } catch (e) {
+            console.error("DB sync failed (localStorage still works):", e);
+            // Don't show error to user - localStorage fallback is working
         }
-        
-        state.quranTrackingEnabled = enabled; // Update local state anyway
-        // Logic for re-rendering if needed
-        // renderSettings(); // If it exists
-        showToast(enabled ? "تم تفعيل تتبع القرآن لهذه المرحلة" : "تم تعطيل تتبع القرآن لهذه المرحلة", "success");
-    } catch (e) {
-        console.error("Error toggling global tracking:", e);
-        showToast("خطأ في تحديث الإعدادات", "error");
     }
 }
 
@@ -3594,22 +3596,26 @@ function startGlobalDataSync() {
 
     // 1. Level Settings Sync (Global tracking per level)
     if (window._levelSettingsUnsubscribe) window._levelSettingsUnsubscribe();
-    const qLevel = window.firebaseOps.query(
-        window.firebaseOps.collection(window.db, "level_settings"),
-        window.firebaseOps.where("level", "==", state.currentLevel)
-    );
-    window._levelSettingsUnsubscribe = window.firebaseOps.onSnapshot(qLevel, function (snap) {
-        if (!snap.empty) {
-            const data = snap.docs[0].data();
-            state.quranTrackingEnabled = data.quran_tracking_enabled === true;
-        } else {
-            state.quranTrackingEnabled = false;
-        }
-        // Update UI if on relevant screens
-        if (state.currentView === 'home' || state.currentView === 'students') {
-            router.render(state.currentView);
-        }
-    });
+    try {
+        const qLevel = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "level_settings"),
+            window.firebaseOps.where("level", "==", state.currentLevel)
+        );
+        window._levelSettingsUnsubscribe = window.firebaseOps.onSnapshot(qLevel, function (snap) {
+            if (!snap.empty) {
+                const data = snap.docs[0].data();
+                // toCamelCase converts quran_tracking_enabled -> quranTrackingEnabled
+                state.quranTrackingEnabled = data.quranTrackingEnabled === true;
+                localStorage.setItem('quranTrackingEnabled', state.quranTrackingEnabled);
+            } else {
+                // Fallback to localStorage
+                state.quranTrackingEnabled = localStorage.getItem('quranTrackingEnabled') === 'true';
+            }
+        });
+    } catch (e) {
+        console.error("Level settings sync failed, using localStorage:", e);
+        state.quranTrackingEnabled = localStorage.getItem('quranTrackingEnabled') === 'true';
+    }
 
     // 2. Competitions Sync
     if (competitionsUnsubscribe) competitionsUnsubscribe();

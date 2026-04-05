@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS level_settings (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     level TEXT NOT NULL UNIQUE,
     quran_tracking_enabled BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -268,6 +269,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'student_plans') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE student_plans;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'level_settings') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE level_settings;
     END IF;
 
 END $$;
