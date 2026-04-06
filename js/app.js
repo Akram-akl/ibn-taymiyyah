@@ -2902,6 +2902,11 @@ async function submitActivityDay() {
             date: dateVal,
             points: activityPoints
         });
+        
+        // 1.5 NEW: Shift Quranic Plans for affected students
+        if (window.CurriculumManager && typeof window.CurriculumManager.shiftPlansForActivityDay === 'function') {
+            await window.CurriculumManager.shiftPlansForActivityDay(comp.id, dateVal, currentActivityGroupId);
+        }
 
         // 2. Save Scores using Sequential Batch for stability
         const batch = window.firebaseOps.writeBatch(window.db);
@@ -3399,6 +3404,9 @@ function openAbsenceOptions() {
                 <button onclick="confirmAbsence('no-excuse')" class="py-3 rounded-xl bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-bold transition">
                     غائب بدون عذر (-${absentNoExcuse})
                 </button>
+                <button onclick="confirmAbsence('delay')" class="py-3 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-bold transition">
+                    تأجيل الورد (فقط)
+                </button>
                 <button onclick="document.getElementById('absence-modal').remove()" class="py-2 text-gray-400 hover:text-gray-600 font-medium text-sm mt-2">إلغاء</button>
             </div>
         </div>
@@ -3412,15 +3420,23 @@ async function confirmAbsence(type) {
 
     // Get Competition Config
     const comp = state.competitions.find(c => c.id === currentGradingCompId);
-    // Default values if not set
-    const excusePoints = parseInt((comp && comp.absentExcuse) ? comp.absentExcuse : 1);
-    const noExcusePoints = parseInt((comp && comp.absentNoExcuse) ? comp.absentNoExcuse : 4);
+    let label = '';
+    let points = 0;
 
-    const points = type === 'excuse' ? -excusePoints : -noExcusePoints;
-    const label = type === 'excuse' ? 'غائب بعذر' : 'غائب بدون عذر';
+    if (type !== 'delay') {
+        // Default values if not set
+        const excusePoints = parseInt((comp && comp.absentExcuse) ? comp.absentExcuse : 1);
+        const noExcusePoints = parseInt((comp && comp.absentNoExcuse) ? comp.absentNoExcuse : 4);
 
-    // Submit as a special score
-    await submitScore('ABSENCE_RECORD', points, label, 'negative');
+        points = type === 'excuse' ? -excusePoints : -noExcusePoints;
+        label = type === 'excuse' ? 'غائب بعذر' : 'غائب بدون عذر';
+
+        // Submit as a special score
+        await submitScore('ABSENCE_RECORD', points, label, 'negative');
+    } else {
+        label = 'تأجيل الورد';
+        showToast("جاري تأجيل الورد اليومي...");
+    }
 
     var absenceModal = document.getElementById('absence-modal');
     if (absenceModal) absenceModal.remove();
@@ -3431,13 +3447,20 @@ async function confirmAbsence(type) {
         await CurriculumManager.shiftPlanForAbsence(currentRateStudentId, dVal);
     }
     
-    // Notify Parent via WhatsApp
+    // Notify Parent via WhatsApp (only for real absence, not manual delay?)
+    // Let's notify for both to keep parents in the loop.
     var student = state.students.find(function (s) { return s.id === currentRateStudentId; });
-    if (student && student.studentNumber) {
+    if (student && student.studentNumber && type !== 'delay') {
         var phone = student.studentNumber;
         var msg = "السلام عليكم ولي أمر الطالب " + student.name + "،\nتم تسجيل غياب للطالب اليوم (" + label + ").\nنرجو الحرص على الحضور.";
         var url = "https://wa.me/" + phone + "?text=" + encodeURIComponent(msg);
         window.open(url, '_blank');
+    } else if (student && student.studentNumber && type === 'delay') {
+         // Maybe a softer message for delay
+         var phone = student.studentNumber;
+         var msg = "السلام عليكم ولي أمر الطالب " + student.name + "،\nتم تأجيل ورد القرآن الخاص بالطالب اليوم بناءً على طلب المعلم أو لظرف طارئ.\nسيتم استكمال الخطة من غدٍ إن شاء الله.";
+         var url = "https://wa.me/" + phone + "?text=" + encodeURIComponent(msg);
+         window.open(url, '_blank');
     }
 }
 
@@ -3999,8 +4022,8 @@ async function openStudentReport(studentId) {
             </div>
             ` : ''}
 
-            <!-- Quran Recitation Log -->
-            ${(() => {
+            <!-- Visual Calendar -->
+            ${(state.isTeacher) ? (() => {
                 const quranRecords = scores.filter(s => s.quranSection).sort((a,b) => new Date(b.date) - new Date(a.date));
                 if (quranRecords.length > 0) {
                     return `
@@ -4035,8 +4058,7 @@ async function openStudentReport(studentId) {
                     `;
                 }
                 return '';
-            })()}
-
+            })() : ''}
 
             <!-- Visual Calendar -->
             ${calendarHTML}

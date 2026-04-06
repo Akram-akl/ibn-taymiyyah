@@ -499,8 +499,8 @@ window.CurriculumManager = (function() {
                     </div>
 
                     <div class="flex-1 overflow-y-auto mb-6 pr-1">
-                        <p class="text-xs text-gray-500 mb-4 bg-teal-50 dark:bg-teal-900/20 p-3 rounded-lg border border-teal-100 dark:border-teal-800">
-                            سيتم تقسيم <b>${planData.end_page - planData.start_page + 1} صفحة</b> على <b>${schedule.length} أيام دراسة</b> بمعدل <b>${planData.weekly_pages.sun} صفحة يومياً</b>.
+                    <p class="text-xs text-gray-500 mb-4 bg-teal-50 dark:bg-teal-900/20 p-3 rounded-lg border border-teal-100 dark:border-teal-800">
+                            سيتم تقسيم <b>${planData.end_page - planData.start_page + 1} صفحة</b> على <b>${schedule.length} أيام دراسة</b> بمعدل <b>${(Math.ceil(((planData.end_page - planData.start_page + 1) / schedule.length) * 100) / 100).toFixed(2)} صفحة يومياً</b>.
                         </p>
                         ${scheduleHtml}
                     </div>
@@ -1069,7 +1069,60 @@ window.CurriculumManager = (function() {
         openIntensiveDayModal,
         updateIntensAyas,
         submitIntensiveDay,
-        recalculatePlanAfterAchievement
+        recalculatePlanAfterAchievement,
+        shiftPlansForActivityDay: async function(competitionId, dateVal, groupId = 'ALL') {
+            try {
+                // 1. Get all active plans for this level (we don't have a direct link to competition, so we use currentLevel)
+                const q = window.firebaseOps.query(
+                    window.firebaseOps.collection(window.db, "student_plans"),
+                    window.firebaseOps.where("level", "==", window.state.currentLevel),
+                    window.firebaseOps.where("status", "==", "active")
+                );
+                
+                const snap = await window.firebaseOps.getDocs(q);
+                if (snap.empty) return;
+
+                let filterMembers = [];
+                if (groupId !== 'ALL') {
+                    const group = window.state.groups.find(g => g.id === groupId);
+                    if (group) filterMembers = group.members || [];
+                }
+
+                for (const doc of snap.docs) {
+                    const plan = doc.data();
+                    plan.id = doc.id;
+
+                    // Filter if specific group requested
+                    if (groupId !== 'ALL' && !filterMembers.includes(plan.student_id)) continue;
+
+                    // Skip if today is not a study day for this specific plan
+                    const studyDays = plan.study_days || [0, 1, 2, 3, 4];
+                    const currentDay = new Date(dateVal).getDay();
+                    if (!studyDays.includes(currentDay)) continue;
+
+                    // Shift logic (same as absence but without creating an absence record)
+                    const schedule = await generateDailySchedule(plan);
+                    const todayEntry = schedule.find(s => s.date === dateVal);
+                    if (!todayEntry || !todayEntry.sections || todayEntry.sections.length === 0) continue;
+
+                    let nextDate = new Date(dateVal);
+                    do { nextDate.setDate(nextDate.getDate() + 1); } while(!studyDays.includes(nextDate.getDay()));
+                    
+                    let newEndDate = new Date(plan.end_date);
+                    do { newEndDate.setDate(newEndDate.getDate() + 1); } while(!studyDays.includes(newEndDate.getDay()));
+
+                    await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "student_plans", plan.id), {
+                        start_date: nextDate.toISOString().split('T')[0],
+                        end_date: newEndDate.toISOString().split('T')[0],
+                        start_sura: todayEntry.sections[0].suraNo,
+                        start_ayah: todayEntry.sections[0].fromAyah,
+                        updated_at: new Date().toISOString()
+                    });
+                }
+            } catch (e) {
+                console.error("Error shifting plans for activity day:", e);
+            }
+        }
     };
 })();
 
