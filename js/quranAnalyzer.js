@@ -32,7 +32,6 @@ window.QuranService = (function() {
 
         const surasMap = new Map();
         quranData.forEach(aya => {
-            if (Number(aya.aya_no) === 0) return; // Ignore potential verse 0 if it exists
             if (!surasMap.has(aya.sura_no)) {
                 surasMap.set(aya.sura_no, {
                     number: aya.sura_no,
@@ -60,7 +59,7 @@ window.QuranService = (function() {
     // Get ayahs for a specific sura
     function getAyahs(suraNo) {
         if (!isLoaded) return [];
-        return quranData.filter(aya => aya.sura_no == suraNo && Number(aya.aya_no) > 0);
+        return quranData.filter(aya => aya.sura_no == suraNo);
     }
     
     // Quick helper to format sura description
@@ -181,7 +180,7 @@ window.QuranService = (function() {
                 a.aya_no >= sec.fromAyah &&
                 a.aya_no <= sec.toAyah
             );
-            html += `<div class="mb-8">`;
+            html += `<div class="mb-12 pb-8 border-b-2 border-gray-100 dark:border-gray-700 last:border-0 block">`;
             html += `<div class="bg-amber-200/60 dark:bg-amber-900/40 rounded-xl py-3 px-6 mb-4 text-center border border-amber-300 dark:border-amber-700">`;
             html += `<h3 class="text-xl font-bold text-amber-900 dark:text-amber-200">سورة ${sec.suraName}</h3>`;
             html += `<p class="text-xs text-amber-700 dark:text-amber-400 mt-1">آية ${sec.fromAyah} إلى ${sec.toAyah}</p>`;

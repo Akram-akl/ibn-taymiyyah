@@ -1705,44 +1705,75 @@ function getGradingModalsHTML() {
                                                 
                                                 <div class="p-6 overflow-y-auto flex-1">
                                                     <!-- Quran tracking inputs (Teacher grading) -->
-                                                     <div id="rate-quran-section" class="hidden mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right space-y-3">
-                                                         <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">📖 تسجيل الحفظ / المراجعة</h4>
-                                                         <!-- Type selector -->
-                                                         <div class="grid grid-cols-2 gap-2">
-                                                             <button id="btn-type-hifz" onclick="setQuranType('memorization')" class="py-2 rounded-lg text-xs font-bold border-2 border-emerald-400 bg-emerald-100 text-emerald-700">📝 حفظ</button>
-                                                             <button id="btn-type-muraja" onclick="setQuranType('review')" class="py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500">🔄 مراجعة</button>
-                                                         </div>
-                                                         <input type="hidden" id="rate-quran-type" value="memorization">
-                                                         <!-- Start range -->
-                                                         <div>
-                                                             <p class="text-[10px] font-bold text-gray-500 mb-1">من (البداية)</p>
+                                                                                                          <div id="rate-quran-section" class="hidden mb-4 space-y-4">
+                                                         <!-- Hifz Box -->
+                                                         <div class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right space-y-3 shadow-sm">
+                                                             <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">📝 تسجيل الحفظ</h4>
                                                              <div class="grid grid-cols-2 gap-2">
-                                                                 <select id="rate-quran-start-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('start')">
-                                                                     <option value="">السورة..</option>
-                                                                 </select>
-                                                                 <select id="rate-quran-start-aya" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
-                                                                     <option value="">الآية..</option>
-                                                                 </select>
+                                                                 <div>
+                                                                     <p class="text-[10px] font-bold text-gray-500 mb-1">من سورة</p>
+                                                                     <select id="rate-quran-start-sura-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('start', 'memorization')">
+                                                                         <option value="">السورة..</option>
+                                                                     </select>
+                                                                 </div>
+                                                                 <div>
+                                                                     <p class="text-[10px] font-bold text-gray-500 mb-1">من آية</p>
+                                                                     <select id="rate-quran-start-aya-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                                                         <option value="">الآية..</option>
+                                                                     </select>
+                                                                 </div>
+                                                                 <div>
+                                                                     <p class="text-[10px] font-bold text-gray-500 mb-1">إلى سورة</p>
+                                                                     <select id="rate-quran-end-sura-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('end', 'memorization')">
+                                                                         <option value="">السورة..</option>
+                                                                     </select>
+                                                                 </div>
+                                                                 <div>
+                                                                     <p class="text-[10px] font-bold text-gray-500 mb-1">إلى آية</p>
+                                                                     <select id="rate-quran-end-aya-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                                                         <option value="">الآية..</option>
+                                                                     </select>
+                                                                 </div>
                                                              </div>
+                                                             <button onclick="submitQuranRecord('memorization')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
+                                                                 <i data-lucide="save" class="w-4 h-4"></i>حفظ المقطع
+                                                             </button>
                                                          </div>
-                                                         <!-- End range -->
-                                                         <div>
-                                                             <p class="text-[10px] font-bold text-gray-500 mb-1">إلى (النهاية)</p>
+
+                                                         <!-- Murajaa Box -->
+                                                         <div class="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-800 text-right space-y-3 shadow-sm">
+                                                             <h4 class="font-bold text-xs text-blue-700 dark:text-blue-400 flex items-center gap-1">🔄 تسجيل المراجعة</h4>
                                                              <div class="grid grid-cols-2 gap-2">
-                                                                 <select id="rate-quran-end-sura" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('end')">
-                                                                     <option value="">السورة..</option>
-                                                                 </select>
-                                                                 <select id="rate-quran-end-aya" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
-                                                                     <option value="">الآية..</option>
-                                                                 </select>
+                                                                 <div>
+                                                                     <p class="text-[10px] font-bold text-gray-500 mb-1">من سورة</p>
+                                                                     <select id="rate-quran-start-sura-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('start', 'review')">
+                                                                         <option value="">السورة..</option>
+                                                                     </select>
+                                                                 </div>
+                                                                 <div>
+                                                                     <p class="text-[10px] font-bold text-gray-500 mb-1">من آية</p>
+                                                                     <select id="rate-quran-start-aya-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                                                         <option value="">الآية..</option>
+                                                                     </select>
+                                                                 </div>
+                                                                 <div>
+                                                                     <p class="text-[10px] font-bold text-gray-500 mb-1">إلى سورة</p>
+                                                                     <select id="rate-quran-end-sura-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('end', 'review')">
+                                                                         <option value="">السورة..</option>
+                                                                     </select>
+                                                                 </div>
+                                                                 <div>
+                                                                     <p class="text-[10px] font-bold text-gray-500 mb-1">إلى آية</p>
+                                                                     <select id="rate-quran-end-aya-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                                                         <option value="">الآية..</option>
+                                                                     </select>
+                                                                 </div>
                                                              </div>
+                                                             <button onclick="submitQuranRecord('review')" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
+                                                                 <i data-lucide="save" class="w-4 h-4"></i>حفظ المراجعة
+                                                             </button>
                                                          </div>
-                                                         <!-- Save button -->
-                                                         <button onclick="submitQuranRecord()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
-                                                             <i data-lucide="save" class="w-4 h-4"></i>
-                                                             حفظ المقطع القرآني
-                                                         </button>
-                                                     </div>                       
+                                                     </div>                     
                                                     <div id="rate-quran-plan-display" class="hidden mb-3 text-sm text-center bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 p-2 rounded-lg font-bold text-teal-700 dark:text-teal-400"></div>
     
                                                     <p id="rate-date-display" class="text-center text-sm text-gray-500 mb-4 font-bold bg-gray-100 dark:bg-gray-700 py-1 rounded-lg"></p>
@@ -2605,29 +2636,34 @@ function openRateStudent(studentId) {
     currentRateStudentId = studentId;
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : 'تقييم الطالب';
-
     // Show and initialize quran section
     const quranSec = document.getElementById('rate-quran-section');
     if (quranSec) {
         quranSec.classList.remove('hidden');
-        // Initialize Sura dropdowns if not already filled
-        const startSuraSelect = document.getElementById('rate-quran-start-sura');
-        const endSuraSelect = document.getElementById('rate-quran-end-sura');
-        
-        if (startSuraSelect && startSuraSelect.options.length <= 1) {
+        const startSuraMemorization = document.getElementById('rate-quran-start-sura-memorization');
+        if (startSuraMemorization && startSuraMemorization.options.length <= 1) {
             const suras = window.QuranService.getSuras();
             const optionsHtml = suras.map(s => `<option value="${s.number}">${s.name}</option>`).join('');
-            startSuraSelect.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
-            endSuraSelect.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
+            
+            ['memorization', 'review'].forEach(type => {
+                const sSura = document.getElementById(`rate-quran-start-sura-${type}`);
+                const eSura = document.getElementById(`rate-quran-end-sura-${type}`);
+                if(sSura) sSura.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
+                if(eSura) eSura.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
+            });
         }
         
         // Reset selections
-        startSuraSelect.value = "";
-        endSuraSelect.value = "";
-        document.getElementById('rate-quran-start-aya').innerHTML = '<option value="">الآية..</option>';
-        document.getElementById('rate-quran-start-aya').disabled = true;
-        document.getElementById('rate-quran-end-aya').innerHTML = '<option value="">الآية..</option>';
-        document.getElementById('rate-quran-end-aya').disabled = true;
+        ['memorization', 'review'].forEach(type => {
+            const startS = document.getElementById(`rate-quran-start-sura-${type}`);
+            const endS = document.getElementById(`rate-quran-end-sura-${type}`);
+            if(startS) startS.value = "";
+            if(endS) endS.value = "";
+            const startA = document.getElementById(`rate-quran-start-aya-${type}`);
+            if(startA) { startA.innerHTML = '<option value="">الآية..</option>'; startA.disabled = true; }
+            const endA = document.getElementById(`rate-quran-end-aya-${type}`);
+            if(endA) { endA.innerHTML = '<option value="">الآية..</option>'; endA.disabled = true; }
+        });
     }
 
     // عرض التاريخ
@@ -2693,10 +2729,9 @@ window.setQuranType = (type) => {
         btnHifz.className = "py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500";
     }
 };
-
-window.updateQuranAyas = (rangeType) => {
-    const suraNo = document.getElementById(`rate-quran-${rangeType}-sura`).value;
-    const ayaSelect = document.getElementById(`rate-quran-${rangeType}-aya`);
+window.updateQuranAyas = (rangeType, type) => {
+    const suraNo = document.getElementById(`rate-quran-${rangeType}-sura-${type}`).value;
+    const ayaSelect = document.getElementById(`rate-quran-${rangeType}-aya-${type}`);
     
     if (!suraNo) {
         ayaSelect.innerHTML = '<option value="">الآية..</option>';
@@ -2709,12 +2744,11 @@ window.updateQuranAyas = (rangeType) => {
     ayaSelect.innerHTML = `<option value="">الآية..</option>` + optionsHtml;
     ayaSelect.disabled = false;
 
-    // If start is selected, auto-select end sura same as start for convenience
     if (rangeType === 'start') {
-        const endSuraSelect = document.getElementById('rate-quran-end-sura');
+        const endSuraSelect = document.getElementById(`rate-quran-end-sura-${type}`);
         if (!endSuraSelect.value) {
             endSuraSelect.value = suraNo;
-            window.updateQuranAyas('end');
+            window.updateQuranAyas('end', type);
         }
     }
 };
@@ -2778,60 +2812,46 @@ async function submitScore(criteriaId, points, criteriaName, type) {
         showToast("خطأ في الرصد", "error");
     }
 }
-
-window.submitQuranRecord = async () => {
+window.submitQuranRecord = async (quranType) => {
     if (!currentRateStudentId || !currentGradingCompId) return;
 
     const dateVal = $('#grading-date').value;
     if (!dateVal) {
-        showToast("\u064a\u0631\u062c\u0649 \u0627\u062e\u062a\u064a\u0627\u0631 \u0627\u0644\u062a\u0627\u0631\u064a\u062e", "error");
+        showToast("يرجى اختيار التاريخ", "error");
         return;
     }
 
-    const quranType = document.getElementById('rate-quran-type').value; // 'memorization' or 'review'
-    const startSuraNo = document.getElementById('rate-quran-start-sura').value;
-    const startAyaNo = document.getElementById('rate-quran-start-aya').value;
-    const endSuraNo = document.getElementById('rate-quran-end-sura').value;
-    const endAyaNo = document.getElementById('rate-quran-end-aya').value;
+    const startSuraNo = document.getElementById(`rate-quran-start-sura-${quranType}`).value;
+    const startAyaNo = document.getElementById(`rate-quran-start-aya-${quranType}`).value;
+    const endSuraNo = document.getElementById(`rate-quran-end-sura-${quranType}`).value;
+    const endAyaNo = document.getElementById(`rate-quran-end-aya-${quranType}`).value;
 
     if (!startSuraNo || !startAyaNo || !endSuraNo || !endAyaNo) {
-        showToast("\u064a\u0631\u062c\u0649 \u062a\u062d\u062f\u064a\u062f \u0627\u0644\u0633\u0648\u0631\u0629 \u0648\u0627\u0644\u0622\u064a\u0629 \u0628\u062f\u0627\u064a\u0629 \u0648\u0646\u0647\u0627\u064a\u0629", "error");
+        showToast("يرجى تحديد السورة والآية بداية ونهاية", "error");
         return;
     }
 
-    // Build section label per-sura (no merging)
     const suras = window.QuranService.getSuras();
     const startSura = suras.find(s => s.number == startSuraNo);
     const endSura = suras.find(s => s.number == endSuraNo);
 
     let sectionParts = [];
     if (startSuraNo === endSuraNo) {
-        sectionParts.push(`\u0633\u0648\u0631\u0629 ${ startSura ? startSura.name : startSuraNo }: \u0622\u064a\u0629 ${startAyaNo} \u2013 ${endAyaNo}`);
+        sectionParts.push(`سورة ${ startSura ? startSura.name : startSuraNo }: آية ${startAyaNo} – ${endAyaNo}`);
     } else {
-        sectionParts.push(`\u0633\u0648\u0631\u0629 ${ startSura ? startSura.name : startSuraNo }: \u0645\u0646 \u0622\u064a\u0629 ${startAyaNo}`);
-        // Suras in between
+        sectionParts.push(`سورة ${ startSura ? startSura.name : startSuraNo }: من آية ${startAyaNo}`);
         const startNum = parseInt(startSuraNo);
         const endNum = parseInt(endSuraNo);
         for (let i = startNum + 1; i < endNum; i++) {
             const mid = suras.find(s => s.number == i);
-            if (mid) sectionParts.push(`\u0633\u0648\u0631\u0629 ${mid.name}: \u0643\u0627\u0645\u0644\u0629`);
+            if (mid) sectionParts.push(`سورة ${mid.name}: كاملة`);
         }
-        sectionParts.push(`\u0633\u0648\u0631\u0629 ${ endSura ? endSura.name : endSuraNo }: \u062d\u062a\u0649 \u0622\u064a\u0629 ${endAyaNo}`);
+        sectionParts.push(`سورة ${ endSura ? endSura.name : endSuraNo }: حتى آية ${endAyaNo}`);
     }
     const quranSection = sectionParts.join(' | ');
 
     const criteriaId = quranType === 'memorization' ? 'QURAN_MEMORIZATION' : 'QURAN_REVIEW';
-    const criteriaName = quranType === 'memorization' ? '\u062d\u0641\u0638' : '\u0645\u0631\u0627\u062c\u0639\u0629';
-
-    const sSura = Number(startSuraNo);
-    const sAya = Number(startAyaNo);
-    const eSura = Number(endSuraNo);
-    const eAya = Number(endAyaNo);
-
-    if (sSura < 1 || sAya < 1 || eSura < 1 || eAya < 1) {
-        showToast("يرجى اختيار السور والآيات بشكل صحيح (لا يوجد آية 0)", "error");
-        return;
-    }
+    const criteriaName = quranType === 'memorization' ? 'حفظ' : 'مراجعة';
 
     const data = {
         studentId: currentRateStudentId,
@@ -2843,10 +2863,10 @@ window.submitQuranRecord = async () => {
         type: quranType,
         quranType,
         quranSection,
-        quranStartSura: sSura,
-        quranStartAya: sAya,
-        quranEndSura: eSura,
-        quranEndAya: eAya,
+        quranStartSura: Number(startSuraNo),
+        quranStartAya: Number(startAyaNo),
+        quranEndSura: Number(endSuraNo),
+        quranEndAya: Number(endAyaNo),
         level: state.currentLevel,
         date: dateVal,
         updatedAt: new Date(),
@@ -2854,7 +2874,6 @@ window.submitQuranRecord = async () => {
     };
 
     try {
-        // Check if a quran record of the same type already exists for this student/date
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
             window.firebaseOps.where("studentId", "==", currentRateStudentId),
@@ -2864,18 +2883,17 @@ window.submitQuranRecord = async () => {
         const snap = await window.firebaseOps.getDocs(q);
         if (!snap.empty) {
             await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "scores", snap.docs[0].id), data);
-            showToast("\u062a\u0645 \u062a\u062d\u062f\u064a\u062b \u0627\u0644\u0645\u0642\u0637\u0639 \u0627\u0644\u0642\u0631\u0622\u0646\u064a", "success");
+            showToast(quranType === 'memorization' ? "تم تعديل الحفظ" : "تم تعديل المراجعة", "success");
         } else {
             data.createdAt = new Date();
             await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
-            showToast("\u062a\u0645 \u062d\u0641\u0638 \u0627\u0644\u0645\u0642\u0637\u0639 \u0627\u0644\u0642\u0631\u0622\u0646\u064a \u0628\u0646\u062c\u0627\u062d \u2728", "success");
+            showToast(quranType === 'memorization' ? "تم تسجيل الحفظ بنجاح ✨" : "تم تسجيل المراجعة بنجاح ✨", "success");
         }
     } catch (e) {
         console.error(e);
-        showToast("\u062e\u0637\u0623 \u0641\u064a \u062d\u0641\u0638 \u0627\u0644\u0645\u0642\u0637\u0639", "error");
+        showToast("خطأ في الاتصال بالخادم", "error");
     }
 };
-
 
 // Student Edit Security Check
 let currentActivityGroupId = null;
