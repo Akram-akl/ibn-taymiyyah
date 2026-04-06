@@ -2833,10 +2833,10 @@ window.submitQuranRecord = async () => {
         type: quranType,
         quranType,
         quranSection,
-        quranStartSura: parseInt(startSuraNo),
-        quranStartAya: parseInt(startAyaNo),
-        quranEndSura: parseInt(endSuraNo),
-        quranEndAya: parseInt(endAyaNo),
+        quranStartSura: Number(startSuraNo),
+        quranStartAya: Number(startAyaNo),
+        quranEndSura: Number(endSuraNo),
+        quranEndAya: Number(endAyaNo),
         level: state.currentLevel,
         date: dateVal,
         updatedAt: new Date(),
@@ -4275,51 +4275,56 @@ window.showDayDetails = (dateStr) => {
             }
 
             const sections = [];
-            const startSura = parseInt(score.quranStartSura);
-            const endSura = parseInt(score.quranEndSura);
-            const startAya = parseInt(score.quranStartAya);
-            const endAya = parseInt(score.quranEndAya);
+        const startSura = Number(score.quranStartSura);
+        const endSura = Number(score.quranEndSura);
+        const startAya = Number(score.quranStartAya);
+        const endAya = Number(score.quranEndAya);
 
-            const suras = window.QuranService.getSuras();
+        if (isNaN(startSura) || isNaN(endSura) || isNaN(startAya) || isNaN(endAya)) {
+            showToast('بيانات الآيات غير مكتملة في هذا السجل', 'error');
+            return;
+        }
 
-            if (startSura === endSura) {
-                const sObj = suras.find(s => s.number == startSura);
-                sections.push({
-                    suraNo: startSura,
-                    suraName: sObj ? sObj.name : startSura,
-                    fromAyah: startAya,
-                    toAyah: endAya
-                });
-            } else {
-                // Start Sura
-                const sObjStart = suras.find(s => s.number == startSura);
-                sections.push({
-                    suraNo: startSura,
-                    suraName: sObjStart ? sObjStart.name : startSura,
-                    fromAyah: startAya,
-                    toAyah: sObjStart ? sObjStart.total_ayahs : 300 // Max safety
-                });
-                // Middle Suras
-                for (let i = startSura + 1; i < endSura; i++) {
-                    const mid = suras.find(s => s.number == i);
-                    if (mid) {
-                        sections.push({
-                            suraNo: i,
-                            suraName: mid.name,
-                            fromAyah: 1,
-                            toAyah: mid.total_ayahs
-                        });
-                    }
+        const suras = window.QuranService.getSuras();
+
+        if (startSura === endSura) {
+            const sObj = suras.find(s => s.number == startSura);
+            sections.push({
+                suraNo: startSura,
+                suraName: sObj ? sObj.name : startSura,
+                fromAyah: startAya,
+                toAyah: endAya
+            });
+        } else {
+            // Start Sura
+            const sObjStart = suras.find(s => s.number == startSura);
+            sections.push({
+                suraNo: startSura,
+                suraName: sObjStart ? sObjStart.name : startSura,
+                fromAyah: startAya,
+                toAyah: sObjStart ? sObjStart.total_ayahs : 300 // Max safety
+            });
+            // Middle Suras
+            for (let i = startSura + 1; i < endSura; i++) {
+                const mid = suras.find(s => s.number == i);
+                if (mid) {
+                    sections.push({
+                        suraNo: i,
+                        suraName: mid.name,
+                        fromAyah: 1,
+                        toAyah: mid.total_ayahs
+                    });
                 }
-                // End Sura
-                const sObjEnd = suras.find(s => s.number == endSura);
-                sections.push({
-                    suraNo: endSura,
-                    suraName: sObjEnd ? sObjEnd.name : endSura,
-                    fromAyah: 1,
-                    toAyah: endAya
-                });
             }
+            // End Sura
+            const sObjEnd = suras.find(s => s.number == endSura);
+            sections.push({
+                suraNo: endSura,
+                suraName: sObjEnd ? sObjEnd.name : endSura,
+                fromAyah: 1,
+                toAyah: endAya
+            });
+        }
 
             const ayahsHtml = window.QuranService.getTextForSections(sections);
             
@@ -6341,3 +6346,7 @@ async function calculateAndRenderStats() {
     }
 }
 
+// Auto-load Quran data on start
+if (window.QuranService) {
+    window.QuranService.loadData().catch(console.error);
+}

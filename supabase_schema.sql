@@ -87,7 +87,13 @@ CREATE TABLE IF NOT EXISTS scores (
     "date" TEXT,
     timestamp BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()) * 1000,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    quran_type TEXT,
+    quran_section TEXT,
+    quran_start_sura INTEGER,
+    quran_end_sura INTEGER,
+    quran_start_aya INTEGER,
+    quran_end_aya INTEGER
 );
 
 DO $$ 
