@@ -2929,8 +2929,8 @@ window.submitQuranRecord = async (quranType) => {
             showToast(quranType === 'memorization' ? "تم تسجيل الحفظ بنجاح ✨" : "تم تسجيل المراجعة بنجاح ✨", "success");
         }
     } catch (e) {
-        console.error(e);
-        showToast("خطأ في الاتصال بالخادم", "error");
+        console.error("Submission Error:", e);
+        showToast("خطأ: " + (e.message || "فشل الاتصال بالخادم"), "error");
     }
 };
 
@@ -4356,11 +4356,24 @@ window.showDayDetails = (dateStr) => {
         const suras = window.QuranService.getSuras();
         if (startSura === endSura) {
             const sObj = suras.find(s => s.number == startSura);
+            const allAyahsInSura = window.QuranService.getAyahs(startSura).filter(a => a.aya_no > 0);
+            
+            // Adjust old zeroes properly
+            let safeStart = startAya > 0 ? startAya : 1;
+            let safeEnd = endAya > 0 ? endAya : (allAyahsInSura.length > 0 ? Math.max(...allAyahsInSura.map(a => a.aya_no)) : 300);
+
+            // Important: Fix the "shows 1 aya" issue where toAyah is less than fromAyah due to backwards old selection
+            if (safeEnd < safeStart) {
+                let temp = safeStart;
+                safeStart = safeEnd;
+                safeEnd = temp;
+            }
+
             sections.push({
                 suraNo: startSura,
                 suraName: sObj ? sObj.name : startSura,
-                fromAyah: startAya,
-                toAyah: endAya
+                fromAyah: safeStart,
+                toAyah: safeEnd
             });
         } else {
             // سورة البداية
