@@ -2739,7 +2739,8 @@ window.updateQuranAyas = (rangeType, type) => {
         return;
     }
     
-    const ayahs = window.QuranService.getAyahs(suraNo);
+    // جلب الآيات مع تصفية الآية رقم 0 (البسملة) حتى لا تظهر أبداً
+    const ayahs = window.QuranService.getAyahs(suraNo).filter(a => a.aya_no > 0);
     const optionsHtml = ayahs.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
     ayaSelect.innerHTML = `<option value="">الآية..</option>` + optionsHtml;
     ayaSelect.disabled = false;
@@ -2752,6 +2753,7 @@ window.updateQuranAyas = (rangeType, type) => {
         }
     }
 };
+
 
 async function submitScore(criteriaId, points, criteriaName, type) {
     if (!currentRateStudentId || !currentGradingCompId) return;
@@ -2820,36 +2822,32 @@ window.submitQuranRecord = async (quranType) => {
         showToast("يرجى اختيار التاريخ", "error");
         return;
     }
-
-    const startSuraNo = document.getElementById(`rate-quran-start-sura-${quranType}`).value;
-    const startAyaNo = document.getElementById(`rate-quran-start-aya-${quranType}`).value;
-    const endSuraNo = document.getElementById(`rate-quran-end-sura-${quranType}`).value;
-    const endAyaNo = document.getElementById(`rate-quran-end-aya-${quranType}`).value;
-
-    if (!startSuraNo || !startAyaNo || !endSuraNo || !endAyaNo) {
-        showToast("يرجى تحديد السورة والآية بداية ونهاية", "error");
-        return;
-    }
-
     const suras = window.QuranService.getSuras();
     const startSura = suras.find(s => s.number == startSuraNo);
     const endSura = suras.find(s => s.number == endSuraNo);
 
     let sectionParts = [];
     if (startSuraNo === endSuraNo) {
-        sectionParts.push(`سورة ${ startSura ? startSura.name : startSuraNo }: آية ${startAyaNo} – ${endAyaNo}`);
+        sectionParts.push(`سورة ${ startSura ? startSura.name : startSuraNo } من آية ${startAyaNo} إلى آية ${endAyaNo}`);
     } else {
-        sectionParts.push(`سورة ${ startSura ? startSura.name : startSuraNo }: من آية ${startAyaNo}`);
+        // حساب آخر آية في سورة البداية لطباعتها
+        const allStartAyahs = window.QuranService.getAyahs(startSuraNo);
+        const lastAyaInStart = Math.max(...allStartAyahs.map(a => a.aya_no), 0) || "نهاية السورة";
+        
+        sectionParts.push(`سورة ${ startSura ? startSura.name : startSuraNo } من آية ${startAyaNo} إلى آية ${lastAyaInStart}`);
+        
+        // السور التي تقع في المنتصف
         const startNum = parseInt(startSuraNo);
         const endNum = parseInt(endSuraNo);
         for (let i = startNum + 1; i < endNum; i++) {
             const mid = suras.find(s => s.number == i);
-            if (mid) sectionParts.push(`سورة ${mid.name}: كاملة`);
+            if (mid) sectionParts.push(`سورة ${mid.name} كاملة`);
         }
-        sectionParts.push(`سورة ${ endSura ? endSura.name : endSuraNo }: حتى آية ${endAyaNo}`);
+        
+        // سورة النهاية (تكون دائماً من آية 1 إلى الآية المختارة)
+        sectionParts.push(`سورة ${ endSura ? endSura.name : endSuraNo } من آية 1 إلى آية ${endAyaNo}`);
     }
     const quranSection = sectionParts.join(' | ');
-
     const criteriaId = quranType === 'memorization' ? 'QURAN_MEMORIZATION' : 'QURAN_REVIEW';
     const criteriaName = quranType === 'memorization' ? 'حفظ' : 'مراجعة';
 
@@ -4314,7 +4312,6 @@ window.showDayDetails = (dateStr) => {
         }
 
         const suras = window.QuranService.getSuras();
-
         if (startSura === endSura) {
             const sObj = suras.find(s => s.number == startSura);
             sections.push({
@@ -4324,27 +4321,31 @@ window.showDayDetails = (dateStr) => {
                 toAyah: endAya
             });
         } else {
-            // Start Sura
+            // سورة البداية
             const sObjStart = suras.find(s => s.number == startSura);
+            const startAll = window.QuranService.getAyahs(startSura);
             sections.push({
                 suraNo: startSura,
                 suraName: sObjStart ? sObjStart.name : startSura,
-                fromAyah: startAya,
-                toAyah: sObjStart ? sObjStart.total_ayahs : 300 // Max safety
+                fromAyah: startAya > 0 ? startAya : 1, // التأكد ألا تكون قيمة صفر
+                toAyah: Math.max(...startAll.map(a => a.aya_no), 0) || 300 
             });
-            // Middle Suras
+            
+            // السور التي في المنتصف
             for (let i = startSura + 1; i < endSura; i++) {
                 const mid = suras.find(s => s.number == i);
+                const midAll = window.QuranService.getAyahs(i);
                 if (mid) {
                     sections.push({
                         suraNo: i,
                         suraName: mid.name,
                         fromAyah: 1,
-                        toAyah: mid.total_ayahs
+                        toAyah: Math.max(...midAll.map(a => a.aya_no), 0) || 300
                     });
                 }
             }
-            // End Sura
+            
+            // سورة النهاية
             const sObjEnd = suras.find(s => s.number == endSura);
             sections.push({
                 suraNo: endSura,
@@ -4353,7 +4354,6 @@ window.showDayDetails = (dateStr) => {
                 toAyah: endAya
             });
         }
-
             const ayahsHtml = window.QuranService.getTextForSections(sections);
             
             let viewerModal = document.getElementById('quran-ayah-viewer');
