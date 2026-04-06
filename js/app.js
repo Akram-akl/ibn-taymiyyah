@@ -4261,6 +4261,93 @@ window.showDayDetails = (dateStr) => {
             </div>
             `;
         });
+
+        window._openQuranForScore = (scoreId) => {
+            const score = uniqueScores.find(s => s.id === scoreId);
+            if (!score || !score.quranStartSura || !score.quranEndSura) {
+                showToast('التفاصيل الدقيقة للآيات غير متوفرة لهذا السجل القديم', 'error');
+                return;
+            }
+            
+            if (!window.QuranService || !window.QuranService.isLoaded()) {
+                showToast('برجاء الانتظار لحين تحميل المصحف', 'error');
+                return;
+            }
+
+            const sections = [];
+            const startSura = parseInt(score.quranStartSura);
+            const endSura = parseInt(score.quranEndSura);
+            const startAya = parseInt(score.quranStartAya);
+            const endAya = parseInt(score.quranEndAya);
+
+            const suras = window.QuranService.getSuras();
+
+            if (startSura === endSura) {
+                const sObj = suras.find(s => s.number == startSura);
+                sections.push({
+                    suraNo: startSura,
+                    suraName: sObj ? sObj.name : startSura,
+                    fromAyah: startAya,
+                    toAyah: endAya
+                });
+            } else {
+                // Start Sura
+                const sObjStart = suras.find(s => s.number == startSura);
+                sections.push({
+                    suraNo: startSura,
+                    suraName: sObjStart ? sObjStart.name : startSura,
+                    fromAyah: startAya,
+                    toAyah: sObjStart ? sObjStart.total_ayahs : 300 // Max safety
+                });
+                // Middle Suras
+                for (let i = startSura + 1; i < endSura; i++) {
+                    const mid = suras.find(s => s.number == i);
+                    if (mid) {
+                        sections.push({
+                            suraNo: i,
+                            suraName: mid.name,
+                            fromAyah: 1,
+                            toAyah: mid.total_ayahs
+                        });
+                    }
+                }
+                // End Sura
+                const sObjEnd = suras.find(s => s.number == endSura);
+                sections.push({
+                    suraNo: endSura,
+                    suraName: sObjEnd ? sObjEnd.name : endSura,
+                    fromAyah: 1,
+                    toAyah: endAya
+                });
+            }
+
+            const ayahsHtml = window.QuranService.getTextForSections(sections);
+            
+            let viewerModal = document.getElementById('quran-ayah-viewer');
+            if (!viewerModal) {
+                viewerModal = document.createElement('div');
+                viewerModal.id = 'quran-ayah-viewer';
+                document.body.appendChild(viewerModal);
+            }
+            viewerModal.className = 'fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in';
+            viewerModal.innerHTML = `
+                <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+                    <div class="flex justify-between items-center p-5 border-b border-gray-100 dark:border-gray-700">
+                        <h3 class="font-bold text-lg text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+                            <i data-lucide="book-open" class="w-5 h-5"></i>
+                            عرض السور والآيات
+                        </h3>
+                        <button onclick="document.getElementById('quran-ayah-viewer').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 p-2 rounded-full transition">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div class="p-6 overflow-y-auto space-y-6">
+                        ${ayahsHtml}
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+        };
     }
 
     html += `</div>`;
@@ -4284,93 +4371,6 @@ window.showDayDetails = (dateStr) => {
         </div>
     `;
     lucide.createIcons();
-
-    window._openQuranForScore = (scoreId) => {
-        const score = uniqueScores.find(s => s.id === scoreId);
-        if (!score || !score.quranStartSura || !score.quranEndSura) {
-            showToast('التفاصيل الدقيقة للآيات غير متوفرة لهذا السجل القديم', 'error');
-            return;
-        }
-        
-        if (!window.QuranService || !window.QuranService.isLoaded()) {
-            showToast('برجاء الانتظار لحين تحميل المصحف', 'error');
-            return;
-        }
-
-        const sections = [];
-        const startSura = parseInt(score.quranStartSura);
-        const endSura = parseInt(score.quranEndSura);
-        const startAya = parseInt(score.quranStartAya);
-        const endAya = parseInt(score.quranEndAya);
-
-        const suras = window.QuranService.getSuras();
-
-        if (startSura === endSura) {
-            const sObj = suras.find(s => s.number == startSura);
-            sections.push({
-                suraNo: startSura,
-                suraName: sObj ? sObj.name : startSura,
-                fromAyah: startAya,
-                toAyah: endAya
-            });
-        } else {
-            // Start Sura
-            const sObjStart = suras.find(s => s.number == startSura);
-            sections.push({
-                suraNo: startSura,
-                suraName: sObjStart ? sObjStart.name : startSura,
-                fromAyah: startAya,
-                toAyah: sObjStart ? sObjStart.total_ayahs : 300 // Max safety
-            });
-            // Middle Suras
-            for (let i = startSura + 1; i < endSura; i++) {
-                const mid = suras.find(s => s.number == i);
-                if (mid) {
-                    sections.push({
-                        suraNo: i,
-                        suraName: mid.name,
-                        fromAyah: 1,
-                        toAyah: mid.total_ayahs
-                    });
-                }
-            }
-            // End Sura
-            const sObjEnd = suras.find(s => s.number == endSura);
-            sections.push({
-                suraNo: endSura,
-                suraName: sObjEnd ? sObjEnd.name : endSura,
-                fromAyah: 1,
-                toAyah: endAya
-            });
-        }
-
-        const ayahsHtml = window.QuranService.getTextForSections(sections);
-        
-        let viewerModal = document.getElementById('quran-ayah-viewer');
-        if (!viewerModal) {
-            viewerModal = document.createElement('div');
-            viewerModal.id = 'quran-ayah-viewer';
-            document.body.appendChild(viewerModal);
-        }
-        viewerModal.className = 'fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in';
-        viewerModal.innerHTML = `
-            <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
-                <div class="flex justify-between items-center p-5 border-b border-gray-100 dark:border-gray-700">
-                    <h3 class="font-bold text-lg text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                        <i data-lucide="book-open" class="w-5 h-5"></i>
-                        عرض السور والآيات
-                    </h3>
-                    <button onclick="document.getElementById('quran-ayah-viewer').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 p-2 rounded-full transition">
-                        <i data-lucide="x" class="w-5 h-5"></i>
-                    </button>
-                </div>
-                <div class="p-6 overflow-y-auto space-y-6">
-                    ${ayahsHtml}
-                </div>
-            </div>
-        `;
-        lucide.createIcons();
-    };
 };
 
 function contactTeacher(studentName, teacherPhone) {
