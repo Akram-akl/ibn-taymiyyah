@@ -177,6 +177,7 @@ window.QuranService = (function() {
         sections.forEach(sec => {
             const ayahs = quranData.filter(a =>
                 a.sura_no == sec.suraNo &&
+                a.aya_no > 0 &&
                 a.aya_no >= sec.fromAyah &&
                 a.aya_no <= sec.toAyah
             );

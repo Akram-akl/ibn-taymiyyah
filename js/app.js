@@ -1735,6 +1735,17 @@ function getGradingModalsHTML() {
                                                                      </select>
                                                                  </div>
                                                              </div>
+                                                             <div>
+                                                                 <p class="text-[10px] font-bold text-gray-500 mb-1">التقدير</p>
+                                                                 <select id="rate-quran-grade-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold">
+                                                                     <option value="">اختر التقدير..</option>
+                                                                     <option value="ممتاز">⭐ ممتاز</option>
+                                                                     <option value="جيد جداً">✨ جيد جداً</option>
+                                                                     <option value="مقبول">👍 مقبول</option>
+                                                                     <option value="سيء">⚠️ سيء</option>
+                                                                     <option value="لم يحفظ">❌ لم يحفظ</option>
+                                                                 </select>
+                                                             </div>
                                                              <button onclick="submitQuranRecord('memorization')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
                                                                  <i data-lucide="save" class="w-4 h-4"></i>حفظ المقطع
                                                              </button>
@@ -1768,6 +1779,17 @@ function getGradingModalsHTML() {
                                                                          <option value="">الآية..</option>
                                                                      </select>
                                                                  </div>
+                                                             </div>
+                                                             <div>
+                                                                 <p class="text-[10px] font-bold text-gray-500 mb-1">التقدير</p>
+                                                                 <select id="rate-quran-grade-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold">
+                                                                     <option value="">اختر التقدير..</option>
+                                                                     <option value="ممتاز">⭐ ممتاز</option>
+                                                                     <option value="جيد جداً">✨ جيد جداً</option>
+                                                                     <option value="مقبول">👍 مقبول</option>
+                                                                     <option value="سيء">⚠️ سيء</option>
+                                                                     <option value="لم يراجع">❌ لم يراجع</option>
+                                                                 </select>
                                                              </div>
                                                              <button onclick="submitQuranRecord('review')" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
                                                                  <i data-lucide="save" class="w-4 h-4"></i>حفظ المراجعة
@@ -2663,6 +2685,8 @@ function openRateStudent(studentId) {
             if(startA) { startA.innerHTML = '<option value="">الآية..</option>'; startA.disabled = true; }
             const endA = document.getElementById(`rate-quran-end-aya-${type}`);
             if(endA) { endA.innerHTML = '<option value="">الآية..</option>'; endA.disabled = true; }
+            const gradeEl = document.getElementById(`rate-quran-grade-${type}`);
+            if(gradeEl) gradeEl.value = "";
         });
     }
 
@@ -2822,6 +2846,22 @@ window.submitQuranRecord = async (quranType) => {
         showToast("يرجى اختيار التاريخ", "error");
         return;
     }
+
+    const startSuraNo = document.getElementById(`rate-quran-start-sura-${quranType}`).value;
+    const startAyaNo = document.getElementById(`rate-quran-start-aya-${quranType}`).value;
+    const endSuraNo = document.getElementById(`rate-quran-end-sura-${quranType}`).value;
+    const endAyaNo = document.getElementById(`rate-quran-end-aya-${quranType}`).value;
+    const quranGrade = document.getElementById(`rate-quran-grade-${quranType}`).value;
+
+    if (!startSuraNo || !startAyaNo || !endSuraNo || !endAyaNo) {
+        showToast("يرجى تحديد السورة والآية بداية ونهاية", "error");
+        return;
+    }
+    if (!quranGrade) {
+        showToast("يرجى اختيار التقدير", "error");
+        return;
+    }
+
     const suras = window.QuranService.getSuras();
     const startSura = suras.find(s => s.number == startSuraNo);
     const endSura = suras.find(s => s.number == endSuraNo);
@@ -2830,9 +2870,9 @@ window.submitQuranRecord = async (quranType) => {
     if (startSuraNo === endSuraNo) {
         sectionParts.push(`سورة ${ startSura ? startSura.name : startSuraNo } من آية ${startAyaNo} إلى آية ${endAyaNo}`);
     } else {
-        // حساب آخر آية في سورة البداية لطباعتها
-        const allStartAyahs = window.QuranService.getAyahs(startSuraNo);
-        const lastAyaInStart = Math.max(...allStartAyahs.map(a => a.aya_no), 0) || "نهاية السورة";
+        // حساب آخر آية في سورة البداية من ملف البيانات
+        const allStartAyahs = window.QuranService.getAyahs(startSuraNo).filter(a => a.aya_no > 0);
+        const lastAyaInStart = allStartAyahs.length > 0 ? Math.max(...allStartAyahs.map(a => a.aya_no)) : "نهاية السورة";
         
         sectionParts.push(`سورة ${ startSura ? startSura.name : startSuraNo } من آية ${startAyaNo} إلى آية ${lastAyaInStart}`);
         
@@ -2861,6 +2901,7 @@ window.submitQuranRecord = async (quranType) => {
         type: quranType,
         quranType,
         quranSection,
+        quranGrade,
         quranStartSura: Number(startSuraNo),
         quranStartAya: Number(startAyaNo),
         quranEndSura: Number(endSuraNo),
@@ -4279,6 +4320,7 @@ window.showDayDetails = (dateStr) => {
                 <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
                     <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع:</p>
                     <p class="text-xs text-gray-600 dark:text-gray-400 mb-2 font-bold">${s.quranSection}</p>
+                    ${s.quranGrade ? `<p class="text-xs font-bold mb-2 px-2 py-1 rounded-lg inline-block ${s.quranGrade === 'ممتاز' ? 'bg-green-100 text-green-700' : s.quranGrade === 'جيد جداً' ? 'bg-blue-100 text-blue-700' : s.quranGrade === 'مقبول' ? 'bg-yellow-100 text-yellow-700' : s.quranGrade === 'سيء' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}">🏅 التقدير: ${s.quranGrade}</p>` : ''}
                     <button onclick="window._openQuranForScore('${s.id}')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2">
                         <i data-lucide="book-open" class="w-4 h-4"></i> عرض الآيات
                     </button>
@@ -4323,24 +4365,24 @@ window.showDayDetails = (dateStr) => {
         } else {
             // سورة البداية
             const sObjStart = suras.find(s => s.number == startSura);
-            const startAll = window.QuranService.getAyahs(startSura);
+            const startAll = window.QuranService.getAyahs(startSura).filter(a => a.aya_no > 0);
             sections.push({
                 suraNo: startSura,
                 suraName: sObjStart ? sObjStart.name : startSura,
-                fromAyah: startAya > 0 ? startAya : 1, // التأكد ألا تكون قيمة صفر
-                toAyah: Math.max(...startAll.map(a => a.aya_no), 0) || 300 
+                fromAyah: startAya > 0 ? startAya : 1,
+                toAyah: startAll.length > 0 ? Math.max(...startAll.map(a => a.aya_no)) : 300
             });
             
             // السور التي في المنتصف
             for (let i = startSura + 1; i < endSura; i++) {
                 const mid = suras.find(s => s.number == i);
-                const midAll = window.QuranService.getAyahs(i);
+                const midAll = window.QuranService.getAyahs(i).filter(a => a.aya_no > 0);
                 if (mid) {
                     sections.push({
                         suraNo: i,
                         suraName: mid.name,
                         fromAyah: 1,
-                        toAyah: Math.max(...midAll.map(a => a.aya_no), 0) || 300
+                        toAyah: midAll.length > 0 ? Math.max(...midAll.map(a => a.aya_no)) : 300
                     });
                 }
             }
@@ -4351,7 +4393,7 @@ window.showDayDetails = (dateStr) => {
                 suraNo: endSura,
                 suraName: sObjEnd ? sObjEnd.name : endSura,
                 fromAyah: 1,
-                toAyah: endAya
+                toAyah: endAya > 0 ? endAya : 1
             });
         }
             const ayahsHtml = window.QuranService.getTextForSections(sections);

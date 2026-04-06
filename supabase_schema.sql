@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS scores (
     quran_start_sura INTEGER,
     quran_end_sura INTEGER,
     quran_start_aya INTEGER,
-    quran_end_aya INTEGER
+    quran_end_aya INTEGER,
+    quran_grade TEXT
 );
 
 DO $$ 
