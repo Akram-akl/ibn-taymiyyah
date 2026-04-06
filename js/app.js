@@ -1500,32 +1500,7 @@ function getCompetitionModalsHTML() {
                                                 <button type="button" onclick="addCriteriaItem()" class="text-teal-600 text-sm font-bold flex items-center gap-1">+ إضافة معيار</button>
                                             </div>
 
-                                            <div class="mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                                                <h4 class="font-bold text-sm text-emerald-800 dark:text-emerald-300 mb-3 flex items-center gap-2">
-                                                    <i data-lucide="book" class="w-4 h-4"></i>
-                                                    نقاط الخطط القرآنية (تلقائي)
-                                                </h4>
-                                                <div class="grid grid-cols-2 gap-3 mb-3">
-                                                    <div>
-                                                        <label class="block text-[10px] font-bold mb-1">نقاط الحفظ (موجب)</label>
-                                                        <input type="number" id="comp-memorization-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2 text-center text-sm" value="3">
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-[10px] font-bold mb-1">نقاط المراجعة (موجب)</label>
-                                                        <input type="number" id="comp-review-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2 text-center text-sm" value="2">
-                                                    </div>
-                                                </div>
-                                                <div class="grid grid-cols-2 gap-3">
-                                                    <div>
-                                                        <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ الحفظ (سالب)</label>
-                                                        <input type="number" id="comp-memorization-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-center text-sm text-red-600" value="1">
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ المراجعة (سالب)</label>
-                                                        <input type="number" id="comp-review-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-center text-sm text-red-600" value="1">
-                                                    </div>
-                                                </div>
-                                            </div>
+
 
                                             <div class="mb-4 bg-orange-50 dark:bg-orange-900/10 p-4 rounded-xl border border-orange-100 dark:border-orange-800">
                                                 <h4 class="font-bold text-sm text-orange-800 dark:text-orange-300 mb-3 flex items-center gap-2">
@@ -2631,9 +2606,29 @@ function openRateStudent(studentId) {
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : 'تقييم الطالب';
 
-    // Hide old quran plan section if it exists
+    // Show and initialize quran section
     const quranSec = document.getElementById('rate-quran-section');
-    if (quranSec) quranSec.classList.add('hidden');
+    if (quranSec) {
+        quranSec.classList.remove('hidden');
+        // Initialize Sura dropdowns if not already filled
+        const startSuraSelect = document.getElementById('rate-quran-start-sura');
+        const endSuraSelect = document.getElementById('rate-quran-end-sura');
+        
+        if (startSuraSelect && startSuraSelect.options.length <= 1) {
+            const suras = window.QuranService.getSuras();
+            const optionsHtml = suras.map(s => `<option value="${s.number}">${s.name}</option>`).join('');
+            startSuraSelect.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
+            endSuraSelect.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
+        }
+        
+        // Reset selections
+        startSuraSelect.value = "";
+        endSuraSelect.value = "";
+        document.getElementById('rate-quran-start-aya').innerHTML = '<option value="">الآية..</option>';
+        document.getElementById('rate-quran-start-aya').disabled = true;
+        document.getElementById('rate-quran-end-aya').innerHTML = '<option value="">الآية..</option>';
+        document.getElementById('rate-quran-end-aya').disabled = true;
+    }
 
     // عرض التاريخ
     const dateVal = $('#grading-date').value;
@@ -2684,6 +2679,45 @@ function openRateStudent(studentId) {
     toggleModal('rate-student-modal', true);
     lucide.createIcons();
 }
+
+window.setQuranType = (type) => {
+    document.getElementById('rate-quran-type').value = type;
+    const btnHifz = document.getElementById('btn-type-hifz');
+    const btnMuraja = document.getElementById('btn-type-muraja');
+    
+    if (type === 'memorization') {
+        btnHifz.className = "py-2 rounded-lg text-xs font-bold border-2 border-emerald-400 bg-emerald-100 text-emerald-700";
+        btnMuraja.className = "py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500";
+    } else {
+        btnMuraja.className = "py-2 rounded-lg text-xs font-bold border-2 border-blue-400 bg-blue-100 text-blue-700";
+        btnHifz.className = "py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500";
+    }
+};
+
+window.updateQuranAyas = (rangeType) => {
+    const suraNo = document.getElementById(`rate-quran-${rangeType}-sura`).value;
+    const ayaSelect = document.getElementById(`rate-quran-${rangeType}-aya`);
+    
+    if (!suraNo) {
+        ayaSelect.innerHTML = '<option value="">الآية..</option>';
+        ayaSelect.disabled = true;
+        return;
+    }
+    
+    const ayahs = window.QuranService.getAyahs(suraNo);
+    const optionsHtml = ayahs.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
+    ayaSelect.innerHTML = `<option value="">الآية..</option>` + optionsHtml;
+    ayaSelect.disabled = false;
+
+    // If start is selected, auto-select end sura same as start for convenience
+    if (rangeType === 'start') {
+        const endSuraSelect = document.getElementById('rate-quran-end-sura');
+        if (!endSuraSelect.value) {
+            endSuraSelect.value = suraNo;
+            window.updateQuranAyas('end');
+        }
+    }
+};
 
 async function submitScore(criteriaId, points, criteriaName, type) {
     if (!currentRateStudentId || !currentGradingCompId) return;
@@ -2744,6 +2778,94 @@ async function submitScore(criteriaId, points, criteriaName, type) {
         showToast("خطأ في الرصد", "error");
     }
 }
+
+window.submitQuranRecord = async () => {
+    if (!currentRateStudentId || !currentGradingCompId) return;
+
+    const dateVal = $('#grading-date').value;
+    if (!dateVal) {
+        showToast("\u064a\u0631\u062c\u0649 \u0627\u062e\u062a\u064a\u0627\u0631 \u0627\u0644\u062a\u0627\u0631\u064a\u062e", "error");
+        return;
+    }
+
+    const quranType = document.getElementById('rate-quran-type').value; // 'memorization' or 'review'
+    const startSuraNo = document.getElementById('rate-quran-start-sura').value;
+    const startAyaNo = document.getElementById('rate-quran-start-aya').value;
+    const endSuraNo = document.getElementById('rate-quran-end-sura').value;
+    const endAyaNo = document.getElementById('rate-quran-end-aya').value;
+
+    if (!startSuraNo || !startAyaNo || !endSuraNo || !endAyaNo) {
+        showToast("\u064a\u0631\u062c\u0649 \u062a\u062d\u062f\u064a\u062f \u0627\u0644\u0633\u0648\u0631\u0629 \u0648\u0627\u0644\u0622\u064a\u0629 \u0628\u062f\u0627\u064a\u0629 \u0648\u0646\u0647\u0627\u064a\u0629", "error");
+        return;
+    }
+
+    // Build section label per-sura (no merging)
+    const suras = window.QuranService.getSuras();
+    const startSura = suras.find(s => s.number == startSuraNo);
+    const endSura = suras.find(s => s.number == endSuraNo);
+
+    let sectionParts = [];
+    if (startSuraNo === endSuraNo) {
+        sectionParts.push(`\u0633\u0648\u0631\u0629 ${ startSura ? startSura.name : startSuraNo }: \u0622\u064a\u0629 ${startAyaNo} \u2013 ${endAyaNo}`);
+    } else {
+        sectionParts.push(`\u0633\u0648\u0631\u0629 ${ startSura ? startSura.name : startSuraNo }: \u0645\u0646 \u0622\u064a\u0629 ${startAyaNo}`);
+        // Suras in between
+        const startNum = parseInt(startSuraNo);
+        const endNum = parseInt(endSuraNo);
+        for (let i = startNum + 1; i < endNum; i++) {
+            const mid = suras.find(s => s.number == i);
+            if (mid) sectionParts.push(`\u0633\u0648\u0631\u0629 ${mid.name}: \u0643\u0627\u0645\u0644\u0629`);
+        }
+        sectionParts.push(`\u0633\u0648\u0631\u0629 ${ endSura ? endSura.name : endSuraNo }: \u062d\u062a\u0649 \u0622\u064a\u0629 ${endAyaNo}`);
+    }
+    const quranSection = sectionParts.join(' | ');
+
+    const criteriaId = quranType === 'memorization' ? 'QURAN_MEMORIZATION' : 'QURAN_REVIEW';
+    const criteriaName = quranType === 'memorization' ? '\u062d\u0641\u0638' : '\u0645\u0631\u0627\u062c\u0639\u0629';
+
+    const data = {
+        studentId: currentRateStudentId,
+        competitionId: currentGradingCompId,
+        groupId: currentGradingGroupId || null,
+        criteriaId,
+        criteriaName,
+        points: 0,
+        type: quranType,
+        quranType,
+        quranSection,
+        quranStartSura: parseInt(startSuraNo),
+        quranStartAya: parseInt(startAyaNo),
+        quranEndSura: parseInt(endSuraNo),
+        quranEndAya: parseInt(endAyaNo),
+        level: state.currentLevel,
+        date: dateVal,
+        updatedAt: new Date(),
+        timestamp: Date.now()
+    };
+
+    try {
+        // Check if a quran record of the same type already exists for this student/date
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "scores"),
+            window.firebaseOps.where("studentId", "==", currentRateStudentId),
+            window.firebaseOps.where("date", "==", dateVal),
+            window.firebaseOps.where("criteriaId", "==", criteriaId)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        if (!snap.empty) {
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "scores", snap.docs[0].id), data);
+            showToast("\u062a\u0645 \u062a\u062d\u062f\u064a\u062b \u0627\u0644\u0645\u0642\u0637\u0639 \u0627\u0644\u0642\u0631\u0622\u0646\u064a", "success");
+        } else {
+            data.createdAt = new Date();
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
+            showToast("\u062a\u0645 \u062d\u0641\u0638 \u0627\u0644\u0645\u0642\u0637\u0639 \u0627\u0644\u0642\u0631\u0622\u0646\u064a \u0628\u0646\u062c\u0627\u062d \u2728", "success");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("\u062e\u0637\u0623 \u0641\u064a \u062d\u0641\u0638 \u0627\u0644\u0645\u0642\u0637\u0639", "error");
+    }
+};
+
 
 // Student Edit Security Check
 let currentActivityGroupId = null;
@@ -3027,10 +3149,6 @@ async function openEditCompetition(id) {
         $('#competition-id').value = id;
         $('#competition-name').value = data.name || '';
         $('#competition-emoji').value = data.icon || '🏆';
-        $('#comp-memorization-points').value = data.memorizationPoints || 3;
-        $('#comp-review-points').value = data.reviewPoints || 2;
-        $('#comp-memorization-negative-points').value = data.memorizationNegativePoints || 1;
-        $('#comp-review-negative-points').value = data.reviewNegativePoints || 1;
         $('#comp-absent-excuse').value = data.absentExcuse || 1;
         $('#comp-absent-no-excuse').value = data.absentNoExcuse || 4;
         $('#comp-activity-points').value = data.activityPoints || 0;
@@ -3206,11 +3324,6 @@ async function handleSaveCompetition(e) {
         const id = document.getElementById('competition-id').value;
         const name = document.getElementById('competition-name').value;
         const icon = document.getElementById('competition-emoji').value;
-        
-        const memorizationPoints = parseInt(document.getElementById('comp-memorization-points').value) || 3;
-        const reviewPoints = parseInt(document.getElementById('comp-review-points').value) || 2;
-        const memorizationNegativePoints = parseInt(document.getElementById('comp-memorization-negative-points').value) || 1;
-        const reviewNegativePoints = parseInt(document.getElementById('comp-review-negative-points').value) || 1;
 
         const absentExcuse = parseInt(document.getElementById('comp-absent-excuse').value) || 1;
         const absentNoExcuse = parseInt(document.getElementById('comp-absent-no-excuse').value) || 4;
@@ -3237,10 +3350,6 @@ async function handleSaveCompetition(e) {
             name,
             icon,
             criteria: criteriaVals,
-            memorizationPoints,
-            reviewPoints,
-            memorizationNegativePoints,
-            reviewNegativePoints,
             absentExcuse,
             absentNoExcuse,
             activityPoints,
@@ -3933,43 +4042,7 @@ async function openStudentReport(studentId) {
             </div>
             ` : ''}
 
-            <!-- Quran Recitation Log -->
-            ${(() => {
-                const quranRecords = scores.filter(s => s.quranSection).sort((a,b) => new Date(b.date) - new Date(a.date));
-                if (quranRecords.length > 0) {
-                    return `
-                     <div class="bg-white dark:bg-gray-800 rounded-2xl p-5 mb-5 shadow-sm border border-gray-100 dark:border-gray-700">
-                         <div class="flex items-center gap-2 mb-4">
-                             <div class="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
-                                 <i data-lucide="book" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i>
-                             </div>
-                             <h3 class="font-bold text-gray-800 dark:text-gray-100">سجل التسميع (قرآن)</h3>
-                         </div>
-                         <div class="space-y-3">
-                             ${quranRecords.map(r => `
-                                 <div class="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-100 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 transition-all shadow-sm">
-                                     <div class="flex justify-between items-start">
-                                         <div class="flex-1">
-                                             <div class="flex items-center gap-2 mb-2">
-                                                 <span class="text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm border ${r.quranType === 'review' ? 'bg-blue-600 text-white border-blue-500' : 'bg-emerald-600 text-white border-emerald-500'}">
-                                                     ${r.quranType === 'review' ? '🔄 مراجعة' : '📝 حفظ'}
-                                                 </span>
-                                                 <span class="text-[10px] font-bold text-gray-400">${r.date}</span>
-                                             </div>
-                                             <p class="font-bold text-sm text-gray-800 dark:text-gray-100">${r.quranSection}</p>
-                                         </div>
-                                         <div class="text-emerald-500">
-                                             <i data-lucide="check-circle-2" class="w-5 h-5"></i>
-                                         </div>
-                                     </div>
-                                 </div>
-                             `).join('')}
-                         </div>
-                     </div>
-                    `;
-                }
-                return '';
-            })()}
+            <!-- Quran Recitation Log (Removed) -->
 
 
             <!-- Visual Calendar -->
@@ -4037,9 +4110,15 @@ window.renderStudentCalendar = (year, month) => {
     const scoresByDate = {};
     scores.forEach(s => {
         if (!s.date) return;
-        if (!scoresByDate[s.date]) scoresByDate[s.date] = { points: 0, criteria: [] };
+        if (!scoresByDate[s.date]) scoresByDate[s.date] = { points: 0, criteria: [], hasQuran: false, quranTypes: [] };
         scoresByDate[s.date].points += (parseInt(s.points) || 0);
         scoresByDate[s.date].criteria.push(s.criteriaName || (s.criteriaId === 'ABSENCE_RECORD' ? 'غياب' : 'أخرى'));
+        if (s.quranType) {
+            scoresByDate[s.date].hasQuran = true;
+            if (!scoresByDate[s.date].quranTypes.includes(s.quranType)) {
+                scoresByDate[s.date].quranTypes.push(s.quranType);
+            }
+        }
     });
     
     let calendarDaysHTML = '';
@@ -4067,9 +4146,17 @@ window.renderStudentCalendar = (year, month) => {
             if (isAbsence) {
                 dayClass = 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-red-400 transition';
                 dayContentTags.push(`<span class="text-[10px] mt-0.5" title="${dayData.criteria.join(', ')}">❌</span>`);
-            } else if (dayData.points > 0) {
+            } else if (dayData.points > 0 || dayData.hasQuran) {
                 dayClass = 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-green-400 transition';
-                dayContentTags.push(`<span class="text-[10px] font-bold text-green-600 mt-0.5" title="${dayData.criteria.join(', ')}">+${dayData.points}</span>`);
+                if (dayData.points > 0) {
+                    dayContentTags.push(`<span class="text-[10px] font-bold text-green-600 mt-0.5" title="${dayData.criteria.join(', ')}">+${dayData.points}</span>`);
+                }
+                if (dayData.hasQuran) {
+                    let qIcons = '';
+                    if (dayData.quranTypes.includes('memorization')) qIcons += '📝';
+                    if (dayData.quranTypes.includes('review')) qIcons += '🔄';
+                    dayContentTags.push(`<span class="text-[10px] mt-0.5" title="سجل قرآن">${qIcons}</span>`);
+                }
             } else if (dayData.points < 0) {
                 dayClass = 'bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-orange-400 transition';
                 dayContentTags.push(`<span class="text-[10px] font-bold text-orange-600 mt-0.5" title="${dayData.criteria.join(', ')}">${dayData.points}</span>`);
@@ -4204,12 +4291,85 @@ window.showDayDetails = (dateStr) => {
             showToast('التفاصيل الدقيقة للآيات غير متوفرة لهذا السجل القديم', 'error');
             return;
         }
-        if (!window.QuranService) {
+        
+        if (!window.QuranService || !window.QuranService.isLoaded()) {
             showToast('برجاء الانتظار لحين تحميل المصحف', 'error');
             return;
         }
+
+        const sections = [];
+        const startSura = parseInt(score.quranStartSura);
+        const endSura = parseInt(score.quranEndSura);
+        const startAya = parseInt(score.quranStartAya);
+        const endAya = parseInt(score.quranEndAya);
+
+        const suras = window.QuranService.getSuras();
+
+        if (startSura === endSura) {
+            const sObj = suras.find(s => s.number == startSura);
+            sections.push({
+                suraNo: startSura,
+                suraName: sObj ? sObj.name : startSura,
+                fromAyah: startAya,
+                toAyah: endAya
+            });
+        } else {
+            // Start Sura
+            const sObjStart = suras.find(s => s.number == startSura);
+            sections.push({
+                suraNo: startSura,
+                suraName: sObjStart ? sObjStart.name : startSura,
+                fromAyah: startAya,
+                toAyah: sObjStart ? sObjStart.total_ayahs : 300 // Max safety
+            });
+            // Middle Suras
+            for (let i = startSura + 1; i < endSura; i++) {
+                const mid = suras.find(s => s.number == i);
+                if (mid) {
+                    sections.push({
+                        suraNo: i,
+                        suraName: mid.name,
+                        fromAyah: 1,
+                        toAyah: mid.total_ayahs
+                    });
+                }
+            }
+            // End Sura
+            const sObjEnd = suras.find(s => s.number == endSura);
+            sections.push({
+                suraNo: endSura,
+                suraName: sObjEnd ? sObjEnd.name : endSura,
+                fromAyah: 1,
+                toAyah: endAya
+            });
+        }
+
+        const ayahsHtml = window.QuranService.getTextForSections(sections);
         
-        showToast('تفاصيل الآيات: ' + score.quranSection, 'success');
+        let viewerModal = document.getElementById('quran-ayah-viewer');
+        if (!viewerModal) {
+            viewerModal = document.createElement('div');
+            viewerModal.id = 'quran-ayah-viewer';
+            document.body.appendChild(viewerModal);
+        }
+        viewerModal.className = 'fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in';
+        viewerModal.innerHTML = `
+            <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+                <div class="flex justify-between items-center p-5 border-b border-gray-100 dark:border-gray-700">
+                    <h3 class="font-bold text-lg text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+                        <i data-lucide="book-open" class="w-5 h-5"></i>
+                        عرض السور والآيات
+                    </h3>
+                    <button onclick="document.getElementById('quran-ayah-viewer').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 p-2 rounded-full transition">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div class="p-6 overflow-y-auto space-y-6">
+                    ${ayahsHtml}
+                </div>
+            </div>
+        `;
+        lucide.createIcons();
     };
 };
 
