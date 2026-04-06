@@ -2823,6 +2823,16 @@ window.submitQuranRecord = async () => {
     const criteriaId = quranType === 'memorization' ? 'QURAN_MEMORIZATION' : 'QURAN_REVIEW';
     const criteriaName = quranType === 'memorization' ? '\u062d\u0641\u0638' : '\u0645\u0631\u0627\u062c\u0639\u0629';
 
+    const sSura = Number(startSuraNo);
+    const sAya = Number(startAyaNo);
+    const eSura = Number(endSuraNo);
+    const eAya = Number(endAyaNo);
+
+    if (sSura < 1 || sAya < 1 || eSura < 1 || eAya < 1) {
+        showToast("يرجى اختيار السور والآيات بشكل صحيح (لا يوجد آية 0)", "error");
+        return;
+    }
+
     const data = {
         studentId: currentRateStudentId,
         competitionId: currentGradingCompId,
@@ -2833,10 +2843,10 @@ window.submitQuranRecord = async () => {
         type: quranType,
         quranType,
         quranSection,
-        quranStartSura: Number(startSuraNo),
-        quranStartAya: Number(startAyaNo),
-        quranEndSura: Number(endSuraNo),
-        quranEndAya: Number(endAyaNo),
+        quranStartSura: sSura,
+        quranStartAya: sAya,
+        quranEndSura: eSura,
+        quranEndAya: eAya,
         level: state.currentLevel,
         date: dateVal,
         updatedAt: new Date(),
