@@ -1155,19 +1155,6 @@ function renderSettings() {
              ${teacherInfoHTML}
 
              ${state.isTeacher ? `
-             <!-- Level Settings (Study Days) -->
-             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border mb-4 mt-4">
-                 <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="calendar-days" class="w-5 h-5 text-indigo-600"></i> أيام الحلقة الافتراضية</h3>
-                 <p class="text-[10px] text-gray-500 mb-3">الأيام الافتراضية لخطط التسميع. في حال كانت خطة الطالب تختلف عن هذه الأيام، سيظهر تنبيه يمكنك إخفاؤه.</p>
-                 <div class="flex flex-wrap gap-2 mb-3" id="global-study-days-container">
-                     <div class="w-full text-center text-gray-400 py-2"><i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto"></i></div>
-                 </div>
-                 <button onclick="saveGlobalStudyDays()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition shadow-md flex items-center justify-center gap-2">
-                     <i data-lucide="save" class="w-4 h-4"></i>
-                     حفظ الأيام الافتراضية
-                 </button>
-             </div>
-
              <!-- Export & Tools -->
              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
                  <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="wrench" class="w-5 h-5 text-teal-600"></i> أدوات</h3>
