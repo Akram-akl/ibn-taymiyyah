@@ -22,9 +22,8 @@ const state = {
     scores: [],
     darkMode: localStorage.getItem('darkMode') === 'true',
     studentPassword: null, // For student mode authentication persistence
-    quranEnabled: true,
+
 };
-window.state = state;
 
 // --- Supabase Realtime Listeners ---
 let studentsUnsubscribe = null;
@@ -1138,7 +1137,7 @@ function renderSettings() {
         <div class="space-y-4 animate-fade-in">
              <h2 class="text-xl font-bold mb-4">الإعدادات</h2>
              
-             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm mb-4">
+             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
                  <div class="flex items-center justify-between">
                      <div class="flex items-center gap-3">
                          <div class="bg-gray-100 dark:bg-gray-700 p-2 rounded-lg">
@@ -1151,6 +1150,9 @@ function renderSettings() {
                      </button>
                  </div>
              </div>
+
+
+
 
              ${teacherInfoHTML}
 
@@ -1182,53 +1184,6 @@ function renderSettings() {
     // Load existing teachers list
     if (state.isTeacher) {
         loadTeachersList();
-    }
-}
-
-async function loadQuranToggle() {
-    const container = document.getElementById('quran-reader-toggle-container');
-    if (!container) return;
-    try {
-        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "level_settings"), window.firebaseOps.where("level", "==", state.currentLevel), window.firebaseOps.where("feature_name", "==", "quran_reader"));
-        const snap = await window.firebaseOps.getDocs(q);
-        let isEnabled = true;
-        if (!snap.empty) {
-            const data = snap.docs[0].data();
-            if (data.isEnabled !== undefined) isEnabled = data.isEnabled;
-        }
-        state.quranEnabled = isEnabled;
-        
-        container.innerHTML = `
-            <button onclick="toggleQuranReaderFeature(${!isEnabled})" class="w-12 h-7 ${isEnabled ? 'bg-indigo-600' : 'bg-gray-200'} rounded-full relative transition-colors duration-300">
-                 <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${isEnabled ? 'left-6' : 'left-1'} transition-all duration-300 shadow-sm"></div>
-            </button>
-        `;
-    } catch (e) { console.error(e); }
-}
-
-async function toggleQuranReaderFeature(setToEnable) {
-    const container = document.getElementById('quran-reader-toggle-container');
-    container.innerHTML = '<div class="text-center text-gray-400"><i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto"></i></div>';
-    if (window.lucide) window.lucide.createIcons();
-    
-    try {
-        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "level_settings"), window.firebaseOps.where("level", "==", state.currentLevel), window.firebaseOps.where("feature_name", "==", "quran_reader"));
-        const snap = await window.firebaseOps.getDocs(q);
-        
-        const data = { level: state.currentLevel, featureName: 'quran_reader', isEnabled: setToEnable, updatedAt: new Date() };
-        if (!snap.empty) {
-            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "level_settings", snap.docs[0].id), data);
-        } else {
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "level_settings"), data);
-        }
-        state.quranEnabled = setToEnable;
-        
-        showToast(setToEnable ? 'تم تفعيل التسميع' : 'تم إيقاف ميزة التسميع', 'success');
-        loadQuranToggle();
-    } catch(e) {
-        console.error(e);
-        showToast('خطأ في الإعدادات', 'error');
-        loadQuranToggle();
     }
 }
 
@@ -1438,14 +1393,6 @@ function getStudentModalHTML() {
                      <input type="hidden" id="student-memorization">
                      <input type="hidden" id="student-review">
 
-                     <div id="student-plan-management-section" class="hidden mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 mb-4">
-                         <label class="block text-sm font-bold mb-2 flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4 text-teal-600"></i> إدارة الخطط القرآنية</label>
-                         <div class="grid grid-cols-2 gap-2">
-                             <button type="button" onclick="closeModal('student-modal'); window.CurriculumManager.openPlanModal(document.getElementById('student-id').value, 'memorization')" class="py-2.5 bg-teal-50 text-teal-700 rounded-xl text-xs font-bold hover:bg-teal-100 transition border border-teal-200 flex justify-center items-center gap-1"><i data-lucide="book" class="w-4 h-4"></i> خطة الحفظ</button>
-                             <button type="button" onclick="closeModal('student-modal'); window.CurriculumManager.openPlanModal(document.getElementById('student-id').value, 'review')" class="py-2.5 bg-purple-50 text-purple-700 rounded-xl text-xs font-bold hover:bg-purple-100 transition border border-purple-200 flex justify-center items-center gap-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i> خطة المراجعة</button>
-                         </div>
-                     </div>
-
 
                      
                      <div class="mb-2">
@@ -1553,34 +1500,48 @@ function getCompetitionModalsHTML() {
                                                 <button type="button" onclick="addCriteriaItem()" class="text-teal-600 text-sm font-bold flex items-center gap-1">+ إضافة معيار</button>
                                             </div>
 
-                                             <div class="mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                                                 <h4 class="font-bold text-sm text-emerald-800 dark:text-emerald-300 mb-3 flex items-center gap-2">
-                                                     <i data-lucide="book" class="w-4 h-4"></i>
-                                                     مكافآت وخصومات الخطط القرآنية
-                                                 </h4>
-                                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                                                     <div>
-                                                         <label class="block text-[10px] font-bold mb-1">نقاط إنجاز الحفظ (+)</label>
-                                                         <input type="number" id="comp-memorization-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2.5 text-center text-sm font-bold text-emerald-700" value="3">
-                                                     </div>
-                                                     <div>
-                                                         <label class="block text-[10px] font-bold mb-1">نقاط إنجاز المراجعة (+)</label>
-                                                         <input type="number" id="comp-review-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2.5 text-center text-sm font-bold text-emerald-700" value="2">
-                                                     </div>
-                                                 </div>
-                                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                     <div>
-                                                         <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ الحفظ (-)</label>
-                                                         <input type="number" id="comp-memorization-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2.5 text-center text-sm font-bold text-red-600" value="1">
-                                                     </div>
-                                                     <div>
-                                                         <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ المراجعة (-)</label>
-                                                         <input type="number" id="comp-review-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2.5 text-center text-sm font-bold text-red-600" value="1">
-                                                     </div>
-                                                 </div>
-                                             </div>
+                                            <div class="mb-4 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800">
+                                                <h4 class="font-bold text-sm text-emerald-800 dark:text-emerald-300 mb-3 flex items-center gap-2">
+                                                    <i data-lucide="book" class="w-4 h-4"></i>
+                                                    نقاط الخطط القرآنية (تلقائي)
+                                                </h4>
+                                                <div class="grid grid-cols-2 gap-3 mb-3">
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1">نقاط الحفظ (موجب)</label>
+                                                        <input type="number" id="comp-memorization-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2 text-center text-sm" value="3">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1">نقاط المراجعة (موجب)</label>
+                                                        <input type="number" id="comp-review-points" class="w-full bg-white dark:bg-gray-800 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2 text-center text-sm" value="2">
+                                                    </div>
+                                                </div>
+                                                <div class="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ الحفظ (سالب)</label>
+                                                        <input type="number" id="comp-memorization-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-center text-sm text-red-600" value="1">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[10px] font-bold mb-1 text-red-600">خصم خطأ المراجعة (سالب)</label>
+                                                        <input type="number" id="comp-review-negative-points" class="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg px-3 py-2 text-center text-sm text-red-600" value="1">
+                                                    </div>
+                                                </div>
+                                            </div>
 
                                             <div class="mb-4 bg-orange-50 dark:bg-orange-900/10 p-4 rounded-xl border border-orange-100 dark:border-orange-800">
+                                                <h4 class="font-bold text-sm text-orange-800 dark:text-orange-300 mb-3 flex items-center gap-2">
+                                                    <i data-lucide="user-x" class="w-4 h-4"></i>
+                                                    إعدادات خصم الغياب
+                                                </h4>
+                                                <div class="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label class="block text-xs font-bold mb-1">بعذر (نقاط)</label>
+                                                        <input type="number" id="comp-absent-excuse" class="w-full bg-white dark:bg-gray-800 border border-orange-200 dark:border-orange-700 rounded-lg px-3 py-2 text-center" value="1">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xs font-bold mb-1">بدون عذر (نقاط)</label>
+                                                        <input type="number" id="comp-absent-no-excuse" class="w-full bg-white dark:bg-gray-800 border border-orange-200 dark:border-orange-700 rounded-lg px-3 py-2 text-center" value="4">
+                                                    </div>
+                                                </div>
                                             </div>
                                             
                                             <div class="mb-4 bg-purple-50 dark:bg-purple-900/10 p-3 rounded-xl border border-purple-100 dark:border-purple-800">
@@ -1877,7 +1838,6 @@ function openAddStudentModal() {
     $('#student-form').reset();
     $('#student-modal-title').textContent = 'إضافة طالب جديد';
     $('#save-student-text').textContent = 'حفظ';
-    if ($('#student-plan-management-section')) $('#student-plan-management-section').classList.add('hidden');
     
     toggleModal('student-modal', true);
 }
@@ -1934,12 +1894,6 @@ async function openEditStudent(id) {
     $('#student-modal-title').textContent = 'تعديل بيانات الطالب';
     $('#save-student-text').textContent = 'تحديث';
 
-    if (state.isTeacher && state.quranEnabled !== false && $('#student-plan-management-section')) {
-        $('#student-plan-management-section').classList.remove('hidden');
-        if (window.lucide) window.lucide.createIcons();
-    } else if ($('#student-plan-management-section')) {
-        $('#student-plan-management-section').classList.add('hidden');
-    }
 
     toggleModal('student-modal', true);
 }
@@ -2677,15 +2631,9 @@ function openRateStudent(studentId) {
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : 'تقييم الطالب';
 
-    // Show/Hide quran section based on feature toggle
+    // Hide old quran plan section if it exists
     const quranSec = document.getElementById('rate-quran-section');
-    if (quranSec) {
-        if (window.state.quranEnabled !== false) {
-            quranSec.classList.remove('hidden');
-        } else {
-            quranSec.classList.add('hidden');
-        }
-    }
+    if (quranSec) quranSec.classList.add('hidden');
 
     // عرض التاريخ
     const dateVal = $('#grading-date').value;
@@ -2735,14 +2683,6 @@ function openRateStudent(studentId) {
 
     toggleModal('rate-student-modal', true);
     lucide.createIcons();
-
-    // استدعاء نظام الخطط لعرض الورد اليومي
-    const planDisplay = document.getElementById('rate-quran-plan-display');
-    if (window.CurriculumManager && state.quranEnabled !== false) {
-        CurriculumManager.renderDailyPlanForGrader(studentId, dateVal);
-    } else if (planDisplay) {
-        planDisplay.classList.add('hidden');
-    }
 }
 
 async function submitScore(criteriaId, points, criteriaName, type) {
@@ -2902,11 +2842,6 @@ async function submitActivityDay() {
             date: dateVal,
             points: activityPoints
         });
-        
-        // 1.5 NEW: Shift Quranic Plans for affected students
-        if (window.CurriculumManager && typeof window.CurriculumManager.shiftPlansForActivityDay === 'function') {
-            await window.CurriculumManager.shiftPlansForActivityDay(comp.id, dateVal, currentActivityGroupId);
-        }
 
         // 2. Save Scores using Sequential Batch for stability
         const batch = window.firebaseOps.writeBatch(window.db);
@@ -3404,9 +3339,6 @@ function openAbsenceOptions() {
                 <button onclick="confirmAbsence('no-excuse')" class="py-3 rounded-xl bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-bold transition">
                     غائب بدون عذر (-${absentNoExcuse})
                 </button>
-                <button onclick="confirmAbsence('delay')" class="py-3 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-bold transition">
-                    تأجيل الورد (فقط)
-                </button>
                 <button onclick="document.getElementById('absence-modal').remove()" class="py-2 text-gray-400 hover:text-gray-600 font-medium text-sm mt-2">إلغاء</button>
             </div>
         </div>
@@ -3420,47 +3352,26 @@ async function confirmAbsence(type) {
 
     // Get Competition Config
     const comp = state.competitions.find(c => c.id === currentGradingCompId);
-    let label = '';
-    let points = 0;
+    // Default values if not set
+    const excusePoints = parseInt((comp && comp.absentExcuse) ? comp.absentExcuse : 1);
+    const noExcusePoints = parseInt((comp && comp.absentNoExcuse) ? comp.absentNoExcuse : 4);
 
-    if (type !== 'delay') {
-        // Default values if not set
-        const excusePoints = parseInt((comp && comp.absentExcuse) ? comp.absentExcuse : 1);
-        const noExcusePoints = parseInt((comp && comp.absentNoExcuse) ? comp.absentNoExcuse : 4);
+    const points = type === 'excuse' ? -excusePoints : -noExcusePoints;
+    const label = type === 'excuse' ? 'غائب بعذر' : 'غائب بدون عذر';
 
-        points = type === 'excuse' ? -excusePoints : -noExcusePoints;
-        label = type === 'excuse' ? 'غائب بعذر' : 'غائب بدون عذر';
-
-        // Submit as a special score
-        await submitScore('ABSENCE_RECORD', points, label, 'negative');
-    } else {
-        label = 'تأجيل الورد';
-        showToast("جاري تأجيل الورد اليومي...");
-    }
+    // Submit as a special score
+    await submitScore('ABSENCE_RECORD', points, label, 'negative');
 
     var absenceModal = document.getElementById('absence-modal');
     if (absenceModal) absenceModal.remove();
 
-    // إرجاء وتحديث الخطة الزمنية في حال كانت موجودة
-    if (window.CurriculumManager && currentRateStudentId && typeof $('#grading-date') !== 'undefined') {
-        const dVal = $('#grading-date').value;
-        await CurriculumManager.shiftPlanForAbsence(currentRateStudentId, dVal);
-    }
-    
-    // Notify Parent via WhatsApp (only for real absence, not manual delay?)
-    // Let's notify for both to keep parents in the loop.
+    // Notify Parent via WhatsApp
     var student = state.students.find(function (s) { return s.id === currentRateStudentId; });
-    if (student && student.studentNumber && type !== 'delay') {
+    if (student && student.studentNumber) {
         var phone = student.studentNumber;
         var msg = "السلام عليكم ولي أمر الطالب " + student.name + "،\nتم تسجيل غياب للطالب اليوم (" + label + ").\nنرجو الحرص على الحضور.";
         var url = "https://wa.me/" + phone + "?text=" + encodeURIComponent(msg);
         window.open(url, '_blank');
-    } else if (student && student.studentNumber && type === 'delay') {
-         // Maybe a softer message for delay
-         var phone = student.studentNumber;
-         var msg = "السلام عليكم ولي أمر الطالب " + student.name + "،\nتم تأجيل ورد القرآن الخاص بالطالب اليوم بناءً على طلب المعلم أو لظرف طارئ.\nسيتم استكمال الخطة من غدٍ إن شاء الله.";
-         var url = "https://wa.me/" + phone + "?text=" + encodeURIComponent(msg);
-         window.open(url, '_blank');
     }
 }
 
@@ -4022,8 +3933,8 @@ async function openStudentReport(studentId) {
             </div>
             ` : ''}
 
-            <!-- Visual Calendar -->
-            ${(state.isTeacher) ? (() => {
+            <!-- Quran Recitation Log -->
+            ${(() => {
                 const quranRecords = scores.filter(s => s.quranSection).sort((a,b) => new Date(b.date) - new Date(a.date));
                 if (quranRecords.length > 0) {
                     return `
@@ -4058,7 +3969,8 @@ async function openStudentReport(studentId) {
                     `;
                 }
                 return '';
-            })() : ''}
+            })()}
+
 
             <!-- Visual Calendar -->
             ${calendarHTML}
@@ -4164,7 +4076,7 @@ window.renderStudentCalendar = (year, month) => {
             }
         }
         
-        if (plannedTasks.length > 0 && state.quranEnabled !== false) {
+        if (plannedTasks.length > 0) {
             const hasHifz = plannedTasks.some(p => p.planType === 'memorization');
             const hasReview = plannedTasks.some(p => p.planType === 'review');
             

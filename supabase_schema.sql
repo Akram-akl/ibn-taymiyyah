@@ -146,8 +146,7 @@ CREATE TABLE IF NOT EXISTS student_plans (
     end_ayah INTEGER NOT NULL,
     start_page NUMERIC NOT NULL,
     end_page NUMERIC NOT NULL,
-    study_days JSONB DEFAULT '[0,1,2,3,4]'::jsonb, -- NEW: stored as array of day indices
-    weekly_pages JSONB DEFAULT '{"sun":1,"mon":1,"tue":1,"wed":1,"thu":1}'::jsonb, -- Deprecated but kept for compatibility
+    study_days JSONB DEFAULT '[0,1,2,3,4]'::jsonb, -- NEW: Flexible study days (0=Sun, 4=Thu)
     level TEXT NOT NULL,
     status TEXT DEFAULT 'active', -- 'active', 'completed', 'paused'
     created_at TIMESTAMPTZ DEFAULT NOW(),

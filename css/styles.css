@@ -122,40 +122,21 @@ header {
 /* Mobile Responsiveness for Modals */
 @media (max-width: 640px) {
     .fixed > div {
-        max-height: 98vh;
+        max-height: 95vh;
         width: 100% !important;
         margin: 0;
         border-radius: 1.5rem 1.5rem 0 0;
         position: absolute;
         bottom: 0;
-        overflow-y: auto;
     }
     
     .grid-cols-2 {
         grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
     }
-
-    #competition-modal .grid.grid-cols-2,
-    #edit-group-modal .grid.grid-cols-2 {
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-        gap: 0.5rem;
-    }
     
     /* Ensure inputs don't zoom on focus in iOS */
     input, select, textarea {
         font-size: 16px !important;
-    }
-
-    /* Criteria list item responsiveness */
-    #criteria-list > div {
-        flex-wrap: wrap;
-        gap: 0.5rem;
-    }
-    #criteria-list > div > input {
-        flex: 1 0 100%;
-    }
-    #criteria-list > div > .flex {
-        flex: 1;
     }
 }
 
