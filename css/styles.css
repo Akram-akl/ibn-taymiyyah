@@ -123,10 +123,21 @@ header {
 @media (max-width: 640px) {
     .fixed > div {
         max-height: 85vh;
-        width: min(450px, calc(100% - 3rem)) !important;
+        width: min(380px, calc(100% - 2.5rem)) !important;
         margin: auto;
-        border-radius: 2rem;
+        border-radius: 2.5rem;
         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(20, 184, 166, 0.2);
+        border-radius: 10px;
     }
     
     .grid-cols-2 {

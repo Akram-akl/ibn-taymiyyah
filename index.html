@@ -84,59 +84,57 @@
         class="max-w-md mx-auto h-screen relative shadow-2xl bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm flex flex-col overflow-hidden">
 
         <!-- AUTH OVERLAY (Initial State) -->
-        <div id="auth-overlay" class="fixed inset-0 z-[100] bg-teal-800 flex items-center justify-center p-6 hidden">
-            <!-- Background Texture -->
-            <div
-                class="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48ZyBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMSI+PHBhdGggZD0iTTAgMGg0djRIMHptMCAzNmg0djRIMHptMzYgMGg0djRIMzZ6TTM2IDBoNHY0aC00eiIvPjwvZz48L2c+PC9zdmc+')]">
+        <div id="auth-overlay" class="fixed inset-0 z-[100] bg-gradient-to-br from-teal-950 via-teal-900 to-teal-800 flex items-center justify-center p-4 hidden">
+            <!-- Background Decoration -->
+            <div class="absolute inset-0 opacity-20 pointer-events-none overflow-hidden">
+                <div class="absolute -top-24 -right-24 w-96 h-96 bg-teal-500/20 rounded-full blur-3xl"></div>
+                <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl"></div>
             </div>
 
-            <div class="bg-white dark:bg-gray-900 rounded-3xl w-full max-w-sm shadow-2xl relative z-10 overflow-hidden">
+            <div class="bg-white dark:bg-gray-900 rounded-[2.5rem] w-full max-w-sm shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] relative z-10 overflow-hidden border border-white/10">
                 <div
-                    class="h-32 bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center relative overflow-hidden">
-                    <div
-                        class="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/arabesque.png')]">
-                    </div>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white drop-shadow-lg"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
+                    class="h-24 bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center relative overflow-hidden">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white drop-shadow-lg opacity-90"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
                 </div>
 
-                <div class="p-8">
-                    <h2 class="text-2xl font-bold text-center mb-2">مسابقات ابن تيمية</h2>
-                    <p class="text-center text-gray-500 text-sm mb-8">منصة التحفيظ والمسابقات القرآنية</p>
+                <div class="p-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
+                    <h1 class="text-xl font-black text-center mb-1 text-gray-800 dark:text-white">مسابقات ابن تيمية</h1>
+                    <p class="text-center text-gray-500 text-xs mb-6">منصة التحفيظ والمسابقات القرآنية</p>
 
                     <!-- Step 1: Role Selection -->
                     <div id="auth-options-panel" class="space-y-4">
                         <button onclick="handleLogin('student')"
-                            class="w-full flex items-center p-4 rounded-xl border-2 border-gray-100 dark:border-gray-700 hover:border-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition group">
-                            <div
-                                class="w-12 h-12 bg-teal-100 dark:bg-teal-900 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition">
+                            class="w-full flex items-center p-3 rounded-2xl border-2 border-gray-100 dark:border-gray-800 hover:border-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all duration-300 group">
+                                <div
+                                    class="w-10 h-10 bg-teal-100 dark:bg-teal-900 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 text-teal-700 dark:text-teal-200"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></div>
-                            <div class="mr-4 text-right">
-                                <div class="font-bold text-lg">أنا طالب</div>
-                                <div class="text-xs text-gray-400">الدخول لمتابعة نقاطي</div>
+                            <div class="mr-3 text-right">
+                                <div class="font-bold text-base">أنا طالب</div>
+                                <div class="text-[10px] text-gray-400">الدخول لمتابعة نقاطي</div>
                             </div>
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-auto text-gray-300 w-5 h-5"><path d="m15 18-6-6 6-6"/></svg>
                         </button>
 
                         <button onclick="handleLogin('teacher')"
-                            class="w-full flex items-center p-4 rounded-xl border-2 border-gray-100 dark:border-gray-700 hover:border-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition group">
-                            <div
-                                class="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition">
+                            class="w-full flex items-center p-3 rounded-2xl border-2 border-gray-100 dark:border-gray-800 hover:border-teal-500 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all duration-300 group">
+                                <div
+                                    class="w-10 h-10 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 text-purple-700 dark:text-purple-200"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/><path d="M12 7v4"/><path d="M9 11h6"/></svg></div>
-                            <div class="mr-4 text-right">
-                                <div class="font-bold text-lg">أنا معلم</div>
-                                <div class="text-xs text-gray-400">إدارة الطلاب والمسابقات</div>
+                            <div class="mr-3 text-right">
+                                <div class="font-bold text-base">أنا معلم</div>
+                                <div class="text-[10px] text-gray-400">إدارة الطلاب والمسابقات</div>
                             </div>
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-auto text-gray-300 w-5 h-5"><path d="m15 18-6-6 6-6"/></svg>
                         </button>
 
                         <button onclick="handleLogin('parent')"
-                            class="w-full flex items-center p-4 rounded-xl border-2 border-gray-100 dark:border-gray-700 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition group">
-                            <div
-                                class="w-12 h-12 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition">
+                            class="w-full flex items-center p-3 rounded-2xl border-2 border-gray-100 dark:border-gray-800 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all duration-300 group">
+                                <div
+                                    class="w-10 h-10 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center text-2xl group-hover:scale-110 transition">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 text-amber-700 dark:text-amber-200"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M10.3 4.6a4 4 0 0 1 5.7 5.7"/></svg></div>
-                            <div class="mr-4 text-right">
-                                <div class="font-bold text-lg">ولي أمر</div>
-                                <div class="text-xs text-gray-400">متابعة أداء أبنائي</div>
+                            <div class="mr-3 text-right">
+                                <div class="font-bold text-base">ولي أمر</div>
+                                <div class="text-[10px] text-gray-400">متابعة أداء أبنائي</div>
                             </div>
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-auto text-gray-300 w-5 h-5"><path d="m15 18-6-6 6-6"/></svg>
                         </button>
@@ -275,8 +273,9 @@
                             </div>
 
                             <button onclick="performParentLogin()"
-                                class="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-lg mt-4 transition">
-                                🔍 البحث عن أبنائي
+                                class="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-2xl shadow-lg mt-4 transition flex items-center justify-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                البحث عن أبنائي
                             </button>
                         </div>
                     </div>
