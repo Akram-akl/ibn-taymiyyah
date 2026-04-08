@@ -84,11 +84,19 @@
         class="max-w-md mx-auto h-screen relative shadow-2xl bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm flex flex-col overflow-hidden">
 
         <!-- AUTH OVERLAY (Initial State) -->
-        <div id="auth-overlay" class="fixed inset-0 z-[100] bg-gradient-to-br from-teal-950 via-teal-900 to-teal-800 flex items-center justify-center p-4 hidden">
-            <!-- Background Decoration -->
-            <div class="absolute inset-0 opacity-20 pointer-events-none overflow-hidden">
-                <div class="absolute -top-24 -right-24 w-96 h-96 bg-teal-500/20 rounded-full blur-3xl"></div>
-                <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl"></div>
+        <div id="auth-overlay" class="fixed inset-0 z-[100] bg-teal-950 flex items-center justify-center p-4 hidden overflow-hidden">
+            <!-- Premium Mesh Gradient -->
+            <div class="absolute inset-0 bg-gradient-to-br from-teal-950 via-teal-900 to-emerald-950"></div>
+            <div class="absolute inset-0 opacity-30" style="background: radial-gradient(circle at 20% 30%, #14b8a6 0%, transparent 50%), radial-gradient(circle at 80% 70%, #059669 0%, transparent 50%);"></div>
+
+            <!-- Subtle Geometric Texture (Repeatable SVG Pattern) -->
+            <div class="absolute inset-0 opacity-[0.03] pointer-events-none" style="background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICAgIDxwYXRoIGQ9Ik00MCAwIEw0OS4yIDMxLjUgTDgwIDQwIEw0OS4yIDQ4LjUgTDQwIDgwIEwzMC44IDQ4LjUgTDAgNDAgTDMwLjggMzEuNSBaIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEiLz4KPC9zdmc+');"></div>
+
+            <!-- Decorative Floating Octagrams (Depth) -->
+            <div class="absolute inset-0 overflow-hidden pointer-events-none">
+                <svg class="absolute -top-10 -left-10 w-64 h-64 text-teal-500/10" viewBox="0 0 100 100"><path d="M50 0 L61.2 38.8 L100 50 L61.2 61.2 L50 100 L38.8 61.2 L0 50 L38.8 38.8 Z" fill="currentColor"/></svg>
+                <svg class="absolute top-1/2 -right-20 w-80 h-80 text-emerald-500/10 blur-xl" viewBox="0 0 100 100"><path d="M50 0 L61.2 38.8 L100 50 L61.2 61.2 L50 100 L38.8 61.2 L0 50 L38.8 38.8 Z" fill="currentColor"/></svg>
+                <svg class="absolute -bottom-20 left-1/4 w-72 h-72 text-teal-400/5" viewBox="0 0 100 100"><path d="M50 0 L61.2 38.8 L100 50 L61.2 61.2 L50 100 L38.8 61.2 L0 50 L38.8 38.8 Z" fill="currentColor"/></svg>
             </div>
 
             <div class="bg-white dark:bg-gray-900 rounded-[2.5rem] w-full max-w-sm shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] relative z-10 overflow-hidden border border-white/10">
