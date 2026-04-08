@@ -103,6 +103,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='date') THEN
         ALTER TABLE scores ADD COLUMN "date" TEXT;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_grade') THEN
+        ALTER TABLE scores ADD COLUMN quran_grade TEXT;
+    END IF;
 END $$;
 
 -- 5. Teachers Table

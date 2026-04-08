@@ -3362,19 +3362,19 @@ function addCriteriaItem(name = '', pos = '', neg = '') {
     const id = Date.now() + Math.random().toString(36).substr(2, 9);
 
     const div = document.createElement('div');
-    div.className = 'flex gap-2 items-center bg-gray-50 dark:bg-gray-700 p-2 rounded-xl mb-2';
+    div.className = 'grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center bg-gray-50 dark:bg-gray-700 p-1.5 rounded-xl mb-2';
     div.innerHTML = `
-                                                            <input type="text" placeholder="اسم المعيار" class="criteria-name flex-1 bg-white dark:bg-gray-600 border rounded-lg px-3 py-2 text-sm" value="${name}" required>
-                                                                <div class="flex items-center gap-1">
-                                                                    <span class="text-xs font-bold text-green-600">+</span>
-                                                                    <input type="number" placeholder="+" class="criteria-pos w-16 bg-white dark:bg-gray-600 border rounded-lg px-2 py-2 text-sm text-center" min="1" value="${pos}" required>
-                                                                </div>
-                                                                <div class="flex items-center gap-1">
-                                                                    <span class="text-xs font-bold text-red-500">-</span>
-                                                                    <input type="number" placeholder="-" class="criteria-neg w-16 bg-white dark:bg-gray-600 border rounded-lg px-2 py-2 text-sm text-center" min="0" value="${neg}">
-                                                                </div>
-                                                                <button type="button" onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-600 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                                                `;
+            <input type="text" placeholder="اسم المعيار" class="criteria-name w-full min-w-0 bg-white dark:bg-gray-600 border rounded-lg px-2 py-2 text-xs" value="${name}" required>
+            <div class="flex items-center gap-1">
+                <span class="text-[10px] font-bold text-green-600">+</span>
+                <input type="number" placeholder="+" class="criteria-pos w-11 bg-white dark:bg-gray-600 border rounded-lg px-1 py-1.5 text-xs text-center" min="1" value="${pos}" required title="نقاط المكافأة">
+            </div>
+            <div class="flex items-center gap-1">
+                <span class="text-[10px] font-bold text-red-500">-</span>
+                <input type="number" placeholder="-" class="criteria-neg w-11 bg-white dark:bg-gray-600 border rounded-lg px-1 py-1.5 text-xs text-center" min="0" value="${neg}" title="نقاط الخصم">
+            </div>
+            <button type="button" onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-600 p-1 shrink-0"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+    `;
     container.appendChild(div);
     if (window.lucide) window.lucide.createIcons();
 }
