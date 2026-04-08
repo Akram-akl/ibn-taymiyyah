@@ -122,10 +122,11 @@ header {
 /* Mobile Responsiveness for Modals */
 @media (max-width: 640px) {
     .fixed > div {
-        max-height: 95vh;
-        width: calc(100% - 2rem) !important;
+        max-height: 85vh;
+        width: min(450px, calc(100% - 3rem)) !important;
         margin: auto;
-        border-radius: 1.5rem;
+        border-radius: 2rem;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
     
     .grid-cols-2 {
