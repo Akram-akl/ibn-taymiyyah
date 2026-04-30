@@ -5306,7 +5306,6 @@ async function exportStudentsXLSX() {
         const rows = students.map((s, i) => ({
             '#': i + 1,
             'الاسم': s.name || '',
-            'رقم الجوال': s.studentNumber || '',
             'جوال ولي الأمر': s.parentPhone || '',
             'المرحلة': levelName,
             'كلمة المرور': s.password || 'لم يتم التعيين',
@@ -5315,13 +5314,12 @@ async function exportStudentsXLSX() {
             'تاريخ الإضافة': s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : ''
         }));
 
-        const ws = XLSX.utils.json_to_sheet(rows, { header: ['#', 'الاسم', 'رقم الجوال', 'جوال ولي الأمر', 'المرحلة', 'كلمة المرور', 'رقم الهوية', 'آخر اختبار جمعية', 'تاريخ الإضافة'] });
+        const ws = XLSX.utils.json_to_sheet(rows, { header: ['#', 'الاسم', 'جوال ولي الأمر', 'المرحلة', 'كلمة المرور', 'رقم الهوية', 'آخر اختبار جمعية', 'تاريخ الإضافة'] });
         
         // Set column widths
         ws['!cols'] = [
             { wch: 4 },  // #
             { wch: 25 }, // الاسم
-            { wch: 15 }, // رقم الجوال
             { wch: 15 }, // جوال ولي الأمر
             { wch: 18 }, // المرحلة
             { wch: 15 }, // كلمة المرور
@@ -5453,8 +5451,12 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
             }
         });
 
-        // Map scores to students
+        const excludedCriteria = ['حفظ قرآن', 'مراجعه قرآن', 'ملاحظة المعلم(للطالب فقط)'];
+
+        // Map scores to students and find active dates per criteria
         const summaryMap = {};
+        const activeDatesMap = {};
+        
         students.forEach(s => {
             summaryMap[s.id] = { 
                 name: s.name, 
@@ -5469,8 +5471,12 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
         scores.forEach(s => {
             if (!summaryMap[s.studentId]) return; // Skip if student not found
             
-            const pts = parseInt(s.points) || 0;
             const cName = s.criteriaName || s.criteriaId || 'عام';
+            
+            // Skip excluded criteria
+            if (excludedCriteria.includes(cName)) return;
+
+            const pts = parseInt(s.points) || 0;
             
             if (pts > 0) summaryMap[s.studentId].positive += pts;
             else if (pts < 0) summaryMap[s.studentId].negative += Math.abs(pts);
@@ -5485,6 +5491,10 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
                     summaryMap[s.studentId].criteriaPoints[cName] = 0;
                 }
                 summaryMap[s.studentId].criteriaPoints[cName] += pts;
+                
+                // Track active dates for this criteria to calculate max possible
+                if (!activeDatesMap[cName]) activeDatesMap[cName] = new Set();
+                if (s.date) activeDatesMap[cName].add(s.date);
             }
         });
 
@@ -5525,9 +5535,11 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
             // Add each criteria breakdown
             criteriaList.forEach(cName => {
                 const pts = s.criteriaPoints[cName] || 0;
-                const max = criteriaMaxMap[cName];
-                if (max) {
-                    row[cName] = `${pts} من ${max}`;
+                const baseMax = criteriaMaxMap[cName];
+                
+                if (baseMax && activeDatesMap[cName]) {
+                    const totalMax = baseMax * activeDatesMap[cName].size;
+                    row[cName] = `${pts} من ${totalMax}`;
                 } else {
                     row[cName] = pts;
                 }
