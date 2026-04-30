@@ -1482,7 +1482,8 @@ async function saveWeekDays() {
         showToast("تم حفظ جدولة الأيام بنجاح ✅");
     } catch (e) {
         console.error("Error saving week days:", e);
-        showToast("خطأ في حفظ الجدولة", "error");
+        const errMsg = e.message || e.error_description || JSON.stringify(e);
+        showToast("خطأ في حفظ الجدولة: " + errMsg, "error");
     }
 }
 
@@ -2352,6 +2353,10 @@ async function generateGroupWeeklyReport(groupId) {
     try {
         // 1. Calculate Date Range (based on active days)
         const dateStrings = generateReportDatesForPreviousPeriod();
+        if (!dateStrings || dateStrings.length === 0) {
+            showToast("لا توجد أيام مفعلة في الجدول", "error");
+            return;
+        }
 
         // 2. Fetch Scores for all members
         const memberIds = group.members || [];
@@ -3900,6 +3905,10 @@ async function generateWeeklyReport() {
 
     // 1. Calculate Date Range (based on active days)
     const dateStrings = generateReportDatesForPreviousPeriod();
+    if (!dateStrings || dateStrings.length === 0) {
+        showToast("لا توجد أيام مفعلة في الجدول", "error");
+        return;
+    }
 
     showToast("جاري إعداد التقرير...");
 
