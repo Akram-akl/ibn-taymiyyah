@@ -18,27 +18,31 @@ window.supabaseClient = supabaseClient;
 // Firebase-Compatible API Wrapper
 // =====================================================
 
-// Utility: Convert camelCase to snake_case
+// Utility: Convert camelCase to snake_case (RECURSIVE)
 function toSnakeCase(obj) {
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(item => toSnakeCase(item));
     const result = {};
     for (const key in obj) {
         if (obj.hasOwnProperty(key)) {
             const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
-            result[snakeKey] = obj[key];
+            result[snakeKey] = toSnakeCase(obj[key]);
         }
     }
     return result;
 }
 
-// Utility: Convert snake_case to camelCase
+// Utility: Convert snake_case to camelCase (RECURSIVE)
 function toCamelCase(obj) {
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(item => toCamelCase(item));
     const result = {};
     for (const key in obj) {
         if (obj.hasOwnProperty(key)) {
             const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-            result[camelKey] = obj[key];
+            result[camelKey] = toCamelCase(obj[key]);
         }
     }
     return result;
@@ -274,16 +278,17 @@ function writeBatch(db) {
             operations.push({ type: 'update', ref: docRef, data: data });
         },
         commit: async () => {
-            for (const op of operations) {
+            // Execute all batch operations in parallel for better performance
+            const promises = operations.map(op => {
                 if (op.type === 'delete') {
-                    await deleteDoc(op.ref);
+                    return deleteDoc(op.ref);
                 } else if (op.type === 'set') {
-                    // Ignore the provided ID in batch.set if it exists (usually "temp_sid")
-                    await addDoc({ _table: op.ref._table }, op.data);
+                    return addDoc({ _table: op.ref._table }, op.data);
                 } else if (op.type === 'update') {
-                    await updateDoc(op.ref, op.data);
+                    return updateDoc(op.ref, op.data);
                 }
-            }
+            });
+            await Promise.all(promises);
         }
     };
 }
@@ -292,6 +297,16 @@ function writeBatch(db) {
 // EXPOSE AS FIREBASE-COMPATIBLE API
 // =====================================================
 window.db = { _supabase: true }; // Placeholder for db reference
+
+// ===== RPC FUNCTION CALL =====
+async function rpc(functionName, params = {}) {
+    const { data, error } = await supabaseClient.rpc(functionName, params);
+    if (error) {
+        console.error('RPC error:', functionName, error);
+        throw error;
+    }
+    return data;
+}
 
 window.firebaseOps = {
     collection,
@@ -305,7 +320,8 @@ window.firebaseOps = {
     updateDoc,
     deleteDoc,
     onSnapshot,
-    writeBatch
+    writeBatch,
+    rpc
 };
 
 // Signal that database is ready

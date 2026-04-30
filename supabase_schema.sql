@@ -11,8 +11,6 @@ CREATE TABLE IF NOT EXISTS students (
     national_id TEXT,
     last_association_exam TEXT,
     level TEXT NOT NULL,
-    memorization_plan TEXT,
-    review_plan TEXT,
     icon TEXT,
     password TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -257,99 +255,143 @@ DROP POLICY IF EXISTS "Allow public read students" ON students;
 DROP POLICY IF EXISTS "Allow public insert students" ON students;
 DROP POLICY IF EXISTS "Allow public update students" ON students;
 DROP POLICY IF EXISTS "Allow public delete students" ON students;
+DROP POLICY IF EXISTS "Allow public read students" ON students;
 CREATE POLICY "Allow public read students" ON students FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert students" ON students;
 CREATE POLICY "Allow public insert students" ON students FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update students" ON students;
 CREATE POLICY "Allow public update students" ON students FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete students" ON students;
 CREATE POLICY "Allow public delete students" ON students FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read competitions" ON competitions;
 DROP POLICY IF EXISTS "Allow public insert competitions" ON competitions;
 DROP POLICY IF EXISTS "Allow public update competitions" ON competitions;
 DROP POLICY IF EXISTS "Allow public delete competitions" ON competitions;
+DROP POLICY IF EXISTS "Allow public read competitions" ON competitions;
 CREATE POLICY "Allow public read competitions" ON competitions FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert competitions" ON competitions;
 CREATE POLICY "Allow public insert competitions" ON competitions FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update competitions" ON competitions;
 CREATE POLICY "Allow public update competitions" ON competitions FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete competitions" ON competitions;
 CREATE POLICY "Allow public delete competitions" ON competitions FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read groups" ON groups;
 DROP POLICY IF EXISTS "Allow public insert groups" ON groups;
 DROP POLICY IF EXISTS "Allow public update groups" ON groups;
 DROP POLICY IF EXISTS "Allow public delete groups" ON groups;
+DROP POLICY IF EXISTS "Allow public read groups" ON groups;
 CREATE POLICY "Allow public read groups" ON groups FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert groups" ON groups;
 CREATE POLICY "Allow public insert groups" ON groups FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update groups" ON groups;
 CREATE POLICY "Allow public update groups" ON groups FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete groups" ON groups;
 CREATE POLICY "Allow public delete groups" ON groups FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read scores" ON scores;
 DROP POLICY IF EXISTS "Allow public insert scores" ON scores;
 DROP POLICY IF EXISTS "Allow public update scores" ON scores;
 DROP POLICY IF EXISTS "Allow public delete scores" ON scores;
+DROP POLICY IF EXISTS "Allow public read scores" ON scores;
 CREATE POLICY "Allow public read scores" ON scores FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert scores" ON scores;
 CREATE POLICY "Allow public insert scores" ON scores FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update scores" ON scores;
 CREATE POLICY "Allow public update scores" ON scores FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete scores" ON scores;
 CREATE POLICY "Allow public delete scores" ON scores FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read teachers" ON teachers;
 DROP POLICY IF EXISTS "Allow public insert teachers" ON teachers;
 DROP POLICY IF EXISTS "Allow public update teachers" ON teachers;
 DROP POLICY IF EXISTS "Allow public delete teachers" ON teachers;
+DROP POLICY IF EXISTS "Allow public read teachers" ON teachers;
 CREATE POLICY "Allow public read teachers" ON teachers FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert teachers" ON teachers;
 CREATE POLICY "Allow public insert teachers" ON teachers FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update teachers" ON teachers;
 CREATE POLICY "Allow public update teachers" ON teachers FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete teachers" ON teachers;
 CREATE POLICY "Allow public delete teachers" ON teachers FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read activity_days" ON activity_days;
 DROP POLICY IF EXISTS "Allow public insert activity_days" ON activity_days;
 DROP POLICY IF EXISTS "Allow public update activity_days" ON activity_days;
 DROP POLICY IF EXISTS "Allow public delete activity_days" ON activity_days;
+DROP POLICY IF EXISTS "Allow public read activity_days" ON activity_days;
 CREATE POLICY "Allow public read activity_days" ON activity_days FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert activity_days" ON activity_days;
 CREATE POLICY "Allow public insert activity_days" ON activity_days FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update activity_days" ON activity_days;
 CREATE POLICY "Allow public update activity_days" ON activity_days FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete activity_days" ON activity_days;
 CREATE POLICY "Allow public delete activity_days" ON activity_days FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read group_scores" ON group_scores;
 DROP POLICY IF EXISTS "Allow public insert group_scores" ON group_scores;
 DROP POLICY IF EXISTS "Allow public update group_scores" ON group_scores;
 DROP POLICY IF EXISTS "Allow public delete group_scores" ON group_scores;
+DROP POLICY IF EXISTS "Allow public read group_scores" ON group_scores;
 CREATE POLICY "Allow public read group_scores" ON group_scores FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert group_scores" ON group_scores;
 CREATE POLICY "Allow public insert group_scores" ON group_scores FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update group_scores" ON group_scores;
 CREATE POLICY "Allow public update group_scores" ON group_scores FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete group_scores" ON group_scores;
 CREATE POLICY "Allow public delete group_scores" ON group_scores FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read student_plans" ON student_plans;
 DROP POLICY IF EXISTS "Allow public insert student_plans" ON student_plans;
 DROP POLICY IF EXISTS "Allow public update student_plans" ON student_plans;
 DROP POLICY IF EXISTS "Allow public delete student_plans" ON student_plans;
+DROP POLICY IF EXISTS "Allow public read student_plans" ON student_plans;
 CREATE POLICY "Allow public read student_plans" ON student_plans FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert student_plans" ON student_plans;
 CREATE POLICY "Allow public insert student_plans" ON student_plans FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update student_plans" ON student_plans;
 CREATE POLICY "Allow public update student_plans" ON student_plans FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete student_plans" ON student_plans;
 CREATE POLICY "Allow public delete student_plans" ON student_plans FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read plan_daily_records" ON plan_daily_records;
 DROP POLICY IF EXISTS "Allow public insert plan_daily_records" ON plan_daily_records;
 DROP POLICY IF EXISTS "Allow public update plan_daily_records" ON plan_daily_records;
 DROP POLICY IF EXISTS "Allow public delete plan_daily_records" ON plan_daily_records;
+DROP POLICY IF EXISTS "Allow public read plan_daily_records" ON plan_daily_records;
 CREATE POLICY "Allow public read plan_daily_records" ON plan_daily_records FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert plan_daily_records" ON plan_daily_records;
 CREATE POLICY "Allow public insert plan_daily_records" ON plan_daily_records FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update plan_daily_records" ON plan_daily_records;
 CREATE POLICY "Allow public update plan_daily_records" ON plan_daily_records FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete plan_daily_records" ON plan_daily_records;
 CREATE POLICY "Allow public delete plan_daily_records" ON plan_daily_records FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read level_settings" ON level_settings;
 DROP POLICY IF EXISTS "Allow public insert level_settings" ON level_settings;
 DROP POLICY IF EXISTS "Allow public update level_settings" ON level_settings;
 DROP POLICY IF EXISTS "Allow public delete level_settings" ON level_settings;
+DROP POLICY IF EXISTS "Allow public read level_settings" ON level_settings;
 CREATE POLICY "Allow public read level_settings" ON level_settings FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert level_settings" ON level_settings;
 CREATE POLICY "Allow public insert level_settings" ON level_settings FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update level_settings" ON level_settings;
 CREATE POLICY "Allow public update level_settings" ON level_settings FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete level_settings" ON level_settings;
 CREATE POLICY "Allow public delete level_settings" ON level_settings FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Allow public read feedback" ON feedback;
 DROP POLICY IF EXISTS "Allow public insert feedback" ON feedback;
 DROP POLICY IF EXISTS "Allow public update feedback" ON feedback;
 DROP POLICY IF EXISTS "Allow public delete feedback" ON feedback;
+DROP POLICY IF EXISTS "Allow public read feedback" ON feedback;
 CREATE POLICY "Allow public read feedback" ON feedback FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert feedback" ON feedback;
 CREATE POLICY "Allow public insert feedback" ON feedback FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update feedback" ON feedback;
 CREATE POLICY "Allow public update feedback" ON feedback FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete feedback" ON feedback;
 CREATE POLICY "Allow public delete feedback" ON feedback FOR DELETE USING (true);
 
 -- =====================================================
@@ -378,12 +420,6 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'group_scores') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE group_scores;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'student_plans') THEN
-        ALTER PUBLICATION supabase_realtime ADD TABLE student_plans;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'plan_daily_records') THEN
-        ALTER PUBLICATION supabase_realtime ADD TABLE plan_daily_records;
-    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'level_settings') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE level_settings;
     END IF;
@@ -391,6 +427,111 @@ BEGIN
         ALTER PUBLICATION supabase_realtime ADD TABLE feedback;
     END IF;
 END $$;
+
+
+-- =====================================================
+-- NEW FEATURES: Security, Audit, Backup
+-- =====================================================
+
+-- AUDIT LOG TABLE
+CREATE TABLE IF NOT EXISTS audit_log (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT,
+    details JSONB,
+    level TEXT,
+    role TEXT,
+    device_info TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public insert audit_log" ON audit_log;
+CREATE POLICY "Allow public insert audit_log" ON audit_log FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public read audit_log" ON audit_log;
+CREATE POLICY "Allow public read audit_log" ON audit_log FOR SELECT USING (true);
+
+-- BACKUPS TABLE
+CREATE TABLE IF NOT EXISTS backups (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    level TEXT NOT NULL,
+    backup_data JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE backups ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public all backups" ON backups;
+CREATE POLICY "Allow public all backups" ON backups FOR ALL USING (true) WITH CHECK (true);
+
+-- VERIFY PASSWORD RPC FUNCTION (server-side check)
+CREATE OR REPLACE FUNCTION verify_password(p_level TEXT, p_role TEXT, p_password TEXT)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_settings JSONB;
+    v_master JSONB;
+    v_correct TEXT;
+BEGIN
+    -- Check master password first
+    SELECT settings INTO v_master
+    FROM level_settings
+    WHERE level = '_global' AND feature_name = 'master_password' AND is_enabled = true
+    LIMIT 1;
+    
+    IF v_master IS NOT NULL AND v_master->>'password' = p_password THEN
+        RETURN true;
+    END IF;
+    
+    -- Check level-specific password
+    SELECT settings INTO v_settings
+    FROM level_settings
+    WHERE level = p_level AND feature_name = 'auth_passwords' AND is_enabled = true
+    LIMIT 1;
+    
+    IF v_settings IS NULL THEN
+        RETURN false;
+    END IF;
+    
+    IF p_role = 'teacher' THEN
+        v_correct := v_settings->>'teacherPass';
+    ELSIF p_role = 'student' THEN
+        v_correct := v_settings->>'studentPass';
+    ELSE
+        RETURN false;
+    END IF;
+    
+    RETURN v_correct = p_password;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- GET LEADERBOARD RPC FUNCTION (server-side calculation)
+CREATE OR REPLACE FUNCTION get_leaderboard(p_level TEXT, p_competition_id UUID DEFAULT NULL)
+RETURNS TABLE(student_id UUID, student_name TEXT, total_points BIGINT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT s.id, s.name,
+           COALESCE(SUM(sc.points), 0)::BIGINT as total
+    FROM students s
+    LEFT JOIN scores sc ON sc.student_id = s.id
+        AND (p_competition_id IS NULL OR sc.competition_id = p_competition_id)
+    WHERE s.level = p_level
+    GROUP BY s.id, s.name
+    ORDER BY total DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Initial Auth Passwords
+INSERT INTO level_settings (level, feature_name, is_enabled, settings)
+VALUES 
+    ('secondary', 'auth_passwords', true, '{"teacherPass": "1001", "studentPass": "10010"}'::jsonb),
+    ('middle', 'auth_passwords', true, '{"teacherPass": "2002", "studentPass": "20020"}'::jsonb),
+    ('upper_elem', 'auth_passwords', true, '{"teacherPass": "3003", "studentPass": "30030"}'::jsonb),
+    ('lower_elem', 'auth_passwords', true, '{"teacherPass": "4004", "studentPass": "40040"}'::jsonb)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO level_settings (level, feature_name, is_enabled, settings)
+VALUES ('_global', 'master_password', true, '{"password": "123456"}'::jsonb)
+ON CONFLICT DO NOTHING;
 
 -- =====================================================
 -- Create Indexes
@@ -406,11 +547,6 @@ CREATE INDEX IF NOT EXISTS idx_groups_competition_id ON groups(competition_id);
 CREATE INDEX IF NOT EXISTS idx_teachers_level ON teachers(level);
 CREATE INDEX IF NOT EXISTS idx_group_scores_group_id ON group_scores(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_scores_competition_id ON group_scores(competition_id);
-CREATE INDEX IF NOT EXISTS idx_student_plans_student_id ON student_plans(student_id);
-CREATE INDEX IF NOT EXISTS idx_student_plans_student_status ON student_plans(student_id, status);
-CREATE INDEX IF NOT EXISTS idx_student_plans_level ON student_plans(level);
-CREATE INDEX IF NOT EXISTS idx_plan_daily_records_plan_id ON plan_daily_records(plan_id);
-CREATE INDEX IF NOT EXISTS idx_plan_daily_records_student_date ON plan_daily_records(student_id, date);
 CREATE INDEX IF NOT EXISTS idx_level_settings_level ON level_settings(level);
 
 -- Create trigger functions for updated_at

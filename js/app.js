@@ -1,12 +1,11 @@
 // --- Constants ---
 const LEVELS = {
-    'secondary': { name: 'المرحلة الثانوية', emoji: '<i data-lucide="building-2" class="w-6 h-6 inline-block text-blue-500"></i>', teacherPass: '1001', studentPass: '10010' },
-    'middle': { name: 'المرحلة المتوسطة', emoji: '<i data-lucide="school" class="w-6 h-6 inline-block text-amber-500"></i>', teacherPass: '2002', studentPass: '20020' },
-    'upper_elem': { name: 'الابتدائية العليا', emoji: '<i data-lucide="backpack" class="w-6 h-6 inline-block text-red-500"></i>', teacherPass: '3003', studentPass: '30030' },
-    'lower_elem': { name: 'الابتدائية الأولية', emoji: '<i data-lucide="hexagon" class="w-6 h-6 inline-block text-indigo-500"></i>', teacherPass: '4004', studentPass: '40040' }
+    'secondary': { name: 'المرحلة الثانوية', emoji: '<i data-lucide="building-2" class="w-6 h-6 inline-block text-blue-500"></i>' },
+    'middle': { name: 'المرحلة المتوسطة', emoji: '<i data-lucide="school" class="w-6 h-6 inline-block text-amber-500"></i>' },
+    'upper_elem': { name: 'الابتدائية العليا', emoji: '<i data-lucide="backpack" class="w-6 h-6 inline-block text-red-500"></i>' },
+    'lower_elem': { name: 'الابتدائية الأولية', emoji: '<i data-lucide="hexagon" class="w-6 h-6 inline-block text-indigo-500"></i>' }
 };
 
-const MASTER_TEACHER_PASS = "123456"; // Can access selector
 
 // --- State Management ---
 const state = {
@@ -81,7 +80,7 @@ function toggleModal(id, show = true) {
 window.closeModal = (id) => toggleModal(id, false);
 
 // --- Image Compression Utility ---
-async function compressImage(file, maxWidth = 300, maxHeight = 300, quality = 0.7) {
+async function compressImage(file, maxWidth = 150, maxHeight = 150, quality = 0.4) {
     if (!file) return null;
     return new Promise((resolve) => {
         const reader = new FileReader();
@@ -221,11 +220,16 @@ async function verifyStudentLevel() {
         return;
     }
 
-    const correctPass = LEVELS[levelKey].studentPass;
+    try {
+        // Server-side password verification via Supabase RPC
+        const isValid = await window.firebaseOps.rpc('verify_password', {
+            p_level: levelKey,
+            p_role: 'student',
+            p_password: password
+        });
 
-    if (password === correctPass) {
-        // Fetch students for this level
-        try {
+        if (isValid) {
+            // Fetch students for this level
             const q = window.firebaseOps.query(
                 window.firebaseOps.collection(window.db, "students"),
                 window.firebaseOps.where("level", "==", levelKey)
@@ -255,12 +259,12 @@ async function verifyStudentLevel() {
 
             $('#student-step-1').classList.add('hidden');
             $('#student-step-2').classList.remove('hidden');
-        } catch(e) {
-            console.error(e);
-            showToast("خطأ في جلب بيانات الطلاب", "error");
+        } else {
+            showToast("كلمة مرور المرحلة غير صحيحة", "error");
         }
-    } else {
-        showToast("كلمة مرور المرحلة غير صحيحة", "error");
+    } catch(e) {
+        console.error(e);
+        showToast("خطأ في التحقق من كلمة المرور", "error");
     }
 }
 
@@ -296,42 +300,57 @@ function performStudentLogin() {
     }
 }
 
-function performTeacherLogin() {
+async function performTeacherLogin() {
     const password = $('#teacher-password-input').value;
     const selectedLevel = $('#teacher-level-select').value;
 
-    // 1. Master Password Logic (Universal Access)
-    if (password === MASTER_TEACHER_PASS) {
-        if (selectedLevel) {
-            // Level selected -> Log in directly
+    try {
+        // 1. Check if it's a master password (server-side)
+        const isMaster = await window.firebaseOps.rpc('verify_password', {
+            p_level: '_global',
+            p_role: 'teacher',
+            p_password: password
+        });
+
+        if (isMaster) {
+            if (selectedLevel) {
+                finishTeacherLogin(selectedLevel);
+            } else {
+                // No level selected -> Show Level Selector Grid
+                $('#teacher-password-section').classList.add('hidden');
+                $('#teacher-level-selection').classList.remove('hidden');
+                const container = $('#teacher-level-grid');
+                container.innerHTML = Object.entries(LEVELS).map(([key, config]) => `
+                     <button onclick="finishTeacherLogin('${key}')" class="p-4 bg-teal-50 dark:bg-gray-700 rounded-xl border border-teal-100 dark:border-gray-600 hover:border-teal-500 transition text-center">
+                        <div class="text-2xl mb-2">${config.emoji}</div>
+                        <div class="text-sm font-bold text-gray-800 dark:text-gray-100">${config.name}</div>
+                     </button>
+                `).join('');
+            }
+            return;
+        }
+
+        // 2. Strict Level Logic
+        if (!selectedLevel) {
+            showToast("الرجاء اختيار المرحلة أولاً", "error");
+            return;
+        }
+
+        // Check level-specific password (server-side)
+        const isValid = await window.firebaseOps.rpc('verify_password', {
+            p_level: selectedLevel,
+            p_role: 'teacher',
+            p_password: password
+        });
+
+        if (isValid) {
             finishTeacherLogin(selectedLevel);
         } else {
-            // No level selected -> Show Level Selector Grid (Legacy/Admin Node)
-            $('#teacher-password-section').classList.add('hidden');
-            $('#teacher-level-selection').classList.remove('hidden');
-            const container = $('#teacher-level-grid');
-            container.innerHTML = Object.entries(LEVELS).map(([key, config]) => `
-                 <button onclick="finishTeacherLogin('${key}')" class="p-4 bg-teal-50 dark:bg-gray-700 rounded-xl border border-teal-100 dark:border-gray-600 hover:border-teal-500 transition text-center">
-                    <div class="text-2xl mb-2">${config.emoji}</div>
-                    <div class="text-sm font-bold text-gray-800 dark:text-gray-100">${config.name}</div>
-                 </button>
-            `).join('');
+            showToast("كلمة المرور غير صحيحة للمرحلة المختارة", "error");
         }
-        return;
-    }
-
-    // 2. Strict Level Logic
-    if (!selectedLevel) {
-        showToast("الرجاء اختيار المرحلة أولاً", "error");
-        return;
-    }
-
-    // Check if password matches ONLY the selected level
-    const config = LEVELS[selectedLevel];
-    if (config && password === config.teacherPass) {
-        finishTeacherLogin(selectedLevel);
-    } else {
-        showToast("كلمة المرور غير صحيحة للمرحلة المختارة", "error");
+    } catch (e) {
+        console.error(e);
+        showToast("خطأ في التحقق من كلمة المرور", "error");
     }
 }
 
@@ -442,6 +461,11 @@ function completeLogin() {
     // Explicitly show content
     $('#loading').classList.add('hidden');
     $('#view-container').classList.remove('hidden');
+
+    // Auto backup — runs silently in background after teacher login
+    if (state.isTeacher) {
+        setTimeout(() => checkAndRunAutoBackup(), 3000);
+    }
 
     // Pre-load Quran Data to make search instant
     if (typeof QuranService !== 'undefined') {
@@ -633,8 +657,12 @@ function renderHome() {
         scoresUnsubscribe();
     }
 
-    // Listen to scores
-    scoresUnsubscribe = window.firebaseOps.onSnapshot(window.firebaseOps.collection(window.db, "scores"), (snapshot) => {
+    // Listen to scores — FILTERED BY LEVEL for performance
+    const scoresQuery = window.firebaseOps.query(
+        window.firebaseOps.collection(window.db, "scores"),
+        window.firebaseOps.where("level", "==", state.currentLevel)
+    );
+    scoresUnsubscribe = window.firebaseOps.onSnapshot(scoresQuery, (snapshot) => {
         const scores = [];
         snapshot.forEach(doc => scores.push(doc.data()));
         state.scores = scores;
@@ -644,7 +672,14 @@ function renderHome() {
     lucide.createIcons();
 }
 
+// Debounced Leaderboard Calculation — prevents redundant recalculations
+let _leaderboardTimeout = null;
 function calculateLeaderboard() {
+    if (_leaderboardTimeout) clearTimeout(_leaderboardTimeout);
+    _leaderboardTimeout = setTimeout(_doCalculateLeaderboard, 400);
+}
+
+function _doCalculateLeaderboard() {
     // 0. Filter by Active Competition (if any)
     const activeComp = state.competitions.find(function (c) { return c.active; });
 
@@ -1170,6 +1205,14 @@ function renderSettings() {
                      <button onclick="openBulkWhatsAppModal()" class="col-span-2 flex items-center justify-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 transition">
                          <i data-lucide="message-circle" class="w-5 h-5 text-emerald-600"></i>
                          <span class="text-xs font-bold text-emerald-700 dark:text-emerald-400">واتساب مجمع</span>
+                     </button>
+                     <button onclick="exportStudentsXLSX()" class="flex items-center justify-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 hover:bg-blue-100 transition">
+                         <i data-lucide="file-spreadsheet" class="w-5 h-5 text-blue-600"></i>
+                         <span class="text-xs font-bold text-blue-700 dark:text-blue-400">تصدير الطلاب</span>
+                     </button>
+                     <button onclick="exportScoresXLSX()" class="flex items-center justify-center gap-2 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800 hover:bg-purple-100 transition">
+                         <i data-lucide="file-spreadsheet" class="w-5 h-5 text-purple-600"></i>
+                         <span class="text-xs font-bold text-purple-700 dark:text-purple-400">تصدير الدرجات</span>
                      </button>
                  </div>
              </div>
@@ -2098,14 +2141,19 @@ async function openEditStudent(id) {
         const enteredPass = await requestPassword(msg);
         if (!enteredPass) return;
 
-        const studentPass = student.password;
-        const levelPass = (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].studentPass : '');
-
         let isValid = false;
-        if (studentPass) {
-            if (enteredPass === studentPass) isValid = true;
+        if (student.password) {
+            // Check personal password (already loaded client-side)
+            if (enteredPass === student.password) isValid = true;
         } else {
-            if (enteredPass === levelPass) isValid = true;
+            // No personal password — verify against level password via server
+            try {
+                isValid = await window.firebaseOps.rpc('verify_password', {
+                    p_level: state.currentLevel,
+                    p_role: 'student',
+                    p_password: enteredPass
+                });
+            } catch(e) { isValid = false; }
         }
 
         if (!isValid) {
@@ -2157,9 +2205,16 @@ function confirmDeleteStudent(id) {
 async function performDeleteStudent() {
     if (!studentToDeleteId) return;
     try {
+        // Get student name for audit log
+        const student = state.students.find(s => s.id === studentToDeleteId);
+        const studentName = student ? student.name : 'unknown';
+        
         await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, "students", studentToDeleteId));
         showToast("تم الحذف");
         closeModal('delete-modal');
+        
+        // Audit log — critical operation
+        logAuditEvent('delete_student', 'student', studentToDeleteId, { studentName });
     } catch (err) { console.error(err); showToast("خطأ في الحذف", "error"); }
 }
 
@@ -3128,6 +3183,14 @@ async function confirmResetStudentScores() {
         showToast("تم حذف درجات الطالب في هذه المسابقة بنجاح", "success");
         closeModal('reset-student-scores-modal');
         closeModal('rate-student-modal');
+        
+        // Audit log — critical operation
+        const student = state.students.find(s => s.id === currentRateStudentId);
+        logAuditEvent('reset_scores', 'scores', currentRateStudentId, {
+            studentName: student ? student.name : 'unknown',
+            competitionId: currentGradingCompId,
+            deletedCount: snap.size
+        });
     } catch (e) {
         console.error("Error resetting student scores:", e);
         showToast("خطأ في حذف الدرجات", "error");
@@ -3770,10 +3833,21 @@ async function handleSaveCompetition(e) {
         if (id) {
             await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "competitions", id), data);
             showToast("تم تحديث المسابقة");
+            // Audit log — criteria modification
+            logAuditEvent('update_competition', 'competition', id, {
+                competitionName: name,
+                criteriaCount: criteriaVals.length,
+                criteriaNames: criteriaVals.map(c => c.name)
+            });
         } else {
             data.createdAt = new Date();
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "competitions"), data);
+            const result = await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "competitions"), data);
             showToast("تم إنشاء المسابقة");
+            // Audit log — new competition
+            logAuditEvent('create_competition', 'competition', result.id, {
+                competitionName: name,
+                criteriaCount: criteriaVals.length
+            });
         }
         closeModal('competition-modal');
     } catch (err) {
@@ -4010,6 +4084,35 @@ async function generateWeeklyReport() {
                 visibleNotes.forEach(n => {
                     reportText += `- ${n.noteText}\n`;
                 });
+            }
+        }
+
+        // Add Custom Points (CUSTOM_*) if any
+        const customScores = scores.filter(s => s.criteriaId && s.criteriaId.startsWith('CUSTOM_'));
+        if (customScores.length > 0) {
+            const customTotal = customScores.reduce((sum, s) => sum + (parseInt(s.points) || 0), 0);
+            reportText += `⚡ نقاط مخصصة: ${customTotal}\n`;
+            customScores.forEach(cs => {
+                const sign = cs.points > 0 ? '+' : '';
+                reportText += `  • ${cs.criteriaName || 'مخصص'}: ${sign}${cs.points}\n`;
+            });
+            totalEarned += customTotal;
+        }
+
+        // Add Quran Memorization/Review if any
+        const quranScores = scores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
+        if (quranScores.length > 0) {
+            const memScores = quranScores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION');
+            const revScores = quranScores.filter(s => s.criteriaId === 'QURAN_REVIEW');
+            if (memScores.length > 0) {
+                const memTotal = memScores.reduce((sum, s) => sum + (parseInt(s.points) || 0), 0);
+                reportText += `📖 حفظ القرآن: ${memTotal}\n`;
+                totalEarned += memTotal;
+            }
+            if (revScores.length > 0) {
+                const revTotal = revScores.reduce((sum, s) => sum + (parseInt(s.points) || 0), 0);
+                reportText += `📗 مراجعة القرآن: ${revTotal}\n`;
+                totalEarned += revTotal;
             }
         }
 
@@ -4417,19 +4520,18 @@ async function openStudentReport(studentId) {
             </div>
 
             <!-- Quick Stats -->
-            <div class="grid grid-cols-3 gap-3 mb-6">
+            <div class="grid grid-cols-2 gap-3 mb-4">
                 <div class="bg-white dark:bg-gray-800 rounded-xl p-3 text-center shadow-sm border">
                     <p class="text-2xl font-bold ${totalPoints >= 0 ? 'text-green-600' : 'text-red-600'}">${totalPoints}</p>
-                    <p class="text-xs text-gray-500">النقاط</p>
+                    <p class="text-xs text-gray-500">إجمالي النقاط</p>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-xl p-3 text-center shadow-sm border">
                     <p class="text-2xl font-bold text-orange-600">${absenceDays}</p>
                     <p class="text-xs text-gray-500">أيام الغياب</p>
                 </div>
-                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 text-center shadow-sm border">
-                    <p class="text-2xl font-bold text-blue-600">${scores.length}</p>
-                    <p class="text-xs text-gray-500">إجمالي التقييمات</p>
-                </div>
+            </div>
+            <div id="student-ranking-card" class="mb-6">
+                <div class="text-center py-2 text-gray-400 text-xs">جاري حساب الترتيب...</div>
             </div>
 
             <!-- Memorization Plan -->
@@ -4480,6 +4582,98 @@ async function openStudentReport(studentId) {
     setTimeout(() => {
         window.renderStudentCalendar(window._currentCalendarYear, window._currentCalendarMonth);
     }, 100);
+
+    // Calculate ranking asynchronously
+    calculateStudentRanking(studentId, student.level, totalPoints);
+}
+
+// Calculate student ranking among peers
+async function calculateStudentRanking(studentId, level, studentTotal) {
+    const rankCard = document.getElementById('student-ranking-card');
+    if (!rankCard) return;
+
+    try {
+        // Fetch all students in this level
+        const studentsQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "students"),
+            window.firebaseOps.where("level", "==", level)
+        );
+        const studentsSnap = await window.firebaseOps.getDocs(studentsQ);
+        const allStudentIds = [];
+        studentsSnap.forEach(d => allStudentIds.push(d.id));
+        
+        const totalStudents = allStudentIds.length;
+        if (totalStudents <= 1) {
+            rankCard.innerHTML = '';
+            return;
+        }
+
+        // Fetch all scores for this level
+        const scoresQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "scores"),
+            window.firebaseOps.where("level", "==", level)
+        );
+        const scoresSnap = await window.firebaseOps.getDocs(scoresQ);
+        
+        // Calculate totals per student
+        const totalsMap = {};
+        allStudentIds.forEach(id => totalsMap[id] = 0);
+        
+        // Also calculate last 7 days and previous 7 days for trend
+        const now = new Date();
+        const last7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const prev7 = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const todayStr = now.toISOString().split('T')[0];
+        
+        let thisWeekPoints = 0;
+        let lastWeekPoints = 0;
+        
+        scoresSnap.forEach(d => {
+            const sc = d.data();
+            const pts = parseInt(sc.points) || 0;
+            if (totalsMap.hasOwnProperty(sc.studentId)) {
+                totalsMap[sc.studentId] += pts;
+            }
+            // Trend for current student
+            if (sc.studentId === studentId && sc.date) {
+                if (sc.date >= last7 && sc.date <= todayStr) thisWeekPoints += pts;
+                else if (sc.date >= prev7 && sc.date < last7) lastWeekPoints += pts;
+            }
+        });
+
+        // Calculate rank
+        const sortedTotals = Object.entries(totalsMap).sort((a, b) => b[1] - a[1]);
+        const rank = sortedTotals.findIndex(([id]) => id === studentId) + 1;
+        
+        // Trend
+        const trendDiff = thisWeekPoints - lastWeekPoints;
+        let trendIcon = '➡️';
+        let trendText = 'مستقر';
+        let trendColor = 'text-gray-500';
+        if (trendDiff > 0) { trendIcon = '📈'; trendText = `+${trendDiff} عن الأسبوع السابق`; trendColor = 'text-green-600'; }
+        else if (trendDiff < 0) { trendIcon = '📉'; trendText = `${trendDiff} عن الأسبوع السابق`; trendColor = 'text-red-600'; }
+
+        rankCard.innerHTML = `
+            <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center text-xl font-bold text-amber-600">
+                        ${rank}
+                    </div>
+                    <div>
+                        <p class="font-bold text-sm text-gray-800 dark:text-gray-100">الترتيب ${rank} من ${totalStudents}</p>
+                        <p class="text-xs ${trendColor}">${trendIcon} ${trendText}</p>
+                    </div>
+                </div>
+                <div class="text-left">
+                    <p class="text-xs text-gray-400">هذا الأسبوع</p>
+                    <p class="font-bold ${thisWeekPoints >= 0 ? 'text-green-600' : 'text-red-600'}">${thisWeekPoints > 0 ? '+' : ''}${thisWeekPoints}</p>
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        console.warn('Ranking calculation failed:', e);
+        rankCard.innerHTML = '';
+    }
 }
 
 // ----------------------------------------
@@ -5071,21 +5265,22 @@ updateStudentsListUI = function (filteredList) {
 };
 
 // =====================================================
-// FEATURE #1: Export Data (CSV)
+// FEATURE #1: Export Data (XLSX — Professional Excel)
 // =====================================================
 
-function downloadCSV(filename, csvContent) {
-    // Add BOM for Arabic support in Excel
-    const bom = '\uFEFF';
-    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(link.href);
+function downloadXLSX(filename, worksheets) {
+    if (typeof XLSX === 'undefined') {
+        showToast("مكتبة التصدير غير متوفرة، أعد تحميل الصفحة", "error");
+        return;
+    }
+    const wb = XLSX.utils.book_new();
+    worksheets.forEach(ws => {
+        XLSX.utils.book_append_sheet(wb, ws.sheet, ws.name);
+    });
+    XLSX.writeFile(wb, filename);
 }
 
-async function exportStudentsCSV() {
+async function exportStudentsXLSX() {
     showToast("جاري تجهيز ملف الطلاب...");
     try {
         const q = window.firebaseOps.query(
@@ -5106,15 +5301,33 @@ async function exportStudentsCSV() {
         }
 
         const levelName = LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : state.currentLevel;
-        let csv = 'الاسم,رقم الجوال,المرحلة,خطة الحفظ,خطة المراجعة,تاريخ الإضافة\n';
+        
+        // Build rows
+        const rows = students.map((s, i) => ({
+            '#': i + 1,
+            'الاسم': s.name || '',
+            'رقم الجوال': s.studentNumber || '',
+            'جوال ولي الأمر': s.parentPhone || '',
+            'المرحلة': levelName,
+            'كلمة المرور': s.password ? '✅' : '❌',
+            'تاريخ الإضافة': s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : ''
+        }));
 
-        students.forEach(s => {
-            const createdDate = s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : '';
-            csv += `"${s.name || ''}","${s.studentNumber || ''}","${levelName}","${s.memorizationPlan || ''}","${s.reviewPlan || ''}","${createdDate}"\n`;
-        });
+        const ws = XLSX.utils.json_to_sheet(rows, { header: ['#', 'الاسم', 'رقم الجوال', 'جوال ولي الأمر', 'المرحلة', 'كلمة المرور', 'تاريخ الإضافة'] });
+        
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 4 },  // #
+            { wch: 25 }, // الاسم
+            { wch: 15 }, // رقم الجوال
+            { wch: 15 }, // جوال ولي الأمر
+            { wch: 18 }, // المرحلة
+            { wch: 12 }, // كلمة المرور
+            { wch: 15 }, // التاريخ
+        ];
 
         const date = new Date().toISOString().split('T')[0];
-        downloadCSV(`students_${state.currentLevel}_${date}.csv`, csv);
+        downloadXLSX(`طلاب_${levelName}_${date}.xlsx`, [{ sheet: ws, name: 'الطلاب' }]);
         showToast(`تم تصدير ${students.length} طالب`);
     } catch (e) {
         console.error(e);
@@ -5122,10 +5335,10 @@ async function exportStudentsCSV() {
     }
 }
 
-async function exportScoresCSV() {
+async function exportScoresXLSX() {
     showToast("جاري تجهيز ملف الدرجات...");
     try {
-        // Fetch scores filtered by level through students
+        // Fetch students
         const studentsQ = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "students"),
             window.firebaseOps.where("level", "==", state.currentLevel)
@@ -5143,17 +5356,16 @@ async function exportScoresCSV() {
             return;
         }
 
-        // Fetch all scores (we'll filter client-side)
+        // Fetch scores filtered by level
         const scoresQ = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "scores")
+            window.firebaseOps.collection(window.db, "scores"),
+            window.firebaseOps.where("level", "==", state.currentLevel)
         );
         const scoresSnap = await window.firebaseOps.getDocs(scoresQ);
         const scores = [];
         scoresSnap.forEach(doc => {
             const d = doc.data();
-            if (studentIds.includes(d.studentId)) {
-                scores.push(d);
-            }
+            scores.push(d);
         });
 
         if (scores.length === 0) {
@@ -5162,19 +5374,161 @@ async function exportScoresCSV() {
         }
 
         const levelName = LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : state.currentLevel;
-        let csv = 'اسم الطالب,المعيار,النقاط,النوع,التاريخ\n';
 
+        // Sheet 1: All Scores Detail
+        const detailRows = scores.map(s => ({
+            'اسم الطالب': studentMap[s.studentId] || 'غير معروف',
+            'المعيار': s.criteriaName || s.criteriaId || '',
+            'النقاط': parseInt(s.points) || 0,
+            'النوع': s.type || '',
+            'التاريخ': s.date || ''
+        }));
+        const ws1 = XLSX.utils.json_to_sheet(detailRows);
+        ws1['!cols'] = [{ wch: 25 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 12 }];
+
+        // Sheet 2: Summary per Student
+        const summaryMap = {};
         scores.forEach(s => {
-            const studentName = studentMap[s.studentId] || 'غير معروف';
-            csv += `"${studentName}","${s.criteriaName || ''}","${s.points || 0}","${s.type || ''}","${s.date || ''}"\n`;
+            const name = studentMap[s.studentId] || 'غير معروف';
+            if (!summaryMap[s.studentId]) summaryMap[s.studentId] = { name, positive: 0, negative: 0, absences: 0 };
+            const pts = parseInt(s.points) || 0;
+            if (pts > 0) summaryMap[s.studentId].positive += pts;
+            else if (pts < 0) summaryMap[s.studentId].negative += Math.abs(pts);
+            if (s.criteriaId === 'ABSENCE_RECORD') summaryMap[s.studentId].absences++;
         });
 
+        const summaryRows = Object.values(summaryMap)
+            .map(s => ({
+                'اسم الطالب': s.name,
+                'النقاط الإيجابية': s.positive,
+                'الخصومات': s.negative,
+                'الصافي': s.positive - s.negative,
+                'أيام الغياب': s.absences
+            }))
+            .sort((a, b) => b['الصافي'] - a['الصافي']);
+
+        const ws2 = XLSX.utils.json_to_sheet(summaryRows);
+        ws2['!cols'] = [{ wch: 25 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 12 }];
+
         const date = new Date().toISOString().split('T')[0];
-        downloadCSV(`scores_${state.currentLevel}_${date}.csv`, csv);
+        downloadXLSX(`درجات_${levelName}_${date}.xlsx`, [
+            { sheet: ws1, name: 'تفاصيل الدرجات' },
+            { sheet: ws2, name: 'ملخص الطلاب' }
+        ]);
         showToast(`تم تصدير ${scores.length} درجة`);
     } catch (e) {
         console.error(e);
         showToast("خطأ في التصدير", "error");
+    }
+}
+
+// =====================================================
+// AUDIT LOG — Logs critical operations to Supabase
+// =====================================================
+async function logAuditEvent(action, entityType, entityId = null, details = null) {
+    try {
+        await window.firebaseOps.addDoc(
+            window.firebaseOps.collection(window.db, "audit_log"),
+            {
+                action: action,
+                entityType: entityType,
+                entityId: entityId || '',
+                details: details || {},
+                level: state.currentLevel || '',
+                role: state.isTeacher ? 'teacher' : 'student',
+                deviceInfo: navigator.userAgent
+            }
+        );
+    } catch (e) {
+        console.warn('Audit log failed (non-critical):', e);
+    }
+}
+
+// =====================================================
+// AUTO BACKUP — Runs silently on teacher login
+// =====================================================
+async function checkAndRunAutoBackup() {
+    if (!state.isTeacher || !state.currentLevel) return;
+    
+    try {
+        // Check last backup for this level
+        const backupsQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "backups"),
+            window.firebaseOps.where("level", "==", state.currentLevel)
+        );
+        const backupsSnap = await window.firebaseOps.getDocs(backupsQ);
+        
+        let lastBackup = null;
+        let lastBackupId = null;
+        backupsSnap.forEach(doc => {
+            const d = doc.data();
+            if (!lastBackup || new Date(d.createdAt) > new Date(lastBackup.createdAt)) {
+                lastBackup = d;
+                lastBackupId = doc.id;
+            }
+        });
+
+        // Check if 7 days have passed
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        
+        if (lastBackup && new Date(lastBackup.createdAt) > sevenDaysAgo) {
+            return; // Backup is recent enough
+        }
+
+        // Perform backup — gather all data for this level
+        const [studentsSnap, compsSnap, groupsSnap, scoresSnap] = await Promise.all([
+            window.firebaseOps.getDocs(window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "students"),
+                window.firebaseOps.where("level", "==", state.currentLevel)
+            )),
+            window.firebaseOps.getDocs(window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "competitions"),
+                window.firebaseOps.where("level", "==", state.currentLevel)
+            )),
+            window.firebaseOps.getDocs(window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "groups"),
+                window.firebaseOps.where("level", "==", state.currentLevel)
+            )),
+            window.firebaseOps.getDocs(window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "scores"),
+                window.firebaseOps.where("level", "==", state.currentLevel)
+            ))
+        ]);
+
+        const backupData = {
+            students: [],
+            competitions: [],
+            groups: [],
+            scores: [],
+            backupDate: now.toISOString(),
+            level: state.currentLevel
+        };
+
+        studentsSnap.forEach(d => { const data = d.data(); data.id = d.id; backupData.students.push(data); });
+        compsSnap.forEach(d => { const data = d.data(); data.id = d.id; backupData.competitions.push(data); });
+        groupsSnap.forEach(d => { const data = d.data(); data.id = d.id; backupData.groups.push(data); });
+        scoresSnap.forEach(d => { const data = d.data(); data.id = d.id; backupData.scores.push(data); });
+
+        // Delete old backup for this level (if exists)
+        if (lastBackupId) {
+            await window.firebaseOps.deleteDoc(
+                window.firebaseOps.doc(window.db, "backups", lastBackupId)
+            );
+        }
+
+        // Save new backup
+        await window.firebaseOps.addDoc(
+            window.firebaseOps.collection(window.db, "backups"),
+            {
+                level: state.currentLevel,
+                backupData: backupData
+            }
+        );
+        
+        console.log(`Auto backup completed for ${state.currentLevel}: ${backupData.students.length} students, ${backupData.scores.length} scores`);
+    } catch (e) {
+        console.warn('Auto backup failed (non-critical):', e);
     }
 }
 
