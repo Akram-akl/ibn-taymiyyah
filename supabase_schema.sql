@@ -216,6 +216,13 @@ CREATE TABLE IF NOT EXISTS level_settings (
     UNIQUE(level, feature_name)
 );
 
+-- Force add columns if table already existed without them
+ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS feature_name TEXT;
+ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 -- 11. Feedback Table
 CREATE TABLE IF NOT EXISTS feedback (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -428,3 +435,4 @@ BEGIN
     END LOOP;
 END;
 $$;
+NOTIFY pgrst, 'reload schema';

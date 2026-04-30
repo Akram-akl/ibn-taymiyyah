@@ -1479,6 +1479,8 @@ async function saveWeekDays() {
             await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "level_settings"), data);
         }
 
+        // Update state immediately so reports use the new schedule right away
+        state.activeWeekDays = [...selectedWeekDays];
         showToast("تم حفظ جدولة الأيام بنجاح ✅");
     } catch (e) {
         console.error("Error saving week days:", e);

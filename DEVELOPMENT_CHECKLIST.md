@@ -14,9 +14,17 @@
 | `js/supabase.js` | وسيط Firebase→Supabase (محاكي API) | ~10KB |
 | `js/quranAnalyzer.js` | محرك بيانات المصحف (بحث + آيات) | ~8KB |
 | `css/styles.css` | تنسيقات مخصصة + Dark Mode | ~157 سطر |
-| `supabase_schema.sql` | هيكلية قاعدة البيانات (الجداول + RLS) | ~19KB |
+| `supabase_schema.sql` | هيكلية قاعدة البيانات (الجداول + RLS) **ملاحظة:** بعد كل تنفيذ لهذا الملف، يجب تشغيل أمر `NOTIFY pgrst, 'reload schema';` لتحديث الـ Cache. | ~19KB |
 | `data/hafsData_v2-0.json` | بيانات المصحف (السور والآيات) | ملف بيانات |
 | `update_site.bat` | أداة رفع التحديثات لـ GitHub → Cloudflare | سكربت نشر |
+
+---
+
+## 🛠️ أوامر هامة لـ Supabase (SQL Editor)
+بعد تنفيذ أي تعديل على هيكلية الجداول باستخدام `supabase_schema.sql`، **يجب دائماً** تنفيذ الأمر التالي في محرر الـ SQL الخاص بـ Supabase لتحديث الـ Schema Cache لتجنب أخطاء "Could not find column in schema cache":
+```sql
+NOTIFY pgrst, 'reload schema';
+```
 
 ---
 
@@ -34,7 +42,7 @@
 ### الـ State المركزي (app.js):
 ```javascript
 const state = {
-    currentLevel: '',      // المرحلة الحالية (level1, level2, ...)
+    currentLevel: '',      // المرحلة الحالية (secondary, middle, upper_elem, lower_elem)
     isTeacher: false,      // هل المستخدم معلم؟
     isParent: false,       // هل المستخدم ولي أمر؟
     parentPhone: '',       // رقم جوال ولي الأمر
@@ -43,9 +51,31 @@ const state = {
     groups: [],            // المجموعات
     scores: [],            // الدرجات
     currentView: 'home',   // الصفحة الحالية
-    parentStudents: []     // طلاب ولي الأمر
+    parentStudents: [],    // طلاب ولي الأمر
+    activeWeekDays: ['sun','mon','tue','wed','thu']  // أيام الحلقة المفعلة (من level_settings)
 }
 ```
+
+### 📅 نظام جدولة أيام الأسبوع (Week Scheduling)
+
+**المبدأ:** كل حلقة (ثانوية / متوسطة / ابتدائية عليا / أولية) لها أيام أسبوع خاصة بها، يحددها المعلم من الإعدادات.
+
+**التخزين:** جدول `level_settings` بـ `feature_name = 'week_days'` + عمود `level` لعزل كل حلقة.
+
+**تدفق البيانات:**
+```
+[المعلم يختار الأيام] → saveWeekDays() → level_settings (Supabase)
+                                              ↓
+[startGlobalDataSync] → onSnapshot(level_settings, level=currentLevel) → state.activeWeekDays
+                                              ↓
+[التقارير] → generateReportDatesForPreviousPeriod() → يبحث للخلف عن أيام تطابق state.activeWeekDays
+                                              ↓
+         → generateWeeklyReport()        (تقرير فردي للطالب)
+         → generateGroupWeeklyReport()   (تقرير المجموعة)
+         → buildWhatsAppQueue()          (واتساب مجمع)
+```
+
+**ملاحظة:** تقارير PDF (`generatePDFReport`, `exportScoresPDF`) تعتمد على فترة يدوية يحددها المعلم (من تاريخ → إلى تاريخ) وليس على الأيام التلقائية.
 
 ---
 
