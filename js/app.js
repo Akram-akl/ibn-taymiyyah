@@ -1173,8 +1173,45 @@ function renderSettings() {
              </div>
              ` : ''}
 
+             ${state.isTeacher ? `
+             <!-- Week Days Scheduling per Level -->
+             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
+                 <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="calendar-days" class="w-5 h-5 text-indigo-600"></i> جدولة أيام الأسبوع</h3>
+                 <p class="text-xs text-gray-500 mb-4">اختر الأيام التي ينعقد فيها النشاط لهذه المرحلة</p>
+                 <div id="week-days-selector" class="grid grid-cols-7 gap-2 mb-4">
+                     <button type="button" onclick="toggleWeekDay('sun')" id="day-sun" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">أحد</button>
+                     <button type="button" onclick="toggleWeekDay('mon')" id="day-mon" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">اثنين</button>
+                     <button type="button" onclick="toggleWeekDay('tue')" id="day-tue" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">ثلاثاء</button>
+                     <button type="button" onclick="toggleWeekDay('wed')" id="day-wed" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">أربعاء</button>
+                     <button type="button" onclick="toggleWeekDay('thu')" id="day-thu" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">خميس</button>
+                     <button type="button" onclick="toggleWeekDay('fri')" id="day-fri" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">جمعة</button>
+                     <button type="button" onclick="toggleWeekDay('sat')" id="day-sat" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">سبت</button>
+                 </div>
+                 <button onclick="saveWeekDays()" class="w-full py-2 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition flex items-center justify-center gap-2">
+                     <i data-lucide="save" class="w-4 h-4"></i> حفظ الجدولة
+                 </button>
+             </div>
+             ` : ''}
+
+             <!-- Bug Report / Suggestion -->
+             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
+                 <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="message-square-warning" class="w-5 h-5 text-orange-600"></i> إبلاغ عن خطأ / اقتراح</h3>
+                 <p class="text-xs text-gray-500 mb-3">سيتم إرسال بلاغك مباشرة إلى المبرمج ولن يظهر في التطبيق</p>
+                 <div class="space-y-3">
+                     <select id="feedback-type" class="w-full bg-gray-50 dark:bg-gray-700 border rounded-xl px-4 py-2 text-sm font-bold">
+                         <option value="bug">🐛 إبلاغ عن خطأ</option>
+                         <option value="suggestion">💡 اقتراح جديد</option>
+                         <option value="other">💬 ملاحظة أخرى</option>
+                     </select>
+                     <textarea id="feedback-text" rows="3" class="w-full bg-gray-50 dark:bg-gray-700 border rounded-xl px-4 py-2 text-sm" placeholder="اكتب تفاصيل البلاغ أو الاقتراح هنا..."></textarea>
+                     <button onclick="submitFeedback()" class="w-full py-2 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700 transition flex items-center justify-center gap-2">
+                         <i data-lucide="send" class="w-4 h-4"></i> إرسال البلاغ
+                     </button>
+                 </div>
+             </div>
+
              <div class="text-center text-xs text-gray-400 mt-8 mb-4">
-                 <p>مسابقات ابن تيمية - إصدار v4.3.0</p>
+                 <p>مسابقات ابن تيمية - إصدار v4.4.0</p>
                  <p class="opacity-50 mt-1 font-light">تم إنشاء هذا التطبيق بواسطة أكرم عقل</p>
              </div>
         </div>
@@ -1184,6 +1221,7 @@ function renderSettings() {
     // Load existing teachers list
     if (state.isTeacher) {
         loadTeachersList();
+        loadWeekDays();
     }
 }
 
@@ -1332,6 +1370,145 @@ async function confirmDeleteTeacher(teacherId) {
     }
 }
 
+// =====================================================
+// FEATURE: Bug Report / Suggestion (Supabase feedback table)
+// =====================================================
+async function submitFeedback() {
+    const typeEl = document.getElementById('feedback-type');
+    const textEl = document.getElementById('feedback-text');
+    const feedbackType = typeEl ? typeEl.value : 'other';
+    const feedbackText = textEl ? textEl.value.trim() : '';
+
+    if (!feedbackText) {
+        showToast("يرجى كتابة تفاصيل البلاغ أو الاقتراح", "error");
+        return;
+    }
+
+    try {
+        const data = {
+            type: feedbackType,
+            message: feedbackText,
+            level: state.currentLevel || 'unknown',
+            role: state.isTeacher ? 'teacher' : (state.isParent ? 'parent' : 'student'),
+            userAgent: navigator.userAgent,
+            createdAt: new Date().toISOString()
+        };
+
+        await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "feedback"), data);
+        showToast("تم إرسال بلاغك بنجاح. شكراً لمساهمتك! 🙏", "success");
+        if (textEl) textEl.value = '';
+    } catch (e) {
+        console.error("Error submitting feedback:", e);
+        showToast("خطأ في إرسال البلاغ، حاول مرة أخرى", "error");
+    }
+}
+
+// =====================================================
+// FEATURE: Flexible Week Days Scheduling per Level
+// =====================================================
+let selectedWeekDays = [];
+
+function toggleWeekDay(day) {
+    const idx = selectedWeekDays.indexOf(day);
+    if (idx === -1) {
+        selectedWeekDays.push(day);
+    } else {
+        selectedWeekDays.splice(idx, 1);
+    }
+    updateWeekDayButtons();
+}
+
+function updateWeekDayButtons() {
+    const allDays = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    allDays.forEach(d => {
+        const btn = document.getElementById(`day-${d}`);
+        if (!btn) return;
+        if (selectedWeekDays.includes(d)) {
+            btn.className = 'py-2 rounded-xl text-xs font-bold border-2 text-center transition border-indigo-500 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300';
+        } else {
+            btn.className = 'py-2 rounded-xl text-xs font-bold border-2 text-center transition border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-500';
+        }
+    });
+}
+
+async function loadWeekDays() {
+    if (!state.currentLevel) return;
+    try {
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "level_settings"),
+            window.firebaseOps.where("level", "==", state.currentLevel)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        
+        selectedWeekDays = [];
+        if (!snap.empty) {
+            snap.forEach(doc => {
+                const data = doc.data();
+                // Use feature_name based schema
+                if (data.featureName === 'week_days' && data.settings && data.settings.activeDays) {
+                    selectedWeekDays = [...data.settings.activeDays];
+                }
+                // Also support direct activeDays field (backward compat)
+                if (data.activeDays && Array.isArray(data.activeDays)) {
+                    selectedWeekDays = [...data.activeDays];
+                }
+            });
+        }
+        updateWeekDayButtons();
+    } catch (e) {
+        console.error("Error loading week days:", e);
+    }
+}
+
+async function saveWeekDays() {
+    if (!state.currentLevel) return;
+    
+    if (selectedWeekDays.length === 0) {
+        showToast("يرجى اختيار يوم واحد على الأقل", "error");
+        return;
+    }
+
+    try {
+        // Check if setting exists for this level + feature
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "level_settings"),
+            window.firebaseOps.where("level", "==", state.currentLevel)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+
+        // Find existing week_days record
+        let existingDocId = null;
+        if (!snap.empty) {
+            snap.forEach(doc => {
+                const data = doc.data();
+                if (data.featureName === 'week_days') {
+                    existingDocId = doc.id;
+                }
+            });
+        }
+
+        const data = {
+            level: state.currentLevel,
+            featureName: 'week_days',
+            isEnabled: true,
+            settings: { activeDays: selectedWeekDays },
+            updatedAt: new Date().toISOString()
+        };
+
+        if (existingDocId) {
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "level_settings", existingDocId), data);
+        } else {
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "level_settings"), data);
+        }
+
+        showToast("تم حفظ جدولة الأيام بنجاح ✅");
+    } catch (e) {
+        console.error("Error saving week days:", e);
+        showToast("خطأ في حفظ الجدولة", "error");
+    }
+}
+
+
 function toggleTheme() {
     state.darkMode = !state.darkMode;
     applyTheme();
@@ -1390,6 +1567,31 @@ function getStudentModalHTML() {
                          <p class="text-xs text-gray-400 mt-1">يستخدم للتواصل عبر واتساب عند الغياب</p>
                      </div>
                      
+                     <div class="grid grid-cols-2 gap-3 mt-1">
+                         <div>
+                             <label class="block text-sm font-bold mb-1 text-gray-600 dark:text-gray-300">رقم الهوية</label>
+                             <input type="text" id="student-national-id" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3 text-sm">
+                         </div>
+                         <div>
+                             <label class="block text-sm font-bold mb-1 text-gray-600 dark:text-gray-300">آخر اختبار جمعية</label>
+                             <select id="student-last-exam" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3 text-sm">
+                                 <option value="">-- اختر --</option>
+                                 <option value="لم يختبر">لم يختبر</option>
+                                 <option value="1">1</option>
+                                 <option value="2">2</option>
+                                 <option value="3">3</option>
+                                 <option value="5">5</option>
+                                 <option value="8">8</option>
+                                 <option value="10">10</option>
+                                 <option value="13">13</option>
+                                 <option value="15">15</option>
+                                 <option value="20">20</option>
+                                 <option value="25">25</option>
+                                 <option value="30">30</option>
+                             </select>
+                         </div>
+                     </div>
+                     
                      <input type="hidden" id="student-memorization">
                      <input type="hidden" id="student-review">
 
@@ -1441,7 +1643,7 @@ function openImagePicker() {
 
 // فتح اختيار الإيموجي
 function openEmojiPicker() {
-    const emojis = ["👤", "🎓", "🏆", "🌟", "📚", "🕌", "⚽", "🧠", "⚔️", "🛡️", "🎒", "🧸", "👦", "👧", "👨‍🎓", "👩‍🎓", "🦁", "🐯", "🦅", "🐎", "🌙", "☀️", "⭐", "🚀", "💪", "🎯", "📖", "✏️", "🎨", "🎵"];
+    const emojis = ["👤", "🎓", "🏆", "🌟", "📚", "🕌", "⚽", "🧠", "⚔️", "🛡️", "🎒", "🧸", "👦", "👧", "👨‍🎓", "👩‍🎓", "🦁", "🐯", "🦅", "🐎", "🌙", "☀️", "⭐", "🚀", "💪", "🎯", "📖", "✏️", "🎨", "🧑​"];
 
     const grid = document.getElementById('emoji-grid');
     grid.innerHTML = emojis.map(e => `
@@ -1800,6 +2002,22 @@ function getGradingModalsHTML() {
     
                                                     <p id="rate-date-display" class="text-center text-sm text-gray-500 mb-4 font-bold bg-gray-100 dark:bg-gray-700 py-1 rounded-lg"></p>
                                                     
+                                                    <!-- Note Box -->
+                                                    <div class="mb-4 bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-xl border border-yellow-200 dark:border-yellow-800 text-right space-y-3 shadow-sm">
+                                                        <h4 class="font-bold text-xs text-yellow-700 dark:text-yellow-400 flex items-center gap-1">📝 إرسال ملاحظة نصية</h4>
+                                                        <textarea id="rate-note-text" rows="2" class="w-full bg-white dark:bg-gray-700 border border-yellow-200 rounded-lg px-2 py-2 text-xs" placeholder="اكتب الملاحظة هنا..."></textarea>
+                                                        <div class="flex items-center gap-2">
+                                                            <select id="rate-note-visibility" class="bg-white dark:bg-gray-700 border border-yellow-200 rounded-lg px-1 py-1 text-xs font-bold text-gray-600">
+                                                                <option value="both">للطالب وولي الأمر</option>
+                                                                <option value="student">للطالب فقط</option>
+                                                                <option value="parent">لولي الأمر فقط</option>
+                                                            </select>
+                                                            <button onclick="submitNote()" class="flex-1 py-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold text-xs rounded-lg transition flex items-center justify-center gap-2">
+                                                                <i data-lucide="send" class="w-4 h-4"></i> إرسال الملاحظة
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
                                                     <div id="criteria-buttons-grid" class="grid grid-cols-1 gap-3"></div>
                                                 </div>
                                             </div>
@@ -1829,6 +2047,21 @@ function getGradingModalsHTML() {
                                                 </div>
                                                 <div id="activity-absent-whatsapp-list" class="space-y-3 mb-6"></div>
                                                 <button onclick="closeModal('activity-absent-modal')" class="w-full py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 rounded-xl font-bold">إغلاق</button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Reset Student Scores Modal -->
+                                        <div id="reset-student-scores-modal" class="fixed inset-0 bg-black/60 z-[200] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+                                            <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col text-center">
+                                                <div class="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                                    <i data-lucide="alert-triangle" class="w-8 h-8"></i>
+                                                </div>
+                                                <h3 class="font-bold text-lg mb-2 text-red-600">تأكيد تصفير الدرجات</h3>
+                                                <p class="text-gray-500 text-sm mb-6">هل أنت متأكد من حذف جميع درجات وغيابات هذا الطالب في هذه المسابقة؟ لا يمكن التراجع عن هذا الإجراء.</p>
+                                                <div class="flex gap-3">
+                                                    <button onclick="closeModal('reset-student-scores-modal')" class="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 font-bold transition">إلغاء</button>
+                                                    <button onclick="confirmResetStudentScores()" class="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition shadow-lg">نعم، تصفير</button>
+                                                </div>
                                             </div>
                                         </div>
                                         `;
@@ -1866,6 +2099,8 @@ function openAddStudentModal() {
     $('#student-form').reset();
     $('#student-modal-title').textContent = 'إضافة طالب جديد';
     $('#save-student-text').textContent = 'حفظ';
+    if(document.getElementById('student-national-id')) document.getElementById('student-national-id').value = '';
+    if(document.getElementById('student-last-exam')) document.getElementById('student-last-exam').value = '';
     
     toggleModal('student-modal', true);
 }
@@ -1901,12 +2136,16 @@ async function openEditStudent(id) {
     $('#student-id').value = student.id;
     $('#student-name').value = student.name;
     $('#student-number').value = student.studentNumber || '';
+    if(document.getElementById('student-national-id')) document.getElementById('student-national-id').value = student.nationalId || '';
+    if(document.getElementById('student-last-exam')) document.getElementById('student-last-exam').value = student.lastAssociationExam || '';
     $('#student-emoji').value = student.icon || '👤';
     $('#student-password-edit').value = student.password || '';
 
     // إعداد حالة القراءة فقط للطالب
     const isTeacher = state.isTeacher;
     $('#student-number').disabled = !isTeacher;
+    if(document.getElementById('student-national-id')) document.getElementById('student-national-id').disabled = !isTeacher;
+    if(document.getElementById('student-last-exam')) document.getElementById('student-last-exam').disabled = !isTeacher;
     $('#student-password-edit').disabled = !isTeacher;
 
     // الاسم والصورة مسموح بتعديلهم
@@ -2228,11 +2467,11 @@ async function generateGroupWeeklyReport(groupId) {
         const netTotal = totalPositiveEarned + totalAbsenceDeduction;
 
         // 4. Construct Message
-        let reportText = `📊 *تقرير الأسبوع (مجموعة ${group.name})* 📊\n`;
-        reportText += `📅 التاريخ: ${dateStrings[0]} إلى ${dateStrings[4]}\n`;
+        let reportText = `📊 *تقرير الفترة السابقة (مجموعة ${group.name})* 📊\n`;
+        reportText += `📅 الفترة: ${dateStrings[0]} إلى ${dateStrings[4]}\n`;
         reportText += `👥 عدد الطلاب: ${memberIds.length}\n`;
         if (activityDaysTaken > 0) {
-            reportText += `🎪 تم إقامة نشاط في هذا الأسبوع\n`;
+            reportText += `🎪 تم إقامة نشاط في هذه الفترة\n`;
         }
         reportText += `------------------\n`;
 
@@ -2658,6 +2897,7 @@ function openRateStudent(studentId) {
     currentRateStudentId = studentId;
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : 'تقييم الطالب';
+    if(document.getElementById('rate-note-text')) document.getElementById('rate-note-text').value = '';
     // Show and initialize quran section
     const quranSec = document.getElementById('rate-quran-section');
     if (quranSec) {
@@ -2728,10 +2968,14 @@ function openRateStudent(studentId) {
                 <span>تقرير أسبوعي</span>
             </button>
         </div>
-        <div class="col-span-1 mt-1 w-full">
-            <button onclick="openCustomPointsModal()" class="w-full py-3 bg-teal-50 hover:bg-teal-100 dark:bg-teal-900/30 dark:hover:bg-teal-900/50 text-teal-700 dark:text-teal-300 rounded-xl font-bold transition flex items-center justify-center gap-2 border border-teal-200 dark:border-teal-800 shadow-sm">
+        <div class="col-span-1 mt-1 w-full flex gap-2">
+            <button onclick="openCustomPointsModal()" class="flex-1 py-3 bg-teal-50 hover:bg-teal-100 dark:bg-teal-900/30 dark:hover:bg-teal-900/50 text-teal-700 dark:text-teal-300 rounded-xl font-bold transition flex items-center justify-center gap-2 border border-teal-200 dark:border-teal-800 shadow-sm">
                 <i data-lucide="sparkles" class="w-5 h-5"></i>
-                إضافة نقاط مخصصة (إيجابي / سلبي)
+                نقاط مخصصة
+            </button>
+            <button onclick="openResetStudentScoresModal()" class="flex-1 py-3 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 rounded-xl font-bold transition flex items-center justify-center gap-2 border border-red-200 dark:border-red-800 shadow-sm">
+                <i data-lucide="trash-2" class="w-5 h-5"></i>
+                تصفير درجاته
             </button>
         </div>
     `;
@@ -2836,6 +3080,87 @@ async function submitScore(criteriaId, points, criteriaName, type) {
     } catch (e) {
         console.error(e);
         showToast("خطأ في الرصد", "error");
+    }
+}
+
+async function submitNote() {
+    if (!currentRateStudentId || !currentGradingCompId) return;
+
+    const dateVal = $('#grading-date').value;
+    const noteText = $('#rate-note-text').value.trim();
+    const visibility = $('#rate-note-visibility').value;
+
+    if (!dateVal) {
+        showToast("يرجى اختيار التاريخ", "error");
+        return;
+    }
+    if (!noteText) {
+        showToast("يرجى كتابة الملاحظة أولاً", "error");
+        return;
+    }
+
+    let criteriaName = "ملاحظة المعلم";
+    if(visibility === 'student') criteriaName += " (للطالب فقط)";
+    else if(visibility === 'parent') criteriaName += " (لولي الأمر فقط)";
+
+    const data = {
+        studentId: currentRateStudentId,
+        competitionId: currentGradingCompId,
+        groupId: currentGradingGroupId,
+        criteriaId: 'TEACHER_NOTE',
+        criteriaName: criteriaName,
+        points: 0,
+        type: 'neutral',
+        noteText: noteText,
+        visibility: visibility,
+        level: state.currentLevel,
+        date: dateVal,
+        updatedAt: new Date(),
+        timestamp: Date.now(),
+        createdAt: new Date()
+    };
+
+    try {
+        await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
+        showToast("تم إرسال الملاحظة بنجاح", "success");
+        $('#rate-note-text').value = '';
+    } catch (e) {
+        console.error(e);
+        showToast("خطأ في الإرسال", "error");
+    }
+}
+
+function openResetStudentScoresModal() {
+    if (!currentRateStudentId || !currentGradingCompId) return;
+    toggleModal('reset-student-scores-modal', true);
+}
+
+async function confirmResetStudentScores() {
+    if (!currentRateStudentId || !currentGradingCompId) return;
+    showToast("جاري تصفير درجات الطالب...");
+    
+    try {
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "scores"),
+            window.firebaseOps.where("studentId", "==", currentRateStudentId),
+            window.firebaseOps.where("competitionId", "==", currentGradingCompId)
+        );
+
+        const snap = await window.firebaseOps.getDocs(q);
+        const batch = window.firebaseOps.writeBatch(window.db);
+
+        snap.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+
+        showToast("تم حذف درجات الطالب في هذه المسابقة بنجاح", "success");
+        closeModal('reset-student-scores-modal');
+        closeModal('rate-student-modal');
+    } catch (e) {
+        console.error("Error resetting student scores:", e);
+        showToast("خطأ في حذف الدرجات", "error");
     }
 }
 window.submitQuranRecord = async (quranType) => {
@@ -3144,6 +3469,8 @@ async function handleSaveStudent(e) {
     const data = {
         name: $('#student-name').value,
         studentNumber: studentNumber,
+        nationalId: $('#student-national-id') ? $('#student-national-id').value.trim() : '',
+        lastAssociationExam: $('#student-last-exam') ? $('#student-last-exam').value : '',
         parentPhone: studentNumber, // Same as studentNumber for parent lookup
         level: state.currentLevel,  // Level for parent to see
         icon: imageBase64, // Store Base64 Image
@@ -3627,9 +3954,9 @@ async function generateWeeklyReport() {
         });
 
         // Calculate Totals per Criteria
-        let reportText = `📊 *تقرير الأسبوع الماضي* 📊\n`;
+        let reportText = `📊 *تقرير الفترة السابقة* 📊\n`;
         reportText += `👤 الطالب: ${student.name}\n`;
-        reportText += `📅 الأسبوع: ${dateStrings[0]} إلى ${dateStrings[dateStrings.length - 1]}\n`;
+        reportText += `📅 الفترة: ${dateStrings[0]} إلى ${dateStrings[dateStrings.length - 1]}\n`;
         if (activityDaysTaken > 0) {
             reportText += `🎪 تم إقامة نشاط (${activityDaysTaken} يوم)\n`;
         }
@@ -5533,7 +5860,7 @@ async function buildWhatsAppQueue(btn) {
                         let totalEarned = 0;
                         let totalPossible = 0;
                         
-                        let reportText = `📊 *تقرير الأسبوع الماضي* 📊\n`;
+                        let reportText = `📊 *تقرير الفترة السابقة* 📊\n`;
                         reportText += `👤 الطالب: ${st.name}\n`;
                         reportText += `📅 الفترة: ${startDate} إلى ${endDate}\n`;
                         if (activityDaysCount > 0) reportText += `🎪 تم إقامة نشاط (${activityDaysCount} يوم)\n`;

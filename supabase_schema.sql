@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS students (
     name TEXT NOT NULL,
     student_number TEXT,
     parent_phone TEXT,
+    national_id TEXT,
+    last_association_exam TEXT,
     level TEXT NOT NULL,
     memorization_plan TEXT,
     review_plan TEXT,
@@ -16,6 +18,16 @@ CREATE TABLE IF NOT EXISTS students (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='national_id') THEN
+        ALTER TABLE students ADD COLUMN national_id TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='last_association_exam') THEN
+        ALTER TABLE students ADD COLUMN last_association_exam TEXT;
+    END IF;
+END $$;
 
 -- 2. Competitions Table
 CREATE TABLE IF NOT EXISTS competitions (
@@ -193,6 +205,18 @@ CREATE TABLE IF NOT EXISTS level_settings (
     UNIQUE(level, feature_name)
 );
 
+-- 11. Feedback Table
+CREATE TABLE IF NOT EXISTS feedback (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    level TEXT,
+    role TEXT,
+    user_agent TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- =====================================================
 -- Enable Row Level Security (RLS)
 -- =====================================================
@@ -206,6 +230,7 @@ ALTER TABLE group_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE student_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_daily_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE level_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
 -- Create Policies (Using DROP IF EXISTS for idempotency)
@@ -300,6 +325,15 @@ CREATE POLICY "Allow public insert level_settings" ON level_settings FOR INSERT 
 CREATE POLICY "Allow public update level_settings" ON level_settings FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete level_settings" ON level_settings FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Allow public read feedback" ON feedback;
+DROP POLICY IF EXISTS "Allow public insert feedback" ON feedback;
+DROP POLICY IF EXISTS "Allow public update feedback" ON feedback;
+DROP POLICY IF EXISTS "Allow public delete feedback" ON feedback;
+CREATE POLICY "Allow public read feedback" ON feedback FOR SELECT USING (true);
+CREATE POLICY "Allow public insert feedback" ON feedback FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update feedback" ON feedback FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete feedback" ON feedback FOR DELETE USING (true);
+
 -- =====================================================
 -- Enable Realtime
 -- =====================================================
@@ -334,6 +368,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'level_settings') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE level_settings;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'feedback') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE feedback;
     END IF;
 END $$;
 

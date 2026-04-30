@@ -195,35 +195,67 @@ async function deleteDoc(docRef) {
 }
 
 // ===== REALTIME SUBSCRIPTION (onSnapshot) =====
+// [IMPROVED]: Singleton connection with debouncing to prevent connection leaks
+let globalChannel = null;
+let activeListeners = [];
+let fetchTimeouts = {}; 
+
 function onSnapshot(queryOrCollection, callback) {
     const tableName = queryOrCollection._table;
+    const listenerId = Math.random().toString(36).substr(2, 9);
 
     // Initial fetch
     getDocs(queryOrCollection).then(callback).catch(console.error);
 
-    // Subscribe to realtime changes
-    const channelName = `${tableName}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Add to active listeners
+    activeListeners.push({
+        id: listenerId,
+        tableName: tableName,
+        query: queryOrCollection,
+        callback: callback
+    });
 
-    const channel = supabaseClient
-        .channel(channelName)
-        .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: tableName },
-            async () => {
-                // Refetch data on any change
-                try {
-                    const result = await getDocs(queryOrCollection);
-                    callback(result);
-                } catch (e) {
-                    console.error('onSnapshot refetch error:', e);
+    // Create a SINGLE global channel if it doesn't exist
+    if (!globalChannel) {
+        globalChannel = supabaseClient.channel('global_db_changes')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public' },
+                (payload) => {
+                    const changedTable = payload.table;
+                    const affectedListeners = activeListeners.filter(l => l.tableName === changedTable);
+                    
+                    affectedListeners.forEach((listener) => {
+                        // Debounce: Wait 250ms before refetching to bundle rapid changes together
+                        if (fetchTimeouts[listener.id]) clearTimeout(fetchTimeouts[listener.id]);
+                        
+                        fetchTimeouts[listener.id] = setTimeout(async () => {
+                            try {
+                                const result = await getDocs(listener.query);
+                                listener.callback(result);
+                            } catch (e) {
+                                console.error('onSnapshot refetch error:', e);
+                            }
+                        }, 250); 
+                    });
                 }
-            }
-        )
-        .subscribe();
+            )
+            .subscribe();
+    }
 
     // Return unsubscribe function
     return () => {
-        supabaseClient.removeChannel(channel);
+        activeListeners = activeListeners.filter(l => l.id !== listenerId);
+        if (fetchTimeouts[listenerId]) {
+            clearTimeout(fetchTimeouts[listenerId]);
+            delete fetchTimeouts[listenerId];
+        }
+        
+        // Clean up channel only when NO listeners are left
+        if (activeListeners.length === 0 && globalChannel) {
+            supabaseClient.removeChannel(globalChannel);
+            globalChannel = null;
+        }
     };
 }
 
