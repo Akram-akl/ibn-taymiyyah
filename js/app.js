@@ -1210,7 +1210,7 @@ function renderSettings() {
                          <i data-lucide="file-spreadsheet" class="w-5 h-5 text-blue-600"></i>
                          <span class="text-xs font-bold text-blue-700 dark:text-blue-400">تصدير الطلاب</span>
                      </button>
-                     <button onclick="exportScoresXLSX()" class="flex items-center justify-center gap-2 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800 hover:bg-purple-100 transition">
+                     <button onclick="openExportScoresModal()" class="flex items-center justify-center gap-2 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800 hover:bg-purple-100 transition">
                          <i data-lucide="file-spreadsheet" class="w-5 h-5 text-purple-600"></i>
                          <span class="text-xs font-bold text-purple-700 dark:text-purple-400">تصدير الدرجات</span>
                      </button>
@@ -5309,11 +5309,13 @@ async function exportStudentsXLSX() {
             'رقم الجوال': s.studentNumber || '',
             'جوال ولي الأمر': s.parentPhone || '',
             'المرحلة': levelName,
-            'كلمة المرور': s.password ? '✅' : '❌',
+            'كلمة المرور': s.password || 'لم يتم التعيين',
+            'رقم الهوية': s.nationalId || s.national_id || '',
+            'آخر اختبار جمعية': s.lastAssociationExam || s.last_association_exam || '',
             'تاريخ الإضافة': s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : ''
         }));
 
-        const ws = XLSX.utils.json_to_sheet(rows, { header: ['#', 'الاسم', 'رقم الجوال', 'جوال ولي الأمر', 'المرحلة', 'كلمة المرور', 'تاريخ الإضافة'] });
+        const ws = XLSX.utils.json_to_sheet(rows, { header: ['#', 'الاسم', 'رقم الجوال', 'جوال ولي الأمر', 'المرحلة', 'كلمة المرور', 'رقم الهوية', 'آخر اختبار جمعية', 'تاريخ الإضافة'] });
         
         // Set column widths
         ws['!cols'] = [
@@ -5322,7 +5324,9 @@ async function exportStudentsXLSX() {
             { wch: 15 }, // رقم الجوال
             { wch: 15 }, // جوال ولي الأمر
             { wch: 18 }, // المرحلة
-            { wch: 12 }, // كلمة المرور
+            { wch: 15 }, // كلمة المرور
+            { wch: 15 }, // الهوية
+            { wch: 20 }, // اختبار الجمعية
             { wch: 15 }, // التاريخ
         ];
 
@@ -5335,7 +5339,63 @@ async function exportStudentsXLSX() {
     }
 }
 
-async function exportScoresXLSX() {
+function openExportScoresModal() {
+    let modal = document.getElementById('export-scores-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'export-scores-modal';
+        modal.dataset.dynamic = 'true';
+        document.body.appendChild(modal);
+    }
+
+    modal.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    
+    // Set default dates (last 30 days to today)
+    const today = new Date();
+    const lastMonth = new Date();
+    lastMonth.setDate(today.getDate() - 30);
+    const endStr = today.toISOString().split('T')[0];
+    const startStr = lastMonth.toISOString().split('T')[0];
+
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center mb-6 border-b pb-4 border-gray-100 dark:border-gray-700">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i data-lucide="file-spreadsheet" class="w-5 h-5 text-purple-600"></i>
+                    تصدير التقرير الشامل
+                </h3>
+                <button onclick="closeModal('export-scores-modal')" class="text-gray-400 hover:text-gray-600 p-1 bg-gray-50 dark:bg-gray-700 rounded-full">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-bold mb-2">من تاريخ</label>
+                        <input type="date" id="export-start-date" value="${startStr}" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-3 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-2">إلى تاريخ</label>
+                        <input type="date" id="export-end-date" value="${endStr}" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-3 text-sm">
+                    </div>
+                </div>
+
+                <button onclick="
+                    const s = document.getElementById('export-start-date').value;
+                    const e = document.getElementById('export-end-date').value;
+                    closeModal('export-scores-modal');
+                    exportScoresXLSX(s, e);
+                " class="w-full mt-4 py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition flex justify-center items-center gap-2">
+                    <i data-lucide="download" class="w-5 h-5"></i> تحميل الإكسل
+                </button>
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
+}
+
+async function exportScoresXLSX(startDateStr, endDateStr) {
     showToast("جاري تجهيز ملف الدرجات...");
     try {
         // Fetch students
@@ -5344,78 +5404,168 @@ async function exportScoresXLSX() {
             window.firebaseOps.where("level", "==", state.currentLevel)
         );
         const studentsSnap = await window.firebaseOps.getDocs(studentsQ);
-        const studentMap = {};
+        const students = [];
         studentsSnap.forEach(doc => {
             const d = doc.data();
-            studentMap[doc.id] = d.name || 'غير معروف';
+            d.id = doc.id;
+            students.push(d);
         });
 
-        const studentIds = Object.keys(studentMap);
-        if (studentIds.length === 0) {
+        if (students.length === 0) {
             showToast("لا يوجد طلاب", "error");
             return;
         }
 
         // Fetch scores filtered by level
-        const scoresQ = window.firebaseOps.query(
+        let scoresQ = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
             window.firebaseOps.where("level", "==", state.currentLevel)
         );
+        
+        // Cannot easily filter by date range if not indexed correctly or if multiple bounds, so we fetch all for level and filter in memory
         const scoresSnap = await window.firebaseOps.getDocs(scoresQ);
         const scores = [];
         scoresSnap.forEach(doc => {
             const d = doc.data();
-            scores.push(d);
+            if(startDateStr && endDateStr) {
+                if (d.date >= startDateStr && d.date <= endDateStr) {
+                    scores.push(d);
+                }
+            } else {
+                scores.push(d);
+            }
         });
 
         if (scores.length === 0) {
-            showToast("لا يوجد درجات للتصدير", "error");
+            showToast("لا يوجد درجات للتصدير في هذه المدة", "error");
             return;
         }
 
         const levelName = LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : state.currentLevel;
 
-        // Sheet 1: All Scores Detail
-        const detailRows = scores.map(s => ({
-            'اسم الطالب': studentMap[s.studentId] || 'غير معروف',
-            'المعيار': s.criteriaName || s.criteriaId || '',
-            'النقاط': parseInt(s.points) || 0,
-            'النوع': s.type || '',
-            'التاريخ': s.date || ''
-        }));
-        const ws1 = XLSX.utils.json_to_sheet(detailRows);
-        ws1['!cols'] = [{ wch: 25 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 12 }];
-
-        // Sheet 2: Summary per Student
-        const summaryMap = {};
-        scores.forEach(s => {
-            const name = studentMap[s.studentId] || 'غير معروف';
-            if (!summaryMap[s.studentId]) summaryMap[s.studentId] = { name, positive: 0, negative: 0, absences: 0 };
-            const pts = parseInt(s.points) || 0;
-            if (pts > 0) summaryMap[s.studentId].positive += pts;
-            else if (pts < 0) summaryMap[s.studentId].negative += Math.abs(pts);
-            if (s.criteriaId === 'ABSENCE_RECORD') summaryMap[s.studentId].absences++;
+        // Build a map of criteria max points
+        const criteriaMaxMap = {};
+        state.competitions.filter(c => c.level === state.currentLevel).forEach(comp => {
+            if (comp.criteria) {
+                comp.criteria.forEach(crit => {
+                    criteriaMaxMap[crit.name] = crit.maxPoints || 0;
+                });
+            }
         });
 
-        const summaryRows = Object.values(summaryMap)
-            .map(s => ({
-                'اسم الطالب': s.name,
-                'النقاط الإيجابية': s.positive,
-                'الخصومات': s.negative,
-                'الصافي': s.positive - s.negative,
-                'أيام الغياب': s.absences
-            }))
-            .sort((a, b) => b['الصافي'] - a['الصافي']);
+        // Map scores to students
+        const summaryMap = {};
+        students.forEach(s => {
+            summaryMap[s.id] = { 
+                name: s.name, 
+                positive: 0, 
+                negative: 0, 
+                absences: 0,
+                criteriaPoints: {},
+                additionalPoints: 0
+            };
+        });
 
-        const ws2 = XLSX.utils.json_to_sheet(summaryRows);
-        ws2['!cols'] = [{ wch: 25 }, { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 12 }];
+        scores.forEach(s => {
+            if (!summaryMap[s.studentId]) return; // Skip if student not found
+            
+            const pts = parseInt(s.points) || 0;
+            const cName = s.criteriaName || s.criteriaId || 'عام';
+            
+            if (pts > 0) summaryMap[s.studentId].positive += pts;
+            else if (pts < 0) summaryMap[s.studentId].negative += Math.abs(pts);
+            
+            if (s.criteriaId === 'ABSENCE_RECORD' || cName.includes('غياب')) {
+                summaryMap[s.studentId].absences++;
+            } else if (s.criteriaId && s.criteriaId.startsWith('CUSTOM_')) {
+                summaryMap[s.studentId].additionalPoints += pts;
+            } else {
+                // Regular criteria
+                if (!summaryMap[s.studentId].criteriaPoints[cName]) {
+                    summaryMap[s.studentId].criteriaPoints[cName] = 0;
+                }
+                summaryMap[s.studentId].criteriaPoints[cName] += pts;
+            }
+        });
+
+        // Calculate totals and sort to get ranks
+        const studentStats = Object.values(summaryMap).map(s => {
+            s.net = s.positive - s.negative;
+            return s;
+        }).sort((a, b) => b.net - a.net);
+
+        // Assign ranks (handling ties)
+        let currentRank = 1;
+        let previousNet = null;
+        studentStats.forEach((s, index) => {
+            if (previousNet !== null && s.net < previousNet) {
+                currentRank = index + 1;
+            }
+            s.rank = currentRank;
+            previousNet = s.net;
+        });
+
+        // Get all unique criteria names used
+        const allCriteriaNames = new Set();
+        studentStats.forEach(s => {
+            Object.keys(s.criteriaPoints).forEach(c => allCriteriaNames.add(c));
+        });
+        const criteriaList = Array.from(allCriteriaNames);
+
+        // Sheet 1: Pivot Summary (The main requested view)
+        const summaryRows = studentStats.map(s => {
+            const row = {
+                'المركز': s.rank,
+                'اسم الطالب': s.name,
+                'الصافي': s.net,
+                'نقاط إضافية': s.additionalPoints > 0 ? `+${s.additionalPoints}` : (s.additionalPoints < 0 ? s.additionalPoints : 0),
+                'أيام الغياب': s.absences
+            };
+
+            // Add each criteria breakdown
+            criteriaList.forEach(cName => {
+                const pts = s.criteriaPoints[cName] || 0;
+                const max = criteriaMaxMap[cName];
+                if (max) {
+                    row[cName] = `${pts} من ${max}`;
+                } else {
+                    row[cName] = pts;
+                }
+            });
+
+            return row;
+        });
+
+        const ws1 = XLSX.utils.json_to_sheet(summaryRows);
+        
+        // Dynamic column widths
+        const cols = [
+            { wch: 8 },  // المركز
+            { wch: 25 }, // الاسم
+            { wch: 10 }, // الصافي
+            { wch: 15 }, // إضافية
+            { wch: 12 }  // الغياب
+        ];
+        criteriaList.forEach(() => cols.push({ wch: 20 }));
+        ws1['!cols'] = cols;
+
+        // Sheet 2: All Scores Detail
+        const detailRows = scores.map(s => ({
+            'اسم الطالب': summaryMap[s.studentId] ? summaryMap[s.studentId].name : 'غير معروف',
+            'المعيار': s.criteriaName || s.criteriaId || '',
+            'النقاط': parseInt(s.points) || 0,
+            'النوع': s.type === 'positive' ? 'إيجابي' : (s.type === 'negative' ? 'سلبي' : s.type),
+            'التاريخ': s.date || ''
+        }));
+        const ws2 = XLSX.utils.json_to_sheet(detailRows);
+        ws2['!cols'] = [{ wch: 25 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 12 }];
 
         const date = new Date().toISOString().split('T')[0];
         downloadXLSX(`درجات_${levelName}_${date}.xlsx`, [
-            { sheet: ws1, name: 'تفاصيل الدرجات' },
-            { sheet: ws2, name: 'ملخص الطلاب' }
+            { sheet: ws1, name: 'التقرير الشامل' },
+            { sheet: ws2, name: 'سجل الحركات (تفصيلي)' }
         ]);
-        showToast(`تم تصدير ${scores.length} درجة`);
+        showToast(`تم تصدير تقرير التقييم الشامل بنجاح`);
     } catch (e) {
         console.error(e);
         showToast("خطأ في التصدير", "error");

@@ -221,6 +221,9 @@ ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}':
 ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
+-- Drop old constraint that forced 1 row per level
+ALTER TABLE level_settings DROP CONSTRAINT IF EXISTS level_settings_level_key;
+
 -- 11. Feedback Table
 CREATE TABLE IF NOT EXISTS feedback (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -521,17 +524,15 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Initial Auth Passwords
+DELETE FROM level_settings WHERE feature_name IN ('auth_passwords', 'master_password');
+
 INSERT INTO level_settings (level, feature_name, is_enabled, settings)
 VALUES 
     ('secondary', 'auth_passwords', true, '{"teacherPass": "1001", "studentPass": "10010"}'::jsonb),
     ('middle', 'auth_passwords', true, '{"teacherPass": "2002", "studentPass": "20020"}'::jsonb),
     ('upper_elem', 'auth_passwords', true, '{"teacherPass": "3003", "studentPass": "30030"}'::jsonb),
-    ('lower_elem', 'auth_passwords', true, '{"teacherPass": "4004", "studentPass": "40040"}'::jsonb)
-ON CONFLICT DO NOTHING;
-
-INSERT INTO level_settings (level, feature_name, is_enabled, settings)
-VALUES ('_global', 'master_password', true, '{"password": "123456"}'::jsonb)
-ON CONFLICT DO NOTHING;
+    ('lower_elem', 'auth_passwords', true, '{"teacherPass": "4004", "studentPass": "40040"}'::jsonb),
+    ('_global', 'master_password', true, '{"password": "123456"}'::jsonb);
 
 -- =====================================================
 -- Create Indexes
