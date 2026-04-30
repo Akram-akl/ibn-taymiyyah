@@ -1432,12 +1432,10 @@ function updateWeekDayButtons() {
         }
     });
 }
-
-        selectedWeekDays = state.activeWeekDays ? [...state.activeWeekDays] : ['sun', 'mon', 'tue', 'wed', 'thu'];
-        updateWeekDayButtons();
-    } catch (e) {
-        console.error("Error loading week days:", e);
-    }
+function loadWeekDays() {
+    if (!state.currentLevel) return;
+    selectedWeekDays = state.activeWeekDays ? [...state.activeWeekDays] : ['sun', 'mon', 'tue', 'wed', 'thu'];
+    updateWeekDayButtons();
 }
 
 async function saveWeekDays() {
