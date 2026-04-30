@@ -3946,6 +3946,7 @@ async function generateWeeklyReport() {
         let totalEarned = 0;
         let totalPossible = 0;
 
+        const daysPassed = dateStrings.length;
         const normalDaysCount = daysPassed - activityDaysTaken;
 
         if (comp.criteria) {
