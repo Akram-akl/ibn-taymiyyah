@@ -176,6 +176,7 @@ function logout() {
     state.students = [];
     state.competitions = [];
     state.scores = [];
+    state.activeWeekDays = ['sun', 'mon', 'tue', 'wed', 'thu']; // default
 
     localStorage.removeItem('auth_level');
     localStorage.removeItem('auth_role');
@@ -512,6 +513,7 @@ const router = {
         if (scoresUnsubscribe) { scoresUnsubscribe(); scoresUnsubscribe = null; }
         if (homeStudentsUnsubscribe) { homeStudentsUnsubscribe(); homeStudentsUnsubscribe = null; }
         if (homeGroupsUnsubscribe) { homeGroupsUnsubscribe(); homeGroupsUnsubscribe = null; }
+        if (window.levelSettingsUnsubscribe) { window.levelSettingsUnsubscribe(); window.levelSettingsUnsubscribe = null; }
     },
     // History-aware navigation
     navigate(view) {
@@ -1431,29 +1433,7 @@ function updateWeekDayButtons() {
     });
 }
 
-async function loadWeekDays() {
-    if (!state.currentLevel) return;
-    try {
-        const q = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "level_settings"),
-            window.firebaseOps.where("level", "==", state.currentLevel)
-        );
-        const snap = await window.firebaseOps.getDocs(q);
-        
-        selectedWeekDays = [];
-        if (!snap.empty) {
-            snap.forEach(doc => {
-                const data = doc.data();
-                // Use feature_name based schema
-                if (data.featureName === 'week_days' && data.settings && data.settings.activeDays) {
-                    selectedWeekDays = [...data.settings.activeDays];
-                }
-                // Also support direct activeDays field (backward compat)
-                if (data.activeDays && Array.isArray(data.activeDays)) {
-                    selectedWeekDays = [...data.activeDays];
-                }
-            });
-        }
+        selectedWeekDays = state.activeWeekDays ? [...state.activeWeekDays] : ['sun', 'mon', 'tue', 'wed', 'thu'];
         updateWeekDayButtons();
     } catch (e) {
         console.error("Error loading week days:", e);
@@ -2372,23 +2352,8 @@ async function generateGroupWeeklyReport(groupId) {
     showToast("جاري إعداد التقرير...", "info");
 
     try {
-        // 1. Calculate Date Range (Sun - Thu)
-        const today = new Date();
-        const dayOfWeek = today.getDay();
-        const startOfWeek = new Date(today);
-        startOfWeek.setDate(today.getDate() - dayOfWeek);
-        startOfWeek.setHours(0, 0, 0, 0);
-
-        const daysPassed = 5; // Fixed for full week report
-        const dateStrings = [];
-        for (let i = 0; i < daysPassed; i++) {
-            const d = new Date(startOfWeek);
-            d.setDate(startOfWeek.getDate() + i);
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            dateStrings.push(`${year}-${month}-${day}`);
-        }
+        // 1. Calculate Date Range (based on active days)
+        const dateStrings = generateReportDatesForPreviousPeriod();
 
         // 2. Fetch Scores for all members
         const memberIds = group.members || [];
@@ -2468,7 +2433,7 @@ async function generateGroupWeeklyReport(groupId) {
 
         // 4. Construct Message
         let reportText = `📊 *تقرير الفترة السابقة (مجموعة ${group.name})* 📊\n`;
-        reportText += `📅 الفترة: ${dateStrings[0]} إلى ${dateStrings[4]}\n`;
+        reportText += `📅 الفترة: ${dateStrings[0] || ''} إلى ${dateStrings[dateStrings.length - 1] || ''}\n`;
         reportText += `👥 عدد الطلاب: ${memberIds.length}\n`;
         if (activityDaysTaken > 0) {
             reportText += `🎪 تم إقامة نشاط في هذه الفترة\n`;
@@ -3115,9 +3080,9 @@ async function submitNote() {
         visibility: visibility,
         level: state.currentLevel,
         date: dateVal,
-        updatedAt: new Date(),
+        updatedAt: new Date().toISOString(),
         timestamp: Date.now(),
-        createdAt: new Date()
+        createdAt: new Date().toISOString()
     };
 
     try {
@@ -3648,6 +3613,51 @@ function startGlobalDataSync() {
         state.groups = allGroups;
         calculateLeaderboard();
     });
+
+    // 3. Level Settings Sync
+    if (window.levelSettingsUnsubscribe) window.levelSettingsUnsubscribe();
+    const qSettings = window.firebaseOps.query(
+        window.firebaseOps.collection(window.db, "level_settings"),
+        window.firebaseOps.where("level", "==", state.currentLevel)
+    );
+    window.levelSettingsUnsubscribe = window.firebaseOps.onSnapshot(qSettings, function(snap) {
+        state.activeWeekDays = ['sun', 'mon', 'tue', 'wed', 'thu']; // default
+        snap.forEach(function(doc) {
+            const data = doc.data();
+            if (data.featureName === 'week_days' && data.settings && data.settings.activeDays) {
+                state.activeWeekDays = [...data.settings.activeDays];
+            } else if (data.activeDays && Array.isArray(data.activeDays)) {
+                state.activeWeekDays = [...data.activeDays];
+            }
+        });
+    });
+}
+
+// Utility to generate dates based on state.activeWeekDays
+function generateReportDatesForPreviousPeriod() {
+    const today = new Date();
+    const result = [];
+    const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    
+    // Look back up to 14 days to find the previous active period
+    let daysFound = 0;
+    const targetDays = (state.activeWeekDays && state.activeWeekDays.length > 0) ? state.activeWeekDays.length : 5;
+    const activeDaysList = state.activeWeekDays || ['sun', 'mon', 'tue', 'wed', 'thu'];
+    
+    // Start from yesterday
+    for(let i = 1; i <= 21 && daysFound < targetDays; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dayStr = dayMap[d.getDay()];
+        if (activeDaysList.includes(dayStr)) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            result.unshift(`${year}-${month}-${day}`); // Add to beginning to keep chronological order
+            daysFound++;
+        }
+    }
+    return result;
 }
 
 // Global History Listener for Android Back Button
@@ -3890,35 +3900,8 @@ async function generateWeeklyReport() {
     const comp = state.competitions.find(c => c.id === currentGradingCompId);
     if (!comp) return;
 
-    // 1. Calculate Date Range (Sun - Thu) of Current Week
-    const today = new Date();
-    const dayOfWeek = today.getDay(); // Sun=0, Sat=6
-    // If today is Friday(5) or Sat(6), we still report for the past week (Sun-Thu).
-    // Start of Week (Sunday):
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - dayOfWeek);
-    startOfWeek.setHours(0, 0, 0, 0);
-
-    // Format dates for comparison (YYYY-MM-DD)
-    // We need to fetch scores from Firestore or use locally cached state.scores if reliable.
-    // state.scores currently fetches ALL scores in 'renderHome'. 
-    // In 'renderCompetitions' -> 'grading', we might not have all scores loaded if we are teacher and didn't visit home?
-    // Let's query Firestore for this student for this week to be safe and accurate.
-
-    // Days Passed (Sun -> Today). Clamp to 5 (Thu).
-    // Force 5 days (Sun, Mon, Tue, Wed, Thu)
-    const daysPassed = 5;
-
-    const dateStrings = [];
-    for (let i = 0; i < daysPassed; i++) {
-        const d = new Date(startOfWeek);
-        d.setDate(startOfWeek.getDate() + i);
-        // Manual YYYY-MM-DD
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        dateStrings.push(`${year}-${month}-${day}`);
-    }
+    // 1. Calculate Date Range (based on active days)
+    const dateStrings = generateReportDatesForPreviousPeriod();
 
     showToast("جاري إعداد التقرير...");
 
@@ -4006,6 +3989,18 @@ async function generateWeeklyReport() {
 
         if (absentDays.length > 0) {
             reportText += `❌ أيام الغياب:\n${absentDays.join('\n')}\n`;
+        }
+
+        // Add Teacher Notes if any
+        const teacherNotes = scores.filter(s => s.criteriaId === 'TEACHER_NOTE' && s.noteText);
+        if (teacherNotes.length > 0) {
+            const visibleNotes = teacherNotes.filter(n => n.visibility !== 'student'); // Show 'both' or 'parent'
+            if (visibleNotes.length > 0) {
+                reportText += `\n💬 ملاحظات المعلم:\n`;
+                visibleNotes.forEach(n => {
+                    reportText += `- ${n.noteText}\n`;
+                });
+            }
         }
 
         reportText += `------------------\n`;
@@ -4504,9 +4499,13 @@ window.renderStudentCalendar = (year, month) => {
     const scoresByDate = {};
     scores.forEach(s => {
         if (!s.date) return;
-        if (!scoresByDate[s.date]) scoresByDate[s.date] = { points: 0, criteria: [], hasQuran: false, quranTypes: [] };
+        if (!scoresByDate[s.date]) scoresByDate[s.date] = { points: 0, criteria: [], hasQuran: false, quranTypes: [], notes: [] };
         scoresByDate[s.date].points += (parseInt(s.points) || 0);
         scoresByDate[s.date].criteria.push(s.criteriaName || (s.criteriaId === 'ABSENCE_RECORD' ? 'غياب' : 'أخرى'));
+        
+        if (s.criteriaId === 'TEACHER_NOTE' && s.noteText) {
+            scoresByDate[s.date].notes.push(s);
+        }
         if (s.quranType) {
             scoresByDate[s.date].hasQuran = true;
             if (!scoresByDate[s.date].quranTypes.includes(s.quranType)) {
@@ -4540,7 +4539,7 @@ window.renderStudentCalendar = (year, month) => {
             if (isAbsence) {
                 dayClass = 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-red-400 transition';
                 dayContentTags.push(`<span class="text-[10px] mt-0.5" title="${dayData.criteria.join(', ')}">❌</span>`);
-            } else if (dayData.points > 0 || dayData.hasQuran) {
+            } else if (dayData.points > 0 || dayData.hasQuran || (dayData.notes && dayData.notes.length > 0)) {
                 dayClass = 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-green-400 transition';
                 if (dayData.points > 0) {
                     dayContentTags.push(`<span class="text-[10px] font-bold text-green-600 mt-0.5" title="${dayData.criteria.join(', ')}">+${dayData.points}</span>`);
@@ -4550,6 +4549,9 @@ window.renderStudentCalendar = (year, month) => {
                     if (dayData.quranTypes.includes('memorization')) qIcons += '📝';
                     if (dayData.quranTypes.includes('review')) qIcons += '🔄';
                     dayContentTags.push(`<span class="text-[10px] mt-0.5" title="سجل قرآن">${qIcons}</span>`);
+                }
+                if (dayData.notes && dayData.notes.length > 0) {
+                    dayContentTags.push(`<span class="text-[10px] mt-0.5" title="ملاحظة من المعلم">💬</span>`);
                 }
             } else if (dayData.points < 0) {
                 dayClass = 'bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-orange-400 transition';
@@ -4627,14 +4629,23 @@ window.showDayDetails = (dateStr) => {
             const isPositive = s.points > 0;
             const isAbsence = s.criteriaId === 'ABSENCE_RECORD';
             const isQuran = s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW';
+            const isNote = s.criteriaId === 'TEACHER_NOTE';
 
             let badge = '';
             if (isQuran) {
                 badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-teal-100 text-teal-700">${s.criteriaId === 'QURAN_MEMORIZATION' ? '📝 حفظ' : '🔄 مراجعة'}</span>`;
             } else if (isAbsence) {
                 badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-red-100 text-red-700">غياب ❌</span>`;
+            } else if (isNote) {
+                badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-yellow-100 text-yellow-800">💬 ملاحظة</span>`;
             } else {
                 badge = `<span class="text-sm font-bold px-2 py-1 rounded-lg ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${isPositive ? '+' : ''}${s.points}</span>`;
+            }
+
+            // Filter note visibility
+            if (isNote && !state.isTeacher) {
+                if (state.isParent && s.visibility === 'student') return; // Hide from parent
+                if (!state.isParent && s.visibility === 'parent') return; // Hide from student
             }
 
             html += `
@@ -4643,6 +4654,11 @@ window.showDayDetails = (dateStr) => {
                     <span class="font-bold text-sm text-gray-800 dark:text-gray-100">${s.criteriaName || (isAbsence ? 'غياب' : 'تقييم')}</span>
                     ${badge}
                 </div>
+                ${isNote && s.noteText ? `
+                <div class="mt-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                    ${s.noteText}
+                </div>
+                ` : ''}
                 ${s.quranSection ? `
                 <div class="mt-2 p-3 bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800 rounded-lg">
                     <p class="text-xs font-bold text-teal-700 dark:text-teal-400 mb-1">📖 المقطع:</p>
@@ -5827,8 +5843,12 @@ async function buildWhatsAppQueue(btn) {
         let e = new Date(endDate);
         const dateStrings = [];
         let totalDaysPassed = 0;
+        const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+        const activeDaysList = state.activeWeekDays || ['sun', 'mon', 'tue', 'wed', 'thu'];
+
         while (d <= e) {
-            if (d.getDay() !== 5 && d.getDay() !== 6) { // Sun-Thu Only
+            const dayStr = dayMap[d.getDay()];
+            if (activeDaysList.includes(dayStr)) {
                 const ys = d.getFullYear();
                 const ms = String(d.getMonth() + 1).padStart(2, '0');
                 const ds = String(d.getDate()).padStart(2, '0');

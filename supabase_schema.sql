@@ -106,7 +106,9 @@ CREATE TABLE IF NOT EXISTS scores (
     quran_end_sura INTEGER,
     quran_start_aya INTEGER,
     quran_end_aya INTEGER,
-    quran_grade TEXT
+    quran_grade TEXT,
+    note_text TEXT,
+    visibility TEXT
 );
 
 DO $$ 
@@ -115,8 +117,17 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='date') THEN
         ALTER TABLE scores ADD COLUMN "date" TEXT;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_end_aya') THEN
+        ALTER TABLE scores ADD COLUMN quran_end_aya INTEGER;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='quran_grade') THEN
         ALTER TABLE scores ADD COLUMN quran_grade TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='note_text') THEN
+        ALTER TABLE scores ADD COLUMN note_text TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='scores' AND column_name='visibility') THEN
+        ALTER TABLE scores ADD COLUMN visibility TEXT;
     END IF;
 END $$;
 
