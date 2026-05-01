@@ -5455,18 +5455,18 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
 
         const levelName = LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : state.currentLevel;
 
-        // Build a map of criteria max points
+        // Build a map of criteria max points (using positivePoints as the daily max)
         const criteriaMaxMap = {};
         // Use all competitions just in case scores reference an inactive competition
         state.competitions.forEach(comp => {
             if (comp.criteria) {
                 comp.criteria.forEach(crit => {
                     if (crit.name) {
-                        criteriaMaxMap[crit.name] = Number(crit.maxPoints) || 0;
-                        criteriaMaxMap[crit.name.trim()] = Number(crit.maxPoints) || 0;
+                        criteriaMaxMap[crit.name] = Number(crit.positivePoints) || 0;
+                        criteriaMaxMap[crit.name.trim()] = Number(crit.positivePoints) || 0;
                     }
                     if (crit.id) {
-                        criteriaMaxMap[crit.id] = Number(crit.maxPoints) || 0;
+                        criteriaMaxMap[crit.id] = Number(crit.positivePoints) || 0;
                     }
                 });
             }
