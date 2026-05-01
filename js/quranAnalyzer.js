@@ -170,6 +170,23 @@ window.QuranService = (function() {
         return ayahs[0];
     }
 
+    // Expose global tab switcher for Quran modal
+    window.switchQuranSurahTab = function(activeIndex, total) {
+        for(let i=0; i<total; i++) {
+            const btn = document.getElementById('quran-tab-btn-'+i);
+            const content = document.getElementById('quran-tab-content-'+i);
+            if(btn && content) {
+                if(i === activeIndex) {
+                    btn.className = 'px-4 py-2 rounded-full font-bold whitespace-nowrap text-sm transition-all bg-amber-600 text-white shadow-md';
+                    content.className = 'block animate-fade-in pb-8';
+                } else {
+                    btn.className = 'px-4 py-2 rounded-full font-bold whitespace-nowrap text-sm transition-all bg-amber-100 text-amber-800 hover:bg-amber-200';
+                    content.className = 'hidden pb-8';
+                }
+            }
+        }
+    };
+
     // Get formatted HTML for a sections array (for display in modal)
     function getTextForSections(sections) {
         if (!isLoaded || !sections || sections.length === 0) return '';
@@ -188,7 +205,7 @@ window.QuranService = (function() {
             const isActive = index === 0;
             const btnClass = isActive ? 'bg-amber-600 text-white shadow-md' : 'bg-amber-100 text-amber-800 hover:bg-amber-200';
             
-            tabsHtml += `<button onclick="switchQuranSurahTab(${index})" id="quran-tab-btn-${index}" class="px-4 py-2 rounded-full font-bold whitespace-nowrap text-sm transition-all ${btnClass}">سورة ${sec.suraName}</button>`;
+            tabsHtml += `<button onclick="window.switchQuranSurahTab(${index}, ${sections.length})" id="quran-tab-btn-${index}" class="px-4 py-2 rounded-full font-bold whitespace-nowrap text-sm transition-all ${btnClass}">سورة ${sec.suraName}</button>`;
             
             contentHtml += `<div id="quran-tab-content-${index}" class="${isActive ? 'block' : 'hidden'} animate-fade-in pb-8">`;
             contentHtml += `<div class="bg-amber-200/60 dark:bg-amber-900/40 rounded-xl py-3 px-6 mb-4 text-center border border-amber-300 dark:border-amber-700">`;
@@ -203,31 +220,8 @@ window.QuranService = (function() {
         });
         
         tabsHtml += '</div>';
-        
-        // Add global tab switcher function if it doesn't exist
-        const scriptHtml = `
-        <script>
-            if (typeof window.switchQuranSurahTab !== 'function') {
-                window.switchQuranSurahTab = function(activeIndex) {
-                    const total = ${sections.length};
-                    for(let i=0; i<total; i++) {
-                        const btn = document.getElementById('quran-tab-btn-'+i);
-                        const content = document.getElementById('quran-tab-content-'+i);
-                        if(btn && content) {
-                            if(i === activeIndex) {
-                                btn.className = 'px-4 py-2 rounded-full font-bold whitespace-nowrap text-sm transition-all bg-amber-600 text-white shadow-md';
-                                content.className = 'block animate-fade-in pb-8';
-                            } else {
-                                btn.className = 'px-4 py-2 rounded-full font-bold whitespace-nowrap text-sm transition-all bg-amber-100 text-amber-800 hover:bg-amber-200';
-                                content.className = 'hidden pb-8';
-                            }
-                        }
-                    }
-                }
-            }
-        </script>`;
 
-        return tabsHtml + contentHtml + scriptHtml;
+        return tabsHtml + contentHtml;
     }
 
     return {

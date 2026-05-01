@@ -5457,10 +5457,17 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
 
         // Build a map of criteria max points
         const criteriaMaxMap = {};
-        state.competitions.filter(c => c.level === state.currentLevel).forEach(comp => {
+        // Use all competitions just in case scores reference an inactive competition
+        state.competitions.forEach(comp => {
             if (comp.criteria) {
                 comp.criteria.forEach(crit => {
-                    criteriaMaxMap[crit.name] = crit.maxPoints || 0;
+                    if (crit.name) {
+                        criteriaMaxMap[crit.name] = Number(crit.maxPoints) || 0;
+                        criteriaMaxMap[crit.name.trim()] = Number(crit.maxPoints) || 0;
+                    }
+                    if (crit.id) {
+                        criteriaMaxMap[crit.id] = Number(crit.maxPoints) || 0;
+                    }
                 });
             }
         });
@@ -5550,7 +5557,7 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
             // Add each criteria breakdown
             criteriaList.forEach(cName => {
                 const pts = s.criteriaPoints[cName] || 0;
-                const baseMax = criteriaMaxMap[cName];
+                const baseMax = criteriaMaxMap[cName] || criteriaMaxMap[cName.trim()];
                 
                 if (baseMax && activeDatesMap[cName]) {
                     const totalMax = baseMax * activeDatesMap[cName].size;
