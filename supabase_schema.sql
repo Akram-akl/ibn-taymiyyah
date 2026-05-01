@@ -528,10 +528,10 @@ DELETE FROM level_settings WHERE feature_name IN ('auth_passwords', 'master_pass
 
 INSERT INTO level_settings (level, feature_name, is_enabled, settings)
 VALUES 
-    ('secondary', 'auth_passwords', true, '{"teacherPass": "1001", "studentPass": "10010"}'::jsonb),
-    ('middle', 'auth_passwords', true, '{"teacherPass": "2002", "studentPass": "20020"}'::jsonb),
-    ('upper_elem', 'auth_passwords', true, '{"teacherPass": "3003", "studentPass": "30030"}'::jsonb),
-    ('lower_elem', 'auth_passwords', true, '{"teacherPass": "4004", "studentPass": "40040"}'::jsonb),
+    ('secondary', 'auth_passwords', true, '{"teacherPass": "1001"}'::jsonb),
+    ('middle', 'auth_passwords', true, '{"teacherPass": "2002"}'::jsonb),
+    ('upper_elem', 'auth_passwords', true, '{"teacherPass": "3003"}'::jsonb),
+    ('lower_elem', 'auth_passwords', true, '{"teacherPass": "4004"}'::jsonb),
     ('_global', 'master_password', true, '{"password": "123456"}'::jsonb);
 
 -- =====================================================

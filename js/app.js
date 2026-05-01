@@ -213,7 +213,6 @@ function backToAuthHome() {
 
 async function verifyStudentLevel() {
     const levelKey = $('#student-level-select').value;
-    const password = $('#student-level-password-input').value;
 
     if (!levelKey || !LEVELS[levelKey]) {
         showToast("الرجاء اختيار المرحلة", "error");
@@ -221,50 +220,39 @@ async function verifyStudentLevel() {
     }
 
     try {
-        // Server-side password verification via Supabase RPC
-        const isValid = await window.firebaseOps.rpc('verify_password', {
-            p_level: levelKey,
-            p_role: 'student',
-            p_password: password
+        // Fetch students for this level directly (no level password needed)
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "students"),
+            window.firebaseOps.where("level", "==", levelKey)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        
+        const students = [];
+        snap.forEach(doc => {
+            const data = doc.data();
+            data.id = doc.id;
+            students.push(data);
         });
 
-        if (isValid) {
-            // Fetch students for this level
-            const q = window.firebaseOps.query(
-                window.firebaseOps.collection(window.db, "students"),
-                window.firebaseOps.where("level", "==", levelKey)
-            );
-            const snap = await window.firebaseOps.getDocs(q);
-            
-            const students = [];
-            snap.forEach(doc => {
-                const data = doc.data();
-                data.id = doc.id;
-                students.push(data);
-            });
-
-            // Populate select
-            const nameSelect = $('#student-name-select');
-            nameSelect.innerHTML = '<option value="" disabled selected>-- اختر اسمك --</option>' + 
-                students.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-            
-            if(students.length === 0) {
-                showToast("لا يوجد طلاب مسجلين في هذه المرحلة", "error");
-                return;
-            }
-
-            // Store level for step 2
-            window._tempStudentLevel = levelKey;
-            window._tempLevelStudents = students;
-
-            $('#student-step-1').classList.add('hidden');
-            $('#student-step-2').classList.remove('hidden');
-        } else {
-            showToast("كلمة مرور المرحلة غير صحيحة", "error");
+        // Populate select
+        const nameSelect = $('#student-name-select');
+        nameSelect.innerHTML = '<option value="" disabled selected>-- اختر اسمك --</option>' + 
+            students.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        
+        if(students.length === 0) {
+            showToast("لا يوجد طلاب مسجلين في هذه المرحلة", "error");
+            return;
         }
+
+        // Store level for step 2
+        window._tempStudentLevel = levelKey;
+        window._tempLevelStudents = students;
+
+        $('#student-step-1').classList.add('hidden');
+        $('#student-step-2').classList.remove('hidden');
     } catch(e) {
         console.error(e);
-        showToast("خطأ في التحقق من كلمة المرور", "error");
+        showToast("خطأ في تحميل بيانات الطلاب", "error");
     }
 }
 
