@@ -3220,6 +3220,20 @@ window.submitQuranRecord = async (quranType) => {
         return;
     }
 
+    const startNum = parseInt(startSuraNo);
+    const endNum = parseInt(endSuraNo);
+    const startAyahNum = parseInt(startAyaNo);
+    const endAyahNum = parseInt(endAyaNo);
+
+    if (endNum < startNum) {
+        showToast("لا يمكن أن تكون سورة النهاية قبل سورة البداية", "error");
+        return;
+    }
+    if (endNum === startNum && endAyahNum < startAyahNum) {
+        showToast("لا يمكن أن تكون آية النهاية قبل آية البداية في نفس السورة", "error");
+        return;
+    }
+
     const suras = window.QuranService.getSuras();
     const startSura = suras.find(s => s.number == startSuraNo);
     const endSura = suras.find(s => s.number == endSuraNo);
@@ -5451,7 +5465,7 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
             }
         });
 
-        const excludedCriteria = ['حفظ قرآن', 'مراجعه قرآن', 'ملاحظة المعلم(للطالب فقط)'];
+        const excludedCriteriaKeywords = ['حفظ', 'مراجع', 'ملاحظة'];
 
         // Map scores to students and find active dates per criteria
         const summaryMap = {};
@@ -5474,7 +5488,7 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
             const cName = s.criteriaName || s.criteriaId || 'عام';
             
             // Skip excluded criteria
-            if (excludedCriteria.includes(cName)) return;
+            if (cName.includes('حفظ قرآن') || cName.includes('مراجعة قرآن') || cName.includes('مراجعه قرآن') || cName.includes('ملاحظة المعلم')) return;
 
             const pts = parseInt(s.points) || 0;
             
@@ -5527,6 +5541,7 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
             const row = {
                 'المركز': s.rank,
                 'اسم الطالب': s.name,
+                'الفترة': `من ${startDateStr || 'البداية'} إلى ${endDateStr || 'النهاية'}`,
                 'الصافي': s.net,
                 'نقاط إضافية': s.additionalPoints > 0 ? `+${s.additionalPoints}` : (s.additionalPoints < 0 ? s.additionalPoints : 0),
                 'أيام الغياب': s.absences
@@ -5554,6 +5569,7 @@ async function exportScoresXLSX(startDateStr, endDateStr) {
         const cols = [
             { wch: 8 },  // المركز
             { wch: 25 }, // الاسم
+            { wch: 28 }, // الفترة
             { wch: 10 }, // الصافي
             { wch: 15 }, // إضافية
             { wch: 12 }  // الغياب

@@ -173,26 +173,61 @@ window.QuranService = (function() {
     // Get formatted HTML for a sections array (for display in modal)
     function getTextForSections(sections) {
         if (!isLoaded || !sections || sections.length === 0) return '';
-        let html = '';
-        sections.forEach(sec => {
+        
+        let tabsHtml = '<div class="flex gap-2 overflow-x-auto pb-2 mb-4 hide-scrollbar justify-center">';
+        let contentHtml = '';
+
+        sections.forEach((sec, index) => {
             const ayahs = quranData.filter(a =>
                 a.sura_no == sec.suraNo &&
                 a.aya_no > 0 &&
                 a.aya_no >= sec.fromAyah &&
                 a.aya_no <= sec.toAyah
             );
-            html += `<div class="mb-12 pb-8 border-b-2 border-gray-100 dark:border-gray-700 last:border-0 block">`;
-            html += `<div class="bg-amber-200/60 dark:bg-amber-900/40 rounded-xl py-3 px-6 mb-4 text-center border border-amber-300 dark:border-amber-700">`;
-            html += `<h3 class="text-xl font-bold text-amber-900 dark:text-amber-200">سورة ${sec.suraName}</h3>`;
-            html += `<p class="text-xs text-amber-700 dark:text-amber-400 mt-1">آية ${sec.fromAyah} إلى ${sec.toAyah}</p>`;
-            html += `</div>`;
-            html += `<div class="leading-[2.8] text-right font-quran">`;
-            html += ayahs.map(a => {
+            
+            const isActive = index === 0;
+            const btnClass = isActive ? 'bg-amber-600 text-white shadow-md' : 'bg-amber-100 text-amber-800 hover:bg-amber-200';
+            
+            tabsHtml += `<button onclick="switchQuranSurahTab(${index})" id="quran-tab-btn-${index}" class="px-4 py-2 rounded-full font-bold whitespace-nowrap text-sm transition-all ${btnClass}">سورة ${sec.suraName}</button>`;
+            
+            contentHtml += `<div id="quran-tab-content-${index}" class="${isActive ? 'block' : 'hidden'} animate-fade-in pb-8">`;
+            contentHtml += `<div class="bg-amber-200/60 dark:bg-amber-900/40 rounded-xl py-3 px-6 mb-4 text-center border border-amber-300 dark:border-amber-700">`;
+            contentHtml += `<h3 class="text-xl font-bold text-amber-900 dark:text-amber-200">سورة ${sec.suraName}</h3>`;
+            contentHtml += `<p class="text-xs text-amber-700 dark:text-amber-400 mt-1">آية ${sec.fromAyah} إلى ${sec.toAyah}</p>`;
+            contentHtml += `</div>`;
+            contentHtml += `<div class="leading-[2.8] text-right font-quran">`;
+            contentHtml += ayahs.map(a => {
                 return `<span class="aya-item">${a.aya_text || ""}</span>`;
             }).join(' ');
-            html += `</div></div>`;
+            contentHtml += `</div></div>`;
         });
-        return html;
+        
+        tabsHtml += '</div>';
+        
+        // Add global tab switcher function if it doesn't exist
+        const scriptHtml = `
+        <script>
+            if (typeof window.switchQuranSurahTab !== 'function') {
+                window.switchQuranSurahTab = function(activeIndex) {
+                    const total = ${sections.length};
+                    for(let i=0; i<total; i++) {
+                        const btn = document.getElementById('quran-tab-btn-'+i);
+                        const content = document.getElementById('quran-tab-content-'+i);
+                        if(btn && content) {
+                            if(i === activeIndex) {
+                                btn.className = 'px-4 py-2 rounded-full font-bold whitespace-nowrap text-sm transition-all bg-amber-600 text-white shadow-md';
+                                content.className = 'block animate-fade-in pb-8';
+                            } else {
+                                btn.className = 'px-4 py-2 rounded-full font-bold whitespace-nowrap text-sm transition-all bg-amber-100 text-amber-800 hover:bg-amber-200';
+                                content.className = 'hidden pb-8';
+                            }
+                        }
+                    }
+                }
+            }
+        </script>`;
+
+        return tabsHtml + contentHtml + scriptHtml;
     }
 
     return {
