@@ -20,6 +20,8 @@ const APP_CONFIG = {
         800: '#065f46',
         900: '#064e3b',
     },
+    // لون الهيدر (الشريط العلوي)
+    headerColor: '#064e3b',
 
     // 3. Supabase Database Configuration
     supabaseUrl: 'https://xxcqfqedyymuafqvdtgg.supabase.co',
