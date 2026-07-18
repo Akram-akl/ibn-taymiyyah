@@ -3771,17 +3771,24 @@ async function confirmResetStudentScores() {
     showToast(`جاري تصفير درجات ${getLabel('student')}...`);
     
     try {
+        const comp = state.competitions.find(c => c.id === currentGradingCompId);
+        const targetLevel = comp ? comp.level : state.currentLevel;
+        
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
-            window.firebaseOps.where("studentId", "==", currentRateStudentId),
-            window.firebaseOps.where("competitionId", "==", currentGradingCompId)
+            window.firebaseOps.where("studentId", "==", currentRateStudentId)
         );
 
         const snap = await window.firebaseOps.getDocs(q);
         const batch = window.firebaseOps.writeBatch(window.db);
+        let deletedCount = 0;
 
         snap.forEach(doc => {
-            batch.delete(doc.ref);
+            const data = doc.data();
+            if (data.level === targetLevel) {
+                batch.delete(doc.ref);
+                deletedCount++;
+            }
         });
 
         await batch.commit();
@@ -3795,7 +3802,7 @@ async function confirmResetStudentScores() {
         logAuditEvent('reset_scores', 'scores', currentRateStudentId, {
             studentName: student ? student.name : 'unknown',
             competitionId: currentGradingCompId,
-            deletedCount: snap.size
+            deletedCount: deletedCount
         });
     } catch (e) {
         console.error("Error resetting student scores:", e);
