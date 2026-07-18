@@ -6963,7 +6963,11 @@ async function submitCustomPoints(e) {
 
     const studentId = currentRateStudentId; 
     const compId = currentGradingCompId;
-    const dateVal = document.getElementById('grading-date') ? document.getElementById('grading-date').value : new Date().toISOString().split('T')[0];
+    const dateVal = (document.getElementById('modal-grading-date') && document.getElementById('modal-grading-date').value)
+        ? document.getElementById('modal-grading-date').value
+        : (document.getElementById('grading-date') && document.getElementById('grading-date').value
+            ? document.getElementById('grading-date').value
+            : new Date().toISOString().split('T')[0]);
 
     if(!isGroupCustomPoints && !studentId) {
         showToast("خطأ: لم يتم تحديد الطالب", "error");
