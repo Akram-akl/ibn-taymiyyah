@@ -4236,10 +4236,38 @@ async function openEditCompetition(id) {
 
 let isAppInitialized = false;
 
+function populateLevelSelects() {
+    const studentSelect = $('#student-level-select');
+    const teacherSelect = $('#teacher-level-select');
+    
+    if (studentSelect && APP_CONFIG && APP_CONFIG.levels) {
+        studentSelect.innerHTML = '<option value="" disabled selected>-- اختر --</option>';
+        for (const [key, levelData] of Object.entries(APP_CONFIG.levels)) {
+            if (levelData.hidden) continue;
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = levelData.name;
+            studentSelect.appendChild(option);
+        }
+    }
+    
+    if (teacherSelect && APP_CONFIG && APP_CONFIG.levels) {
+        teacherSelect.innerHTML = '<option value="" disabled selected>-- اختر الحلقة --</option>';
+        for (const [key, levelData] of Object.entries(APP_CONFIG.levels)) {
+            if (levelData.hidden) continue;
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = levelData.name;
+            teacherSelect.appendChild(option);
+        }
+    }
+}
+
 function init() {
     if (isAppInitialized) return;
     isAppInitialized = true;
 
+    populateLevelSelects();
     applyTheme();
 
     // Check for self-registration link
