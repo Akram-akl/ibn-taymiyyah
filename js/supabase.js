@@ -3,6 +3,7 @@
 // =====================================================
 // This wrapper provides the SAME API as Firebase so that
 // existing app.js code works with minimal changes.
+// Project: البراء بن مالك
 // =====================================================
 
 const SUPABASE_URL = APP_CONFIG.supabaseUrl;
@@ -133,34 +134,56 @@ async function getDoc(docRef) {
 }
 
 // ===== GET MULTIPLE DOCUMENTS =====
+// [FIX]: Supabase returns max 1000 rows by default. This function paginates
+// to fetch ALL rows, preventing data loss for large datasets (e.g. umar حلقة).
 async function getDocs(queryOrCollection) {
     let tableName = queryOrCollection._table;
     let constraints = queryOrCollection._constraints || [];
 
-    let query = supabaseClient.from(tableName).select('*');
+    const PAGE_SIZE = 1000;
+    let allData = [];
+    let from = 0;
+    let hasMore = true;
 
-    // Apply constraints
-    for (const c of constraints) {
-        if (c._type === 'where') {
-            const field = c._field.replace(/([A-Z])/g, '_$1').toLowerCase();
-            if (c._op === '==') {
-                query = query.eq(field, c._value);
-            } else if (c._op === 'in') {
-                query = query.in(field, c._value);
-            } else if (c._op === 'array-contains') {
-                query = query.contains(field, [c._value]);
+    while (hasMore) {
+        let query = supabaseClient
+            .from(tableName)
+            .select('*')
+            .range(from, from + PAGE_SIZE - 1);
+
+        // Apply constraints
+        for (const c of constraints) {
+            if (c._type === 'where') {
+                const field = c._field.replace(/([A-Z])/g, '_$1').toLowerCase();
+                if (c._op === '==') {
+                    query = query.eq(field, c._value);
+                } else if (c._op === 'in') {
+                    query = query.in(field, c._value);
+                } else if (c._op === 'array-contains') {
+                    query = query.contains(field, [c._value]);
+                }
             }
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('getDocs error:', error);
+            throw error;
+        }
+
+        const page = data || [];
+        allData = allData.concat(page);
+
+        // If we got fewer rows than PAGE_SIZE, we've reached the end
+        if (page.length < PAGE_SIZE) {
+            hasMore = false;
+        } else {
+            from += PAGE_SIZE;
         }
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-        console.error('getDocs error:', error);
-        throw error;
-    }
-
-    const docs = (data || []).map(row => ({
+    const docs = allData.map(row => ({
         id: row.id,
         data: () => toCamelCase(row),
         ref: { _table: tableName, _id: row.id, _type: 'doc' }

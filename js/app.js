@@ -86,6 +86,14 @@ function showToast(msg, type = 'success') {
     }, 3000);
 }
 
+function toggleModal(id, show = true) {
+    const modal = $(`#${id}`);
+    if (!modal) return;
+    if (show) modal.classList.remove('hidden');
+    else modal.classList.add('hidden');
+}
+window.closeModal = (id) => toggleModal(id, false);
+
 function showCustomConfirm(message) {
     return new Promise((resolve) => {
         const modalId = 'custom-confirm-' + Date.now();
@@ -110,14 +118,6 @@ function showCustomConfirm(message) {
         document.getElementById(`btn-confirm-${modalId}`).onclick = () => { modal.remove(); resolve(true); };
     });
 }
-
-function toggleModal(id, show = true) {
-    const modal = $(`#${id}`);
-    if (!modal) return;
-    if (show) modal.classList.remove('hidden');
-    else modal.classList.add('hidden');
-}
-window.closeModal = (id) => toggleModal(id, false);
 
 // --- Image Compression Utility ---
 async function compressImage(file, maxWidth = 150, maxHeight = 150, quality = 0.4) {
@@ -1172,29 +1172,21 @@ async function acceptTransferRequest(requestId, studentId, deleteOldDataStr, fro
                 await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'student_plans', planDoc.id));
             }
         } catch (planError) { console.error('Failed to delete student plans on transfer:', planError); }
-
-        // 4. Delete the request
         await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, "transfer_requests", requestId));
-        
         showToast(`تم قبول ونقل ${getLabel('student')} لحلقتكم بنجاح ✅`);
     } catch (e) {
-        console.error("Error accepting transfer:", e);
-        showToast(`حدث خطأ أثناء نقل ${getLabel('student')}`, "error");
+        console.error('Error accepting transfer:', e);
+        showToast(`حدث خطأ أثناء نقل ${getLabel('student')}`, 'error');
     }
 }
 
 async function rejectTransferRequest(requestId) {
-    const isConfirmed = await showCustomConfirm(`�� ��� ����� �� ��� ������ ${getLabel('student')}�`);
+    const isConfirmed = await showCustomConfirm(`هل أنت متأكد من رفض استلام ${getLabel('student')}؟`);
     if (!isConfirmed) return;
     try {
-        await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "transfer_requests", requestId), {
-            status: 'rejected',
-            updatedAt: new Date().toISOString()
-        });
+        await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "transfer_requests", requestId), { status: 'rejected', updatedAt: new Date().toISOString() });
         showToast("تم رفض الطلب");
-    } catch(e) {
-        showToast("حدث خطأ", "error");
-    }
+    } catch(e) { showToast("حدث خطأ", "error"); }
 }
 
 async function dismissRejectedRequest(requestId) {
@@ -2710,11 +2702,11 @@ async function performDeleteStudent() {
                 window.firebaseOps.doc(window.db, 'student_plans', planDoc.id));
         }
         // ----------------------------------------------------------
-        
+
         await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, "students", studentToDeleteId));
         showToast("تم الحذف");
         closeModal('delete-modal-v2');
-        
+
         // Audit log — critical operation
         logAuditEvent('delete_student', 'student', studentToDeleteId, { studentName });
     } catch (err) { console.error(err); showToast("خطأ في الحذف", "error"); }
@@ -4635,7 +4627,6 @@ function openAbsenceOptions() {
         modal = document.createElement('div');
         modal.id = 'absence-modal';
         modal.className = 'fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
-        // Content will be set below
         document.body.appendChild(modal);
     }
 
@@ -5527,14 +5518,16 @@ window.renderStudentCalendar = (year, month) => {
         if (plannedTasks.length > 0) {
             const hasHifz = plannedTasks.some(p => p.planType === 'memorization');
             const hasReview = plannedTasks.some(p => p.planType === 'review');
+            const hasMinor = plannedTasks.some(p => p.planType === 'minor_review');
             
             if (!hasData) {
                 dayClass = 'bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-300 dark:border-emerald-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-emerald-400 transition';
             }
             
             let dots = '';
-            if (hasHifz) dots += `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>`;
+            if (hasHifz)  dots += `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>`;
             if (hasReview) dots += `<span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>`;
+            if (hasMinor) dots += `<span class="w-1.5 h-1.5 rounded-full bg-orange-400"></span>`;
             dayContentTags.push(`<div class="flex gap-1 mt-1">${dots}</div>`);
         }
 
@@ -5674,7 +5667,7 @@ window.showDayDetails = (dateStr) => {
         });
 
         window._openQuranForScore = (scoreId) => {
-            const score = uniqueScores.find(s => s.id === scoreId);
+            const score = window._currentDayUniqueScores ? window._currentDayUniqueScores.find(s => s.id === scoreId) : null;
             if (!score || !score.quranStartSura || !score.quranEndSura) {
                 showToast('التفاصيل الدقيقة للآيات غير متوفرة لهذا السجل القديم', 'error');
                 return;
@@ -6146,7 +6139,7 @@ function openExportScoresModal() {
         document.body.appendChild(modal);
     }
 
-    modal.className = 'fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    modal.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
     
     // Set default dates (last 30 days to today)
     const today = new Date();
@@ -7112,7 +7105,7 @@ function openBulkWhatsAppModal() {
         modal.dataset.dynamic = 'true';
         document.body.appendChild(modal);
     }
-    modal.className = 'fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    modal.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
     const today = new Date();
     const lastWeek = new Date();
     lastWeek.setDate(today.getDate() - 7);
@@ -7399,7 +7392,7 @@ function openReportsModal() {
         document.body.appendChild(modal);
     }
 
-    modal.className = 'fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    modal.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
     
     // Set default dates (last 7 days to today)
     const today = new Date();
@@ -7925,7 +7918,7 @@ function openStatsModal() {
         document.body.appendChild(modal);
     }
 
-    modal.className = 'fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    modal.className = 'fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
     
     const today = new Date();
     const lastWeek = new Date();
@@ -9658,7 +9651,7 @@ async function _loadAllPlans() {
                 </div>
                 ${sPlans.map(p => {
                     const startSuraName = suras.find(s => s.number === p.startSura)?.name || `سورة ${p.startSura}`;
-                    const typeLabel = p.planType === 'memorization' ? '📝 حفظ' : p.planType === 'minor_review' ? '📗 م.ص' : '🔄 مراجعة';
+                    const typeLabel = p.planType === 'memorization' ? '📝 حفظ' : p.planType === 'minor_review' ? '📗 م.صغرى' : '🔄 مراجعة';
                     const typeColor = p.planType === 'memorization' ? 'emerald' : p.planType === 'minor_review' ? 'orange' : 'purple';
                     const expired = p.endDate < today;
                     const daysLeft = Math.max(0, Math.ceil((new Date(p.endDate + 'T00:00:00') - new Date()) / 86400000));
@@ -9737,10 +9730,10 @@ window.openCreatePlanModal = function(mode, preSelectedStudentId) {
                 ${studentPickerHTML}
                 <div>
                     <label class="block text-sm font-bold mb-2">نوع الخطة</label>
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-3 gap-2">
                         <button id="cp-btn-mem" onclick="_cpSelectType('memorization')" class="py-2 rounded-xl font-bold text-sm border-2 border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 transition">📝 حفظ</button>
-                        <button id="cp-btn-minor" onclick="_cpSelectType('minor_review')" class="py-2 rounded-xl font-bold text-sm border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 transition">📗 م.ص</button>
                         <button id="cp-btn-rev" onclick="_cpSelectType('review')" class="py-2 rounded-xl font-bold text-sm border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 transition">🔄 مراجعة</button>
+                        <button id="cp-btn-minor" onclick="_cpSelectType('minor_review')" class="py-2 rounded-xl font-bold text-sm border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 transition">📗 م.صغرى</button>
                     </div>
                     <input type="hidden" id="cp-type" value="memorization">
                 </div>
@@ -9858,14 +9851,13 @@ window.openCreatePlanModal = function(mode, preSelectedStudentId) {
 window._cpSelectType = function(type) {
     document.getElementById('cp-type').value = type;
     const mem = document.getElementById('cp-btn-mem');
-    const minor = document.getElementById('cp-btn-minor');
     const rev = document.getElementById('cp-btn-rev');
-    const activeClass = (color) => `py-2 rounded-xl font-bold text-sm border-2 border-${color}-400 bg-${color}-50 dark:bg-${color}-900/20 text-${color}-700 dark:text-${color}-400 transition scale-[1.02] shadow-sm`;
-    const inactiveClass = 'py-2 rounded-xl font-bold text-sm border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 transition hover:bg-gray-50 dark:hover:bg-gray-600';
-
-    if (mem) mem.className = type === 'memorization' ? activeClass('emerald') : inactiveClass;
+    const minor = document.getElementById('cp-btn-minor');
+    const activeClass = (color) => `py-2 rounded-xl font-bold text-sm border-2 border-${color}-400 bg-${color}-50 dark:bg-${color}-900/20 text-${color}-700 dark:text-${color}-400 transition`;
+    const inactiveClass = 'py-2 rounded-xl font-bold text-sm border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 transition';
+    mem.className   = type === 'memorization' ? activeClass('emerald') : inactiveClass;
+    rev.className   = type === 'review'       ? activeClass('purple')  : inactiveClass;
     if (minor) minor.className = type === 'minor_review'  ? activeClass('orange')  : inactiveClass;
-    if (rev) rev.className = type === 'review'       ? activeClass('purple')  : inactiveClass;
 };
 
 window._cpSetMode = function(mode) {

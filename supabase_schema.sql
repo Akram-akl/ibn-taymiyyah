@@ -1,5 +1,6 @@
 -- =====================================================
--- Supabase Schema for برنامج المتابعة - النسخة التجريبية
+-- Supabase Schema for برنامج البراء بن مالك
+-- Project URL: https://mngfqzkhlfoxmlsjbwyt.supabase.co
 -- =====================================================
 
 -- 1. Students Table
@@ -181,6 +182,7 @@ CREATE TABLE IF NOT EXISTS student_plans (
     end_ayah INTEGER NOT NULL,
     start_page NUMERIC NOT NULL,
     end_page NUMERIC NOT NULL,
+    active_week_days JSONB DEFAULT '["sun","mon","tue","wed","thu"]'::jsonb,
     study_days JSONB DEFAULT '[0,1,2,3,4]'::jsonb, -- NEW: Flexible study days (0=Sun, 4=Thu)
     level TEXT NOT NULL,
     status TEXT DEFAULT 'active', -- 'active', 'completed', 'paused'
@@ -197,14 +199,34 @@ CREATE TABLE IF NOT EXISTS plan_daily_records (
     planned_start_page NUMERIC,
     planned_end_page NUMERIC,
     planned_sections JSONB DEFAULT '[]'::jsonb,
+    planned_start_sura INTEGER,
+    planned_start_ayah INTEGER,
+    planned_end_sura INTEGER,
+    planned_end_ayah INTEGER,
     actual_start_page NUMERIC,
     actual_end_page NUMERIC,
     actual_sections JSONB DEFAULT '[]'::jsonb,
+    actual_start_sura INTEGER,
+    actual_start_ayah INTEGER,
+    actual_end_sura INTEGER,
+    actual_end_ayah INTEGER,
     status TEXT DEFAULT 'pending', -- 'completed', 'absent', 'activity_day', 'intensive', 'different'
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- New columns for flexible plans
+ALTER TABLE student_plans ADD COLUMN IF NOT EXISTS pages_per_day NUMERIC DEFAULT 1;
+ALTER TABLE plan_daily_records ADD COLUMN IF NOT EXISTS planned_start_sura INTEGER;
+ALTER TABLE plan_daily_records ADD COLUMN IF NOT EXISTS planned_start_ayah INTEGER;
+ALTER TABLE plan_daily_records ADD COLUMN IF NOT EXISTS planned_end_sura INTEGER;
+ALTER TABLE plan_daily_records ADD COLUMN IF NOT EXISTS planned_end_ayah INTEGER;
+ALTER TABLE plan_daily_records ADD COLUMN IF NOT EXISTS actual_start_sura INTEGER;
+ALTER TABLE plan_daily_records ADD COLUMN IF NOT EXISTS actual_start_ayah INTEGER;
+ALTER TABLE plan_daily_records ADD COLUMN IF NOT EXISTS actual_end_sura INTEGER;
+ALTER TABLE plan_daily_records ADD COLUMN IF NOT EXISTS actual_end_ayah INTEGER;
+ALTER TABLE plan_daily_records ADD COLUMN IF NOT EXISTS undo_snapshot JSONB;
 
 -- 10. Level Settings Table
 CREATE TABLE IF NOT EXISTS level_settings (
@@ -471,7 +493,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     level TEXT,
     role TEXT,
     device_info TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
@@ -534,14 +557,19 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- GET LEADERBOARD RPC FUNCTION (server-side calculation)
+-- [FIX]: Changed return type from BIGINT to NUMERIC to match the points column type.
+--        Previously, the BIGINT cast caused precision loss and type mismatch errors.
+-- DROP required because PostgreSQL cannot change return type of existing function directly.
+DROP FUNCTION IF EXISTS get_leaderboard(text, uuid);
 CREATE OR REPLACE FUNCTION get_leaderboard(p_level TEXT, p_competition_id UUID DEFAULT NULL)
-RETURNS TABLE(student_id UUID, student_name TEXT, total_points BIGINT) AS $$
+RETURNS TABLE(student_id UUID, student_name TEXT, total_points NUMERIC) AS $$
 BEGIN
     RETURN QUERY
     SELECT s.id, s.name,
            COALESCE(SUM(sc.points), 0)::NUMERIC as total
     FROM students s
     LEFT JOIN scores sc ON sc.student_id = s.id
+        AND sc.level = p_level
         AND (p_competition_id IS NULL OR sc.competition_id = p_competition_id)
     WHERE s.level = p_level
     GROUP BY s.id, s.name
@@ -566,6 +594,9 @@ CREATE INDEX IF NOT EXISTS idx_activity_days_date ON activity_days(date);
 CREATE INDEX IF NOT EXISTS idx_scores_student_id ON scores(student_id);
 CREATE INDEX IF NOT EXISTS idx_scores_competition_id ON scores(competition_id);
 CREATE INDEX IF NOT EXISTS idx_scores_date ON scores(date);
+-- [FIX]: Added missing index on scores.level - critical for leaderboard and export queries
+CREATE INDEX IF NOT EXISTS idx_scores_level ON scores(level);
+CREATE INDEX IF NOT EXISTS idx_scores_level_student_id ON scores(level, student_id);
 CREATE INDEX IF NOT EXISTS idx_students_level ON students(level);
 CREATE INDEX IF NOT EXISTS idx_students_parent_phone ON students(parent_phone);
 CREATE INDEX IF NOT EXISTS idx_groups_competition_id ON groups(competition_id);
@@ -596,4 +627,17 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+
+-- ================================================
+-- RECENT SCHEMA UPDATES (ALTER TABLES)
+-- ================================================
+
+-- Add scheduling fields to student_plans
+ALTER TABLE student_plans ADD COLUMN IF NOT EXISTS active_week_days JSONB DEFAULT '["sun","mon","tue","wed","thu"]'::jsonb;
+ALTER TABLE student_plans ADD COLUMN IF NOT EXISTS study_days JSONB DEFAULT '[0,1,2,3,4]'::jsonb;
+ALTER TABLE student_plans ADD COLUMN IF NOT EXISTS pages_per_day NUMERIC DEFAULT 1;
+ALTER TABLE student_plans ADD COLUMN IF NOT EXISTS original_snapshot JSONB;
+
 NOTIFY pgrst, 'reload schema';
+
