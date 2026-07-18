@@ -7189,12 +7189,14 @@ async function buildWhatsAppQueue(btn) {
     lucide.createIcons();
 
     try {
-        const groups = state.groups.filter(g => g.competitionId === compId);
-        const sSnap = await window.firebaseOps.getDocs(window.firebaseOps.query(window.firebaseOps.collection(window.db, "scores"), window.firebaseOps.where("competitionId", "==", compId)));
-        
         const comp = state.competitions.find(c => c.id === compId);
         if (!comp) throw new Error("Competition not found");
 
+        const groups = state.groups.filter(g => g.competitionId === compId);
+        
+        // Fetch all scores for this level, because Direct Grading saves scores with competitionId = null
+        const sSnap = await window.firebaseOps.getDocs(window.firebaseOps.query(window.firebaseOps.collection(window.db, "scores"), window.firebaseOps.where("level", "==", comp.level)));
+        
         let d = new Date(startDate);
         let e = new Date(endDate);
         const dateStrings = [];
