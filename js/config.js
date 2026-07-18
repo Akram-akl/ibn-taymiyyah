@@ -23,6 +23,9 @@ const APP_CONFIG = {
     // لون الهيدر (الشريط العلوي)
     headerColor: '#064e3b',
 
+    // إظهار ملاحظات التجربة (لنسخة أكرم والتجريبية فقط)
+    showDemoHints: true,
+
     // 3. Supabase Database Configuration
     supabaseUrl: 'https://xxcqfqedyymuafqvdtgg.supabase.co',
     supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4Y3FmcWVkeXltdWFmcXZkdGdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2MDE1MTAsImV4cCI6MjA4NTE3NzUxMH0.t5NArVykZRw5vX-e_Sr-eHzIuwlV6fch85APqL0nZi0',

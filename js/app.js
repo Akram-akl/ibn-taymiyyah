@@ -7247,7 +7247,7 @@ async function buildWhatsAppQueue(btn) {
                                  let earned = 0;
                                  sSnap.forEach(doc => {
                                      let sc = doc.data();
-                                     if(sc.studentId === st.id && sc.criteriaId === c.id && sc.date >= startDate && sc.date <= endDate) {
+                                     if(sc.studentId === st.id && String(sc.criteriaId) === String(c.id) && sc.date >= startDate && sc.date <= endDate) {
                                          earned += parseFloat(sc.points) || 0;
                                      }
                                  });

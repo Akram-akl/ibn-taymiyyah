@@ -89,6 +89,12 @@
                     const meta = document.querySelector('meta[name="theme-color"]');
                     if (meta) meta.setAttribute('content', APP_CONFIG.themeColors[800]);
                 }
+                
+                // Show demo hints if enabled
+                if (APP_CONFIG.showDemoHints) {
+                    const hintsEl = document.getElementById('demo-hints-container');
+                    if (hintsEl) hintsEl.classList.remove('hidden');
+                }
             }
         });
     </script>
@@ -138,6 +144,21 @@
                 <div class="p-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
                     <h1 class="text-xl font-black text-center mb-1 text-gray-800 dark:text-white dynamic-app-name">برنامج المتابعة</h1>
                     <p class="text-center text-gray-500 text-xs mb-6 dynamic-app-description">منصة التحفيظ والمتابعه القرآنية</p>
+
+                    <!-- Demo Hints (Only visible if showDemoHints is true in config) -->
+                    <div id="demo-hints-container" class="hidden text-xs text-gray-500 mb-6 p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right leading-relaxed">
+                        <div class="font-bold mb-2 text-emerald-800 dark:text-emerald-400">🔑 كلمات المرور للتجربة:</div>
+                        <ul class="list-disc list-inside mb-3 space-y-1">
+                            <li>حلقة عبدالله بن عمر: <strong class="font-mono text-gray-700 dark:text-gray-300">1234</strong></li>
+                            <li>حلقة إجازات: <strong class="font-mono text-gray-700 dark:text-gray-300">5678</strong></li>
+                            <li>كلمة المرور الرئيسية: <strong class="font-mono text-gray-700 dark:text-gray-300">112233</strong></li>
+                        </ul>
+                        <div class="font-bold mb-1 text-emerald-800 dark:text-emerald-400">ℹ️ ملاحظة عن الحلقات:</div>
+                        <ul class="list-disc list-inside space-y-1 text-[10px]">
+                            <li>🟢 <strong>عبدالله بن عمر:</strong> مخصصة للطلاب الصغار — يستخدم مصطلحات: طالب، ولي أمر.</li>
+                            <li>🟡 <strong>إجازات:</strong> مخصصة للكبار والجامعيين — يستخدم مصطلحات: دارس، رقم الجوال الشخصي بدلاً من ولي الأمر.</li>
+                        </ul>
+                    </div>
 
                     <!-- Step 1: Role Selection -->
                     <div id="auth-options-panel" class="space-y-4">
