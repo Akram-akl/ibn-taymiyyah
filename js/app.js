@@ -2935,7 +2935,6 @@ async function generateGroupWeeklyReport(groupId) {
 
         const scoresQuery = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
-            window.firebaseOps.where("level", "==", comp.level),
             // We can't use 'in' for both studentId (array) and date (array) usually.
             // Better to fetch all scores for this competition/date and filter by memberIds client-side
             window.firebaseOps.where("date", "in", dateStrings)
@@ -2953,7 +2952,7 @@ async function generateGroupWeeklyReport(groupId) {
         // NEW: Fetch Activity Days Log
         const activityQuery = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "activity_days"),
-            window.firebaseOps.where("level", "==", comp.level),
+            window.firebaseOps.where("competitionId", "==", comp.id),
             window.firebaseOps.where("date", "in", dateStrings)
         );
         const activitySnap = await window.firebaseOps.getDocs(activityQuery);
@@ -4769,7 +4768,6 @@ async function generateWeeklyReport() {
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
             window.firebaseOps.where("studentId", "==", student.id),
-            window.firebaseOps.where("level", "==", comp.level),
             window.firebaseOps.where("date", "in", dateStrings)
         );
 
@@ -4780,7 +4778,7 @@ async function generateWeeklyReport() {
         // NEW: Fetch Activity Days Log
         const activityQuery = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "activity_days"),
-            window.firebaseOps.where("level", "==", comp.level),
+            window.firebaseOps.where("competitionId", "==", comp.id),
             window.firebaseOps.where("date", "in", dateStrings)
         );
         const activitySnap = await window.firebaseOps.getDocs(activityQuery);
