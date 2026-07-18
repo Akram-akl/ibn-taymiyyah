@@ -2811,15 +2811,30 @@ async function viewGroupStudents(groupId) {
     // Fetch scores for this group's students in this competition
     let studentScores = {};
     try {
+        const comp = state.competitions.find(c => c.id === currentManageCompId);
         const scoresQ = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
-            window.firebaseOps.where("competitionId", "==", currentManageCompId)
+            window.firebaseOps.where("level", "==", comp ? comp.level : state.currentLevel)
         );
         const scoresSnap = await window.firebaseOps.getDocs(scoresQ);
         scoresSnap.forEach(doc => {
             const s = doc.data();
             if (memberIds.includes(s.studentId)) {
-                studentScores[s.studentId] = (studentScores[s.studentId] || 0) + (s.points || 0);
+                let include = false;
+                if (s.criteriaId === 'ABSENCE_RECORD' || s.criteriaId === 'ACTIVITY_DAY' || s.criteriaId === 'TEACHER_NOTE') {
+                    include = true;
+                } else {
+                    if (comp && comp.criteria) {
+                        comp.criteria.forEach(c => {
+                            if (String(s.criteriaId) === String(c.id) || (s.criteriaName && c.name && s.criteriaName.trim() === c.name.trim())) {
+                                include = true;
+                            }
+                        });
+                    }
+                }
+                if (include) {
+                    studentScores[s.studentId] = (studentScores[s.studentId] || 0) + (s.points || 0);
+                }
             }
         });
     } catch (e) { console.error("Error fetching scores:", e); }
@@ -2920,7 +2935,7 @@ async function generateGroupWeeklyReport(groupId) {
 
         const scoresQuery = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
-            window.firebaseOps.where("competitionId", "==", comp.id),
+            window.firebaseOps.where("level", "==", comp.level),
             // We can't use 'in' for both studentId (array) and date (array) usually.
             // Better to fetch all scores for this competition/date and filter by memberIds client-side
             window.firebaseOps.where("date", "in", dateStrings)
@@ -2938,7 +2953,7 @@ async function generateGroupWeeklyReport(groupId) {
         // NEW: Fetch Activity Days Log
         const activityQuery = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "activity_days"),
-            window.firebaseOps.where("competitionId", "==", comp.id),
+            window.firebaseOps.where("level", "==", comp.level),
             window.firebaseOps.where("date", "in", dateStrings)
         );
         const activitySnap = await window.firebaseOps.getDocs(activityQuery);
@@ -2956,12 +2971,27 @@ async function generateGroupWeeklyReport(groupId) {
 
         scores.forEach(s => {
             const p = parseFloat(s.points) || 0;
-            if (s.criteriaId === 'ABSENCE_RECORD') {
-                totalAbsenceDeduction += p; // p is negative
-                absenceCount++;
+            let include = false;
+            if (s.criteriaId === 'ABSENCE_RECORD' || s.criteriaId === 'ACTIVITY_DAY' || s.criteriaId === 'TEACHER_NOTE') {
+                include = true;
             } else {
-                if (p > 0) totalPositiveEarned += p;
-                else totalAbsenceDeduction += p; // Negative criteria also deducted
+                if (comp.criteria) {
+                    comp.criteria.forEach(c => {
+                        if (String(s.criteriaId) === String(c.id) || (s.criteriaName && c.name && s.criteriaName.trim() === c.name.trim())) {
+                            include = true;
+                        }
+                    });
+                }
+            }
+            
+            if (include) {
+                if (s.criteriaId === 'ABSENCE_RECORD') {
+                    totalAbsenceDeduction += p; // p is negative
+                    absenceCount++;
+                } else {
+                    if (p > 0) totalPositiveEarned += p;
+                    else totalAbsenceDeduction += p; // Negative criteria also deducted
+                }
             }
         });
 
@@ -4739,7 +4769,7 @@ async function generateWeeklyReport() {
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
             window.firebaseOps.where("studentId", "==", student.id),
-            window.firebaseOps.where("competitionId", "==", comp.id),
+            window.firebaseOps.where("level", "==", comp.level),
             window.firebaseOps.where("date", "in", dateStrings)
         );
 
@@ -4750,7 +4780,7 @@ async function generateWeeklyReport() {
         // NEW: Fetch Activity Days Log
         const activityQuery = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "activity_days"),
-            window.firebaseOps.where("competitionId", "==", comp.id),
+            window.firebaseOps.where("level", "==", comp.level),
             window.firebaseOps.where("date", "in", dateStrings)
         );
         const activitySnap = await window.firebaseOps.getDocs(activityQuery);
@@ -4783,7 +4813,7 @@ async function generateWeeklyReport() {
         if (comp.criteria) {
             comp.criteria.forEach(c => {
                 // Earned
-                const cScores = scores.filter(s => s.criteriaId === c.id);
+                const cScores = scores.filter(s => String(s.criteriaId) === String(c.id) || (s.criteriaName && c.name && s.criteriaName.trim() === c.name.trim()));
                 const earned = cScores.reduce((sum, s) => sum + s.points, 0);
 
                 // Possible: Criteria Points * Normal Days
@@ -5959,9 +5989,10 @@ async function performResetCompetition() {
     showToast("جاري تصفير الدرجات...");
 
     try {
+        const comp = state.competitions.find(c => c.id === compToResetId);
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
-            window.firebaseOps.where("competitionId", "==", compToResetId)
+            window.firebaseOps.where("level", "==", comp ? comp.level : state.currentLevel)
         );
 
         const snap = await window.firebaseOps.getDocs(q);
@@ -7510,11 +7541,12 @@ async function generatePDFReport() {
         closeModal('report-modal');
 
         const groups = state.groups.filter(g => g.competitionId === compId && g.level === state.currentLevel);
+        const comp = state.competitions.find(c => c.id === compId);
         
         const sSnap = await window.firebaseOps.getDocs(
             window.firebaseOps.query(
                 window.firebaseOps.collection(window.db, "scores"),
-                window.firebaseOps.where("competitionId", "==", compId)
+                window.firebaseOps.where("level", "==", comp ? comp.level : state.currentLevel)
             )
         );
         
@@ -7528,7 +7560,22 @@ async function generatePDFReport() {
         const studentStatsMap = {};
         sSnap.forEach(d => {
             const sc = d.data();
-            if (sc.date >= startDate && sc.date <= endDate) {
+            
+            // Check criteria match
+            let include = false;
+            if (sc.criteriaId === 'ABSENCE_RECORD' || sc.criteriaId === 'ACTIVITY_DAY' || sc.criteriaId === 'TEACHER_NOTE') {
+                include = true;
+            } else {
+                if (comp && comp.criteria) {
+                    comp.criteria.forEach(c => {
+                        if (String(sc.criteriaId) === String(c.id) || (sc.criteriaName && c.name && sc.criteriaName.trim() === c.name.trim())) {
+                            include = true;
+                        }
+                    });
+                }
+            }
+
+            if (include && sc.date >= startDate && sc.date <= endDate) {
                 if (!studentStatsMap[sc.studentId]) studentStatsMap[sc.studentId] = { points: 0, positive: 0, negative: 0, excused: 0, unexcused: 0 };
                 const pts = parseFloat(sc.points) || 0;
                 studentStatsMap[sc.studentId].points += pts;
