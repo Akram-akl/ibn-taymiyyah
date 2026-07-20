@@ -3253,6 +3253,230 @@ async function saveGroupChanges() {
     }
 }
 
+// =====================================================
+// === نظام التراجع (Undo System) ===
+// =====================================================
+
+/**
+ * تجلب الدرجات الموجودة لطالب معين في تاريخ معين
+ * @returns {Object} Map: criteriaId → { id, data }
+ */
+async function loadExistingScoresForDate(studentId, compId, date) {
+    try {
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'scores'),
+            window.firebaseOps.where('studentId', '==', studentId),
+            window.firebaseOps.where('date', '==', date)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        const map = {};
+        snap.docs.forEach(d => {
+            const data = d.data();
+            // نفلتر حسب المسابقة إذا كانت محددة (ليس رصد مباشر)
+            if (compId === 'DIRECT_GRADING' || !compId || data.competitionId === compId || !data.competitionId) {
+                if (!map[data.criteriaId]) {
+                    map[data.criteriaId] = { id: d.id, data };
+                }
+            }
+        });
+        return map;
+    } catch (e) {
+        console.error('loadExistingScoresForDate error:', e);
+        return {};
+    }
+}
+
+/**
+ * حذف سجل درجة بـ ID مباشر (تراجع بسيط)
+ */
+async function undoScoreById(scoreId, btnEl, restoreLabel) {
+    if (!scoreId) return;
+    try {
+        if (btnEl) {
+            btnEl.disabled = true;
+            btnEl.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i>';
+            lucide.createIcons();
+        }
+        await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'scores', scoreId));
+        showToast('✓ تم التراجع بنجاح', 'success');
+        // إعادة تحميل أزرار المعايير لتحديث الواجهة
+        const date = document.getElementById('modal-grading-date')?.value;
+        if (date && currentRateStudentId && currentGradingCompId) {
+            await refreshCriteriaButtons(currentRateStudentId, currentGradingCompId, date);
+        }
+    } catch (e) {
+        console.error('undoScoreById error:', e);
+        showToast('حدث خطأ أثناء التراجع', 'error');
+        if (btnEl) {
+            btnEl.disabled = false;
+            btnEl.textContent = restoreLabel || '↩ تراجع';
+        }
+    }
+}
+
+/**
+ * إلغاء يوم نشاط كامل: يحذف سجل activity_days + كل الدرجات المرتبطة به
+ */
+async function undoActivityDay(compId, date) {
+    const btn = document.getElementById('undo-activity-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin mx-1"></i> جاري الإلغاء...';
+        lucide.createIcons();
+    }
+    try {
+        // 1. حذف سجل activity_days
+        const adQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'activity_days'),
+            window.firebaseOps.where('competitionId', '==', compId),
+            window.firebaseOps.where('date', '==', date)
+        );
+        const adSnap = await window.firebaseOps.getDocs(adQ);
+        for (const d of adSnap.docs) {
+            await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'activity_days', d.id));
+        }
+
+        // 2. حذف درجات الحضور والغياب المرتبطة بيوم النشاط
+        const scQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'scores'),
+            window.firebaseOps.where('competitionId', '==', compId),
+            window.firebaseOps.where('date', '==', date)
+        );
+        const scSnap = await window.firebaseOps.getDocs(scQ);
+        for (const d of scSnap.docs) {
+            const data = d.data();
+            if (data.criteriaId === 'ACTIVITY_DAY' || data.type === 'activity' ||
+                (data.criteriaId === 'ABSENCE_RECORD' && data.type === 'absence')) {
+                await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'scores', d.id));
+            }
+        }
+
+        showToast('✓ تم إلغاء يوم النشاط بالكامل', 'success');
+        // تحديث زر النشاط في الواجهة
+        await refreshActivityDayButton(date);
+    } catch (e) {
+        console.error('undoActivityDay error:', e);
+        showToast('حدث خطأ أثناء إلغاء النشاط', 'error');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء النشاط';
+            lucide.createIcons();
+        }
+    }
+}
+
+/**
+ * يتحقق هل يوجد نشاط مسجل للتاريخ المختار ويعرض/يخفي زر الإلغاء
+ */
+async function refreshActivityDayButton(date) {
+    const wrapper = document.getElementById('activity-day-btn-wrapper');
+    if (!wrapper || !currentGradingCompId || !date) return;
+    try {
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'activity_days'),
+            window.firebaseOps.where('competitionId', '==', currentGradingCompId),
+            window.firebaseOps.where('date', '==', date)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        const undoBtn = document.getElementById('undo-activity-btn');
+        if (!snap.empty) {
+            // يوجد نشاط → أظهر زر الإلغاء
+            if (undoBtn) {
+                undoBtn.classList.remove('hidden');
+                undoBtn.disabled = false;
+                undoBtn.innerHTML = '<i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء النشاط';
+                lucide.createIcons();
+            }
+        } else {
+            // لا يوجد نشاط → أخفِ زر الإلغاء
+            if (undoBtn) undoBtn.classList.add('hidden');
+        }
+    } catch (e) {
+        console.error('refreshActivityDayButton error:', e);
+    }
+}
+
+/**
+ * يعيد رسم أزرار المعايير مع حالة التراجع المحدّثة
+ */
+async function refreshCriteriaButtons(studentId, compId, date) {
+    if (!studentId || !compId || !date) return;
+    const existingScores = await loadExistingScoresForDate(studentId, compId, date);
+    renderCriteriaButtons(existingScores);
+    // تحديث حالة زر الغياب وزر القرآن والملاحظة
+    updateAbsenceUndoButton(existingScores);
+    updateQuranUndoButtons(existingScores);
+    updateNoteUndoButton(existingScores);
+}
+
+/**
+ * يُحدّث زر إلغاء الغياب حسب وجود سجل
+ */
+function updateAbsenceUndoButton(existingScores) {
+    const absenceUndoEl = document.getElementById('absence-undo-btn');
+    const absenceRecord = existingScores['ABSENCE_RECORD'];
+    if (absenceRecord && absenceUndoEl) {
+        absenceUndoEl.classList.remove('hidden');
+        absenceUndoEl.setAttribute('data-score-id', absenceRecord.id);
+    } else if (absenceUndoEl) {
+        absenceUndoEl.classList.add('hidden');
+    }
+}
+
+/**
+ * يُحدّث أزرار إلغاء القرآن حسب وجود سجلات
+ */
+function updateQuranUndoButtons(existingScores) {
+    const hifzUndo = document.getElementById('quran-memorization-undo-btn');
+    const murajaUndo = document.getElementById('quran-review-undo-btn');
+    const hifzRecord = existingScores['QURAN_MEMORIZATION'];
+    const murajaRecord = existingScores['QURAN_REVIEW'];
+
+    if (hifzUndo) {
+        if (hifzRecord) {
+            hifzUndo.classList.remove('hidden');
+            hifzUndo.setAttribute('data-score-id', hifzRecord.id);
+        } else {
+            hifzUndo.classList.add('hidden');
+        }
+    }
+    if (murajaUndo) {
+        if (murajaRecord) {
+            murajaUndo.classList.remove('hidden');
+            murajaUndo.setAttribute('data-score-id', murajaRecord.id);
+        } else {
+            murajaUndo.classList.add('hidden');
+        }
+    }
+}
+
+/**
+ * يُحدّث زر إلغاء الملاحظة (آخر ملاحظة في اليوم)
+ */
+async function updateNoteUndoButton(existingScores) {
+    const noteUndoEl = document.getElementById('note-undo-btn');
+    // الملاحظات لا تُستبدل (تُضاف جديدة دائماً) — نبحث عن آخر واحدة في اليوم
+    const date = document.getElementById('modal-grading-date')?.value;
+    if (!date || !currentRateStudentId || !noteUndoEl) return;
+    try {
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'scores'),
+            window.firebaseOps.where('studentId', '==', currentRateStudentId),
+            window.firebaseOps.where('date', '==', date),
+            window.firebaseOps.where('criteriaId', '==', 'TEACHER_NOTE')
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        if (!snap.empty) {
+            // آخر ملاحظة
+            const lastNote = snap.docs[snap.docs.length - 1];
+            noteUndoEl.classList.remove('hidden');
+            noteUndoEl.setAttribute('data-score-id', lastNote.id);
+        } else {
+            noteUndoEl.classList.add('hidden');
+        }
+    } catch(e) { /* تجاهل */ }
+}
+
 // === GRADING SYSTEM ===
 let currentGradingCompId = null;
 let currentGradingGroupId = null;
@@ -3291,17 +3515,23 @@ function openGradingSession(compId, keepDate = false) {
         window.firebaseOps.where("competitionId", "==", compId)
     );
 
-    window.firebaseOps.getDocs(q).then(snap => {
+    window.firebaseOps.getDocs(q).then(async snap => {
         if (snap.empty) {
             container.innerHTML = '<p class="text-center text-gray-400 py-8">لا توجد مجموعات. أضف مجموعات أولاً من قائمة المسابقات.</p>';
             return;
         }
         let html = `
         <div class="mb-4 space-y-2">
-            <button onclick="openActivityCheckModal('ALL')" class="w-full bg-purple-600 text-white px-4 py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-purple-700 transition flex items-center justify-center gap-2">
-                <i data-lucide="zap" class="w-5 h-5"></i>
-                يوم نشاط
-            </button>
+            <div id="activity-day-btn-wrapper" class="space-y-1.5">
+                <button onclick="openActivityCheckModal('ALL')" class="w-full bg-purple-600 text-white px-4 py-3 rounded-xl text-sm font-bold shadow-lg hover:bg-purple-700 transition flex items-center justify-center gap-2">
+                    <i data-lucide="zap" class="w-5 h-5"></i>
+                    يوم نشاط
+                </button>
+                <button id="undo-activity-btn" onclick="undoActivityDay('${compId}', document.getElementById('grading-date').value)"
+                    class="hidden w-full bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-xl text-xs font-bold hover:bg-red-100 transition flex items-center justify-center gap-1.5 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                    <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء النشاط
+                </button>
+            </div>
             <div class="flex gap-2">
                 <button onclick="openCollectiveNoteModal()" class="flex-1 bg-purple-50 text-purple-700 px-4 py-3 rounded-xl text-sm font-bold shadow-sm hover:bg-purple-100 transition flex items-center justify-center gap-2 border border-purple-200">
                     <i data-lucide="message-square" class="w-5 h-5"></i>
@@ -3337,6 +3567,19 @@ function openGradingSession(compId, keepDate = false) {
         html += '</div>';
         container.innerHTML = html;
         lucide.createIcons();
+
+        // تحقق فوري من وجود نشاط للتاريخ الحالي
+        const initDate = $('#grading-date') ? $('#grading-date').value : new Date().toISOString().split('T')[0];
+        refreshActivityDayButton(initDate);
+
+        // مراقبة تغيير التاريخ لتحديث زر الإلغاء
+        const gradingDateInput = document.getElementById('grading-date');
+        if (gradingDateInput && !gradingDateInput._undoListenerAttached) {
+            gradingDateInput._undoListenerAttached = true;
+            gradingDateInput.addEventListener('change', function() {
+                refreshActivityDayButton(this.value);
+            });
+        }
     });
 }
 
@@ -3524,17 +3767,91 @@ function openRateStudent(studentId) {
         return;
     }
 
+    // عرض الأزرار الأساسية فوراً
+    renderCriteriaButtons({});
+
+    toggleModal('rate-student-modal', true);
+    lucide.createIcons();
+
+    // تحميل الدرجات الموجودة للتاريخ الحالي وتحديث أزرار التراجع
+    const _initDate = document.getElementById('modal-grading-date')?.value || mainDate;
+    refreshCriteriaButtons(studentId, currentGradingCompId, _initDate);
+
+    // مراقبة تغيير التاريخ في المودال لتحديث أزرار التراجع
+    const modalDateInput = document.getElementById('modal-grading-date');
+    if (modalDateInput && !modalDateInput._undoListenerAttached) {
+        modalDateInput._undoListenerAttached = true;
+        modalDateInput.addEventListener('change', function() {
+            refreshCriteriaButtons(currentRateStudentId, currentGradingCompId, this.value);
+        });
+    }
+
+    // Load plan tracking if student has active plan for today
+    const _planTrackDate = document.getElementById('modal-grading-date')?.value || new Date().toLocaleDateString('en-CA');
+    if (typeof loadPlanTrackingForStudent === 'function') {
+        loadPlanTrackingForStudent(studentId, _planTrackDate);
+    }
+}
+
+window.setQuranType = (type) => {
+    document.getElementById('rate-quran-type').value = type;
+    const btnHifz = document.getElementById('btn-type-hifz');
+    const btnMuraja = document.getElementById('btn-type-muraja');
+    
+    if (type === 'memorization') {
+        btnHifz.className = "py-2 rounded-lg text-xs font-bold border-2 border-emerald-400 bg-emerald-100 text-emerald-700";
+        btnMuraja.className = "py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500";
+    } else {
+        btnMuraja.className = "py-2 rounded-lg text-xs font-bold border-2 border-emerald-400 bg-emerald-100 text-emerald-700";
+        btnHifz.className = "py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500";
+    }
+};
+
+/**
+ * يرسم أزرار معايير الرصد مع أزرار التراجع للمعايير التي لها درجات مسجّلة
+ * @param {Object} existingScores - Map: criteriaId → { id, data } من loadExistingScoresForDate
+ */
+function renderCriteriaButtons(existingScores) {
     const grid = $('#criteria-buttons-grid');
-    grid.innerHTML = comp.criteria.map(c => {
+    if (!grid) return;
+    
+    let criteriaHtml = '';
+    const comp = state.competitions.find(c => c.id === currentGradingCompId);
+    
+    if (comp && comp.criteria) {
+        criteriaHtml = comp.criteria.map(c => {
         const hasPos = parseFloat(c.positivePoints) > 0;
         const hasNeg = parseFloat(c.negativePoints) > 0;
         const isMult = !!c.isMultiplier;
+        const existing = existingScores[c.id];
+        const existingPoints = existing ? existing.data.points : null;
+        const existingId = existing ? existing.id : null;
+
+        // شارة القيمة الحالية إذا وُجدت
+        const currentBadge = existingPoints !== null
+            ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${existingPoints >= 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'}">
+                ${existingPoints > 0 ? '+' : ''}${existingPoints} مسجّل
+               </span>`
+            : '';
+
+        // زر التراجع إذا وُجد سجل
+        const undoBtn = existingId
+            ? `<button onclick="undoScoreById('${existingId}', this, '↩ تراجع')"
+                  class="flex items-center gap-1 px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded-lg text-[10px] font-bold hover:bg-red-100 transition dark:bg-red-900/20 dark:border-red-800 dark:text-red-400"
+                  title="تراجع عن هذا الرصد">
+                  <i data-lucide="rotate-ccw" class="w-3 h-3"></i> تراجع
+               </button>`
+            : '';
 
         return `
             <div class="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-3 mb-2">
-                <div class="flex justify-between items-center">
+                <div class="flex justify-between items-center flex-wrap gap-1">
                     <span class="font-bold text-sm">${c.name}</span>
-                    <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider">${isMult ? 'تكرار متعدد' : 'ثابت'}</span>
+                    <div class="flex items-center gap-1.5">
+                        ${currentBadge}
+                        ${undoBtn}
+                        <span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider">${isMult ? 'تكرار متعدد' : 'ثابت'}</span>
+                    </div>
                 </div>
                 
                 <div class="flex items-center gap-2">
@@ -3565,18 +3882,31 @@ function openRateStudent(studentId) {
             </div>
         `;
     }).join('');
+    } // End of if (comp && comp.criteria)
 
-    // زر الغياب الإضافي + زر التقرير الأسبوعي + زر نقاط مخصصة
-    grid.innerHTML += `
-        <div class="col-span-1 mt-4 grid grid-cols-2 gap-3 w-full">
-            <button onclick="openAbsenceOptions()" class="bg-orange-50 text-orange-700 border border-orange-200 py-3 rounded-xl font-bold hover:bg-orange-100 transition flex items-center justify-center gap-2">
-                <i data-lucide="user-x" class="w-4 h-4"></i>
-                <span>تسجيل غياب</span>
-            </button>
-             <button onclick="generateWeeklyReport()" class="bg-emerald-50 text-emerald-700 border border-emerald-200 py-3 rounded-xl font-bold hover:bg-emerald-100 transition flex items-center justify-center gap-2">
-                <i data-lucide="file-text" class="w-4 h-4"></i>
-                <span>تقرير أسبوعي</span>
-            </button>
+    // زر الغياب مع زر تراجع + زر التقرير + نقاط مخصصة
+    const absExisting = existingScores['ABSENCE_RECORD'];
+    const absUndoBtn = absExisting
+        ? `<button id="absence-undo-btn" data-score-id="${absExisting.id}"
+               onclick="undoScoreById('${absExisting.id}', this, '↩ إلغاء الغياب')"
+               class="w-full mt-1 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition flex items-center justify-center gap-1.5 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+               <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء الغياب المسجّل
+           </button>`
+        : `<button id="absence-undo-btn" class="hidden"></button>`;
+
+    grid.innerHTML = criteriaHtml + `
+        <div class="col-span-1 mt-4 space-y-2 w-full">
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="openAbsenceOptions()" class="bg-orange-50 text-orange-700 border border-orange-200 py-3 rounded-xl font-bold hover:bg-orange-100 transition flex items-center justify-center gap-2">
+                    <i data-lucide="user-x" class="w-4 h-4"></i>
+                    <span>تسجيل غياب</span>
+                </button>
+                <button onclick="generateWeeklyReport()" class="bg-emerald-50 text-emerald-700 border border-emerald-200 py-3 rounded-xl font-bold hover:bg-emerald-100 transition flex items-center justify-center gap-2">
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    <span>تقرير أسبوعي</span>
+                </button>
+            </div>
+            ${absUndoBtn}
         </div>
         <div class="col-span-1 mt-1 w-full flex gap-2">
             <button onclick="openCustomPointsModal()" class="flex-1 py-3 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 rounded-xl font-bold transition flex items-center justify-center gap-2 border border-emerald-300 dark:border-emerald-800 shadow-sm">
@@ -3589,30 +3919,8 @@ function openRateStudent(studentId) {
             </button>
         </div>
     `;
-
-    toggleModal('rate-student-modal', true);
     lucide.createIcons();
-
-    // Load plan tracking if student has active plan for today
-    const _planTrackDate = document.getElementById('modal-grading-date')?.value || new Date().toLocaleDateString('en-CA');
-    if (typeof loadPlanTrackingForStudent === 'function') {
-        loadPlanTrackingForStudent(studentId, _planTrackDate);
-    }
 }
-
-window.setQuranType = (type) => {
-    document.getElementById('rate-quran-type').value = type;
-    const btnHifz = document.getElementById('btn-type-hifz');
-    const btnMuraja = document.getElementById('btn-type-muraja');
-    
-    if (type === 'memorization') {
-        btnHifz.className = "py-2 rounded-lg text-xs font-bold border-2 border-emerald-400 bg-emerald-100 text-emerald-700";
-        btnMuraja.className = "py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500";
-    } else {
-        btnMuraja.className = "py-2 rounded-lg text-xs font-bold border-2 border-emerald-400 bg-emerald-100 text-emerald-700";
-        btnHifz.className = "py-2 rounded-lg text-xs font-bold border-2 border-gray-200 bg-white text-gray-500";
-    }
-};
 
 async function submitScoreWithMultiplier(criteriaId, basePoints, criteriaName, type, isMult) {
     let multiplier = 1;
@@ -3707,6 +4015,8 @@ async function submitScore(criteriaId, points, criteriaName, type) {
             await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
             showToast(`تم رصد ${points > 0 ? '+' : ''}${points} نقطة`, points > 0 ? "success" : "error");
         }
+        // تحديث أزرار التراجع بعد النجاح
+        refreshCriteriaButtons(currentRateStudentId, currentGradingCompId, dateVal);
     } catch (e) {
         console.error(e);
         showToast("خطأ في الرصد", "error");
@@ -3755,6 +4065,8 @@ async function submitNote() {
         await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
         showToast("تم إرسال الملاحظة بنجاح", "success");
         $('#rate-note-text').value = '';
+        // تحديث زر التراجع
+        updateNoteUndoButton({});
     } catch (e) {
         console.error(e);
         showToast("خطأ في الإرسال", "error");
@@ -3906,14 +4218,26 @@ window.submitQuranRecord = async (quranType) => {
             window.firebaseOps.where("criteriaId", "==", criteriaId)
         );
         const snap = await window.firebaseOps.getDocs(q);
+        let savedId;
         if (!snap.empty) {
             await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "scores", snap.docs[0].id), data);
+            savedId = snap.docs[0].id;
             showToast(quranType === 'memorization' ? "تم تعديل الحفظ" : "تم تعديل المراجعة", "success");
         } else {
             data.createdAt = new Date();
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
+            const docRef = await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
+            savedId = docRef.id;
             showToast(quranType === 'memorization' ? "تم التسجيل بنجاح ✨" : "تم التسجيل بنجاح ✨", "success");
         }
+        // تحديث زر التراجع للقرآن
+        const undoBtnId = quranType === 'memorization' ? 'quran-memorization-undo-btn' : 'quran-review-undo-btn';
+        const undoBtn = document.getElementById(undoBtnId);
+        if (undoBtn && savedId) {
+            undoBtn.setAttribute('data-score-id', savedId);
+            undoBtn.classList.remove('hidden');
+            undoBtn.classList.add('flex');
+        }
+        lucide.createIcons();
     } catch (e) {
         console.error("Submission Error:", e);
         showToast("خطأ: " + (e.message || "فشل الاتصال بالخادم"), "error");
@@ -8459,6 +8783,7 @@ function openDirectGradingStudent(studentId) {
                 <i data-lucide="user-x" class="w-4 h-4"></i>
                 <span>تسجيل غياب</span>
             </button>
+            <button id="absence-undo-btn" class="hidden"></button>
             <button onclick="openTransferStudent('${studentId}')" class="bg-purple-50 text-purple-700 border border-purple-200 py-3 rounded-xl font-bold hover:bg-purple-100 transition flex items-center justify-center gap-2">
                 <i data-lucide="arrow-right-left" class="w-4 h-4"></i>
                 <span>نقل ${getLabel('student')}</span>
@@ -8468,6 +8793,10 @@ function openDirectGradingStudent(studentId) {
 
     toggleModal('rate-student-modal', true);
     lucide.createIcons();
+
+    // تحميل الدرجات الموجودة للتاريخ الحالي وتحديث أزرار التراجع
+    const _initDate = document.getElementById('modal-grading-date')?.value || todayStr;
+    refreshCriteriaButtons(studentId, 'DIRECT_GRADING', _initDate);
 
     // Load plan tracking for direct grading
     const _dgPlanDate = new Date().toLocaleDateString('en-CA');
@@ -8560,7 +8889,11 @@ async function submitAbsence(label, points) {
 
         showToast("تم تسجيل الغياب بنجاح");
         closeModal('absence-modal');
-        closeModal('rate-student-modal');
+        
+        // تحديث أزرار التراجع في نافذة تقييم الطالب
+        if (currentRateStudentId && currentGradingCompId) {
+            refreshCriteriaButtons(currentRateStudentId, currentGradingCompId, dateVal);
+        }
 
     } catch (e) {
         console.error("Error submitting absence:", e);
@@ -8656,9 +8989,16 @@ function ensureRateStudentModal() {
                                 <option value="لم يحفظ">❌ لم يحفظ</option>
                             </select>
                         </div>
-                        <button onclick="submitQuranRecord('memorization')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
-                            <i data-lucide="save" class="w-4 h-4"></i>حفظ المقطع
-                        </button>
+                        <div class="flex gap-2 mt-1">
+                            <button onclick="submitQuranRecord('memorization')" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
+                                <i data-lucide="save" class="w-4 h-4"></i>حفظ المقطع
+                            </button>
+                            <button id="quran-memorization-undo-btn" data-score-id=""
+                                onclick="undoScoreById(this.getAttribute('data-score-id'), this, '↩ إلغاء الحفظ')"
+                                class="hidden items-center gap-1 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                                <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Murajaa Box -->
@@ -8701,9 +9041,16 @@ function ensureRateStudentModal() {
                                 <option value="لم يراجع">❌ لم يراجع</option>
                             </select>
                         </div>
-                        <button onclick="submitQuranRecord('review')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
-                            <i data-lucide="save" class="w-4 h-4"></i>حفظ المراجعة
-                        </button>
+                        <div class="flex gap-2 mt-1">
+                            <button onclick="submitQuranRecord('review')" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
+                                <i data-lucide="save" class="w-4 h-4"></i>حفظ المراجعة
+                            </button>
+                            <button id="quran-review-undo-btn" data-score-id=""
+                                onclick="undoScoreById(this.getAttribute('data-score-id'), this, '↩ إلغاء المراجعة')"
+                                class="hidden items-center gap-1 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                                <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء
+                            </button>
+                        </div>
                     </div>
                 </div>                     
                 <div id="rate-quran-plan-display" class="hidden mb-3 text-sm text-center bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 p-2 rounded-lg font-bold text-emerald-800 dark:text-emerald-400"></div>
@@ -8725,6 +9072,11 @@ function ensureRateStudentModal() {
                         </select>
                         <button onclick="submitNote()" class="w-full py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
                             <i data-lucide="send" class="w-4 h-4"></i> إرسال الملاحظة
+                        </button>
+                        <button id="note-undo-btn" data-score-id=""
+                            onclick="undoScoreById(this.getAttribute('data-score-id'), this, '↩ إلغاء آخر ملاحظة')"
+                            class="hidden w-full py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition flex items-center justify-center gap-1.5 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                            <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء آخر ملاحظة مرسلة
                         </button>
                     </div>
                 </div>
@@ -8901,6 +9253,9 @@ async function submitCollectiveNote() {
         return;
     }
 
+    const confirmed = await showCustomConfirm(`هل أنت متأكد من إرسال الملاحظة الجماعية لعدد ${targetStudents.length} ${getLabel('student')}؟ لا يمكن التراجع عن هذه العملية مرة واحدة.`);
+    if (!confirmed) return;
+
     // Disable button and show loading text
     const submitBtn = document.querySelector('#collective-note-modal button[onclick="submitCollectiveNote()"]');
     const originalText = submitBtn.innerHTML;
@@ -9066,6 +9421,9 @@ async function submitCollectiveGradingScore(criteriaId, criteriaName, points, is
         showToast("الرجاء اختيار طالب واحد على الأقل", "error");
         return;
     }
+
+    const confirmed = await showCustomConfirm(`هل أنت متأكد من رصد "${criteriaName}" لعدد ${selectedIds.length} ${getLabel('student')}؟ لا يمكن التراجع عن هذه العملية مرة واحدة.`);
+    if (!confirmed) return;
 
     // Get repeat count for multiplier criteria
     let multiplier = 1;
@@ -10132,6 +10490,10 @@ window._cpConfirmGaps = function() {
 window._cpSavePlan = async function() {
     const data = window._planPreviewData;
     if (!data) return;
+
+    const confirmed = await showCustomConfirm(`هل أنت متأكد من حفظ هذه الخطة لعدد ${data.studentIds.length} ${getLabel('student')}؟ لا يمكن التراجع عن هذه العملية مباشرة.`);
+    if (!confirmed) return;
+
     const btn = document.getElementById('plan-save-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> جاري الحفظ...'; lucide.createIcons(); }
     try {
