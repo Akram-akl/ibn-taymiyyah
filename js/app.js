@@ -31,6 +31,8 @@ const state = {
     competitions: [],
     groups: [],
     scores: [],
+    forms: [],
+    formResponses: [],
     darkMode: localStorage.getItem('darkMode') === 'true',
     studentPassword: null, // For student mode authentication persistence
     hideScoresFromStudent: false, // حجب الدرجات الإجمالية عن الطالب
@@ -46,6 +48,8 @@ let activeGroupsUnsubscribe = null;
 let scoresUnsubscribe = null;
 let homeStudentsUnsubscribe = null;
 let transferRequestsUnsubscribe = null;
+let formsUnsubscribe = null;
+let formResponsesUnsubscribe = null;
 
 // --- Global Error Handler for Debugging ---
 window.onerror = function (msg, url, line, col, error) {
@@ -207,6 +211,8 @@ function logout() {
     if (scoresUnsubscribe) { scoresUnsubscribe(); scoresUnsubscribe = null; }
     if (homeStudentsUnsubscribe) { homeStudentsUnsubscribe(); homeStudentsUnsubscribe = null; }
     if (transferRequestsUnsubscribe) { transferRequestsUnsubscribe(); transferRequestsUnsubscribe = null; }
+    if (formsUnsubscribe) { formsUnsubscribe(); formsUnsubscribe = null; }
+    if (formResponsesUnsubscribe) { formResponsesUnsubscribe(); formResponsesUnsubscribe = null; }
 
     state.isTeacher = false;
     state.isParent = false;
@@ -216,6 +222,8 @@ function logout() {
     state.students = [];
     state.competitions = [];
     state.scores = [];
+    state.forms = [];
+    state.formResponses = [];
     state.activeWeekDays = ['sun', 'mon', 'tue', 'wed', 'thu']; // default
     state.hideScoresFromStudent = false;
     state.transferRequests = [];
@@ -573,7 +581,11 @@ const router = {
         settings: renderSettings,
         parent: renderParentDashboard,
         direct_grading: renderDirectGrading,
-        plans: renderPlans
+        plans: renderPlans,
+        forms: renderForms,
+        form_builder: renderFormBuilder,
+        form_responses: renderFormResponses,
+        form_viewer: renderFormViewer
     },
     cleanup() {
         // Unsubscribe from all active VIEW-SPECIFIC listeners to prevent memory leaks/lag
@@ -656,7 +668,7 @@ function renderHome() {
             `)}
 
             ${state.isTeacher ? `
-            <div class="grid grid-cols-3 gap-3">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <button onclick="router.navigate('students')" class="bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-emerald-600 transition">
                     <div class="bg-emerald-100 dark:bg-emerald-900/40 p-2.5 rounded-xl text-emerald-700 dark:text-emerald-400">
                         <i data-lucide="user-plus" class="w-5 h-5"></i>
@@ -670,6 +682,12 @@ function renderHome() {
                     </div>
                     <span class="font-medium text-[11px] sm:text-xs">إدارة المسابقات</span>
                 </button>
+                <button onclick="router.navigate('forms')" class="bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-emerald-500 transition">
+                    <div class="bg-blue-100 dark:bg-blue-900/40 p-2.5 rounded-xl text-blue-600 dark:text-blue-400">
+                        <i data-lucide="file-text" class="w-5 h-5"></i>
+                    </div>
+                    <span class="font-medium text-[11px] sm:text-xs">النماذج والاستبيانات</span>
+                </button>
                 <button onclick="openQuranSearchModal()" class="bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-emerald-500 transition">
                     <div class="bg-emerald-100 dark:bg-emerald-900/40 p-2.5 rounded-xl text-emerald-600 dark:text-emerald-400">
                         <i data-lucide="book" class="w-5 h-5"></i>
@@ -677,6 +695,10 @@ function renderHome() {
                     <span class="font-medium text-[11px] sm:text-xs">بحث المصحف</span>
                 </button>
             </div>
+            ` : ''}
+
+            ${_isStudentView ? `
+            <div id="student-forms-container"></div>
             ` : ''}
 
             ${!_hideAggregated ? `
@@ -727,6 +749,10 @@ function renderHome() {
         state.scores = scores;
         calculateLeaderboard();
     });
+
+    if (_isStudentView) {
+        renderStudentFormsWidget();
+    }
 
     lucide.createIcons();
 }
@@ -4789,6 +4815,44 @@ function startGlobalDataSync() {
         });
         state.transferRequests = reqs;
         if (state.currentView === 'students') updateTransferRequestsUI();
+    });
+    // 5. Forms Sync
+    if (formsUnsubscribe) formsUnsubscribe();
+    const qForms = window.firebaseOps.query(
+        window.firebaseOps.collection(window.db, "forms"),
+        window.firebaseOps.where("level", "==", state.currentLevel)
+    );
+    formsUnsubscribe = window.firebaseOps.onSnapshot(qForms, function(snap) {
+        const f = [];
+        snap.forEach(function(d) {
+            var data = d.data();
+            data.id = d.id;
+            f.push(data);
+        });
+        state.forms = f;
+        if (state.currentView === 'forms') {
+            if (typeof renderForms === 'function') renderForms();
+        }
+    });
+
+    // 6. Form Responses Sync
+    if (formResponsesUnsubscribe) formResponsesUnsubscribe();
+    const qResponses = window.firebaseOps.query(
+        window.firebaseOps.collection(window.db, "form_responses"),
+        window.firebaseOps.where("level", "==", state.currentLevel)
+    );
+    formResponsesUnsubscribe = window.firebaseOps.onSnapshot(qResponses, function(snap) {
+        const resp = [];
+        snap.forEach(function(d) {
+            var data = d.data();
+            data.id = d.id;
+            resp.push(data);
+        });
+        state.formResponses = resp;
+        // We might need to update UI if currently viewing form responses
+        if (state.currentView === 'form-responses') {
+            if (typeof renderFormResponses === 'function') renderFormResponses(); // We'll pass the current formId through state or global var
+        }
     });
 }
 
@@ -11082,3 +11146,853 @@ async function _deletePlan(planId) {
 // ====================================================
 // END: نظام الخطط المرن
 // ====================================================
+// ================================================
+// FORMS & SURVEYS MODULE
+// ================================================
+
+window._currentFormId = null;
+window._currentFormStudentId = null;
+
+// Helpers
+function getActiveForms() {
+    return state.forms.filter(f => f.isActive !== false && (!f.endDate || new Date(f.endDate) >= new Date()));
+}
+
+// 1. Student Widget in Home
+function renderStudentFormsWidget() {
+    const container = $('#student-forms-container');
+    if (!container) return;
+
+    if (!window._currentLoggedInStudentId && !state.isParent) return;
+    
+    // For Parent, we need to show forms for ALL their students
+    const targetStudentIds = state.isParent ? state.parentStudents.map(s => s.id) : [window._currentLoggedInStudentId];
+    
+    const activeForms = getActiveForms();
+    let formsHtml = '';
+    
+    targetStudentIds.forEach(studentId => {
+        const student = state.isParent ? state.parentStudents.find(s => s.id === studentId) : state.students.find(s => s.id === studentId);
+        const studentName = student ? student.name : '';
+        
+        const studentResponses = state.formResponses.filter(r => r.studentId === studentId);
+        
+        activeForms.forEach(form => {
+            const hasAnswered = studentResponses.some(r => r.formId === form.id);
+            
+            formsHtml += `
+                <div class="flex justify-between items-center bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
+                    <div>
+                        <h4 class="font-bold text-sm text-gray-800 dark:text-gray-100">${form.title} ${state.isParent ? `<span class="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded ml-2">${studentName}</span>` : ''}</h4>
+                        <p class="text-xs text-gray-500">${form.description || ''}</p>
+                    </div>
+                    <button onclick="window._currentFormId='${form.id}'; window._currentFormStudentId='${studentId}'; router.navigate('form_viewer');" class="px-3 py-1.5 ${hasAnswered ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200' : 'bg-blue-600 text-white hover:bg-blue-700'} text-xs rounded-lg transition font-medium">
+                        ${hasAnswered ? 'تعديل الإجابة' : 'تعبئة النموذج'}
+                    </button>
+                </div>
+            `;
+        });
+    });
+
+    if (!formsHtml) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = `
+    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 shadow-sm mb-4">
+        <h3 class="font-bold text-blue-800 dark:text-blue-300 flex items-center gap-2 mb-3">
+            <i data-lucide="file-text" class="w-5 h-5"></i>
+            النماذج والاستبيانات
+        </h3>
+        <div class="space-y-2">
+            ${formsHtml}
+        </div>
+    </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+// 2. Forms List (Teacher View)
+function renderForms() {
+    const container = $('#view-container');
+    
+    let html = `
+    <div class="space-y-4 animate-fade-in pb-20">
+        <div class="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                <i data-lucide="file-text" class="w-6 h-6 text-blue-600"></i>
+                النماذج والاستبيانات
+            </h2>
+            <button onclick="window._currentFormId=null; router.navigate('form_builder')" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-blue-700 transition flex items-center gap-2">
+                <i data-lucide="plus" class="w-4 h-4"></i> نموذج جديد
+            </button>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    `;
+
+    if (state.forms.length === 0) {
+        html += `<div class="col-span-full text-center py-8 text-gray-500">لا توجد نماذج حالياً</div>`;
+    } else {
+        state.forms.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).forEach(form => {
+            const isActive = form.isActive !== false;
+            const hasEndDate = form.endDate ? new Date(form.endDate) : null;
+            const isExpired = hasEndDate && hasEndDate < new Date();
+            
+            const responsesCount = state.formResponses.filter(r => r.formId === form.id).length;
+            
+            html += `
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
+                <div class="flex justify-between items-start mb-3">
+                    <div>
+                        <h3 class="font-bold text-lg text-gray-800 dark:text-gray-100">${form.title}</h3>
+                        <p class="text-sm text-gray-500 line-clamp-1">${form.description || ''}</p>
+                    </div>
+                    <span class="px-2 py-1 text-xs font-bold rounded-lg ${isActive && !isExpired ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                        ${isActive && !isExpired ? 'نشط' : 'مغلق'}
+                    </span>
+                </div>
+                
+                ${hasEndDate ? `<div class="text-xs text-gray-500 mb-3"><i data-lucide="calendar" class="w-3 h-3 inline"></i> ينتهي في: ${form.endDate}</div>` : ''}
+                
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4 bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg inline-block">
+                    الإجابات: ${responsesCount}
+                </div>
+                
+                <div class="flex flex-wrap gap-2 mt-2">
+                    <button onclick="window._currentFormId='${form.id}'; router.navigate('form_responses')" class="px-3 py-1.5 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg text-xs font-bold hover:bg-blue-100 transition">
+                        عرض الإجابات
+                    </button>
+                    <button onclick="window._currentFormId='${form.id}'; router.navigate('form_builder')" class="px-3 py-1.5 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded-lg text-xs font-bold hover:bg-gray-200 transition">
+                        تعديل
+                    </button>
+                    <button onclick="toggleFormStatus('${form.id}', ${!isActive})" class="px-3 py-1.5 ${isActive ? 'bg-orange-50 text-orange-700 hover:bg-orange-100' : 'bg-green-50 text-green-700 hover:bg-green-100'} rounded-lg text-xs font-bold transition">
+                        ${isActive ? 'إيقاف' : 'تفعيل'}
+                    </button>
+                    <button onclick="deleteForm('${form.id}')" class="px-3 py-1.5 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-lg text-xs font-bold hover:bg-red-100 transition">
+                        حذف
+                    </button>
+                </div>
+            </div>
+            `;
+        });
+    }
+
+    html += `</div></div>`;
+    container.innerHTML = html;
+    lucide.createIcons();
+}
+
+async function toggleFormStatus(formId, newStatus) {
+    showToast("جاري التحديث...");
+    try {
+        await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "forms", formId), { isActive: newStatus });
+        showToast("تم التحديث بنجاح");
+        // State will sync automatically
+    } catch (e) {
+        showToast("حدث خطأ", "error");
+        console.error(e);
+    }
+}
+
+async function deleteForm(formId) {
+    if (await showCustomConfirm("هل أنت متأكد من حذف النموذج وجميع إجاباته؟")) {
+        showToast("جاري الحذف...");
+        try {
+            await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, "forms", formId));
+            showToast("تم الحذف بنجاح");
+        } catch (e) {
+            showToast("حدث خطأ", "error");
+            console.error(e);
+        }
+    }
+}
+
+// 3. Form Builder
+function renderFormBuilder() {
+    const container = $('#view-container');
+    const isEdit = !!window._currentFormId;
+    let form = isEdit ? state.forms.find(f => f.id === window._currentFormId) : { title: '', description: '', fields: [], endDate: '' };
+    
+    if (!form && isEdit) {
+        showToast("النموذج غير موجود", "error");
+        router.navigate('forms');
+        return;
+    }
+
+    // Store temp fields for the builder
+    window._tempFormFields = (form.fields || []).map(f => ({ ...f }));
+
+    let html = `
+    <div class="space-y-4 animate-fade-in pb-20 max-w-2xl mx-auto">
+        <div class="flex items-center gap-3 mb-6">
+            <button onclick="router.navigate('forms')" class="p-2 bg-white dark:bg-gray-800 rounded-full shadow-sm text-gray-600 hover:text-gray-900 border border-gray-100 dark:border-gray-700">
+                <i data-lucide="arrow-right" class="w-5 h-5"></i>
+            </button>
+            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">${isEdit ? 'تعديل النموذج' : 'نموذج جديد'}</h2>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عنوان النموذج <span class="text-red-500">*</span></label>
+                <input type="text" id="form-title" value="${form.title || ''}" class="w-full p-2 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 dark:bg-gray-700 dark:text-white" placeholder="مثال: استبيان نشاط الجمعة">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">الوصف</label>
+                <textarea id="form-desc" class="w-full p-2 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 dark:bg-gray-700 dark:text-white" rows="2" placeholder="أدخل تفاصيل إضافية للنموذج...">${form.description || ''}</textarea>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تاريخ الإغلاق (اختياري)</label>
+                <input type="date" id="form-end-date" value="${form.endDate || ''}" class="w-full p-2 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 dark:bg-gray-700 dark:text-white">
+                <p class="text-xs text-gray-500 mt-1">يُغلق النموذج تلقائياً بنهاية هذا اليوم. اتركه فارغاً لإبقائه مفتوحاً دائماً.</p>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between mt-6 mb-2">
+            <h3 class="font-bold text-gray-800 dark:text-gray-100 text-lg">أسئلة النموذج</h3>
+            
+            <div class="relative">
+                <button onclick="$('#add-field-menu').classList.toggle('hidden')" class="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-blue-100 transition">
+                    <i data-lucide="plus" class="w-4 h-4"></i> إضافة سؤال
+                </button>
+                <div id="add-field-menu" class="hidden absolute left-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 z-10 overflow-hidden">
+                    <button onclick="addFormField('predefined', 'name'); $('#add-field-menu').classList.add('hidden')" class="w-full text-right px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200">الاسم</button>
+                    <button onclick="addFormField('predefined', 'parentPhone'); $('#add-field-menu').classList.add('hidden')" class="w-full text-right px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200">رقم الجوال</button>
+                    <button onclick="addFormField('predefined', 'nationalId'); $('#add-field-menu').classList.add('hidden')" class="w-full text-right px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200">رقم الهوية</button>
+                    <button onclick="addFormField('predefined', 'lastAssociationExam'); $('#add-field-menu').classList.add('hidden')" class="w-full text-right px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200">آخر اختبار بالجمعية</button>
+                    <div class="h-px bg-gray-100 dark:bg-gray-700 my-1"></div>
+                    <button onclick="addFormField('custom_text'); $('#add-field-menu').classList.add('hidden')" class="w-full text-right px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-blue-600 dark:text-blue-400 font-bold">إجابة نصية حرة</button>
+                    <button onclick="addFormField('custom_choice'); $('#add-field-menu').classList.add('hidden')" class="w-full text-right px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-blue-600 dark:text-blue-400 font-bold">خيار واحد (دائري)</button>
+                    <button onclick="addFormField('custom_checkbox'); $('#add-field-menu').classList.add('hidden')" class="w-full text-right px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-purple-600 dark:text-purple-400 font-bold">اختيار متعدد (مربعات)</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="form-fields-container" class="space-y-3">
+            <!-- Fields rendered here -->
+        </div>
+
+        <div class="pt-6">
+            <button onclick="saveForm(event)" class="w-full bg-blue-600 text-white p-3 rounded-xl font-bold shadow-md hover:bg-blue-700 transition">
+                حفظ النموذج
+            </button>
+        </div>
+    </div>
+    `;
+    container.innerHTML = html;
+    renderFormFieldsList();
+    lucide.createIcons();
+    
+    setTimeout(() => {
+        const handleClick = (e) => {
+            if (!e.target.closest('.relative') && $('#add-field-menu')) {
+                $('#add-field-menu').classList.add('hidden');
+            }
+        };
+        document.removeEventListener('click', window._closeMenuHandler);
+        window._closeMenuHandler = handleClick;
+        document.addEventListener('click', handleClick);
+    }, 100);
+}
+
+function addFormField(type, field = '') {
+    const newField = { type: type, id: 'f_' + Date.now(), isRequired: false };
+    if (type === 'predefined') {
+        const labels = {
+            'name': 'الاسم',
+            'parentPhone': 'رقم ولي الأمر',
+            'nationalId': 'رقم الهوية',
+            'lastAssociationExam': 'آخر اختبار بالجمعية'
+        };
+        newField.field = field;
+        newField.label = labels[field];
+    } else if (type === 'custom_text') {
+        newField.label = '';
+    } else if (type === 'custom_choice') {
+        newField.label = '';
+        newField.options = ['', ''];
+    } else if (type === 'custom_checkbox') {
+        newField.label = '';
+        newField.options = ['', ''];
+    }
+    
+    window._tempFormFields.push(newField);
+    renderFormFieldsList();
+}
+
+function removeFormField(index) {
+    window._tempFormFields.splice(index, 1);
+    renderFormFieldsList();
+}
+
+window.toggleFieldRequired = function(index, isReq) {
+    window._tempFormFields[index].isRequired = isReq;
+};
+
+window.updateFieldLabel = function(index, val) {
+    window._tempFormFields[index].label = val;
+};
+
+window.addFieldOption = function(index) {
+    window._tempFormFields[index].options.push('');
+    renderFormFieldsList();
+};
+
+window.updateFieldOption = function(fieldIndex, optionIndex, val) {
+    window._tempFormFields[fieldIndex].options[optionIndex] = val;
+};
+
+window.removeFieldOption = function(fieldIndex, optionIndex) {
+    window._tempFormFields[fieldIndex].options.splice(optionIndex, 1);
+    renderFormFieldsList();
+};
+
+function renderFormFieldsList() {
+    const container = $('#form-fields-container');
+    if (!container) return;
+    
+    if (window._tempFormFields.length === 0) {
+        container.innerHTML = `<div class="text-center py-6 bg-white dark:bg-gray-800 rounded-2xl border border-dashed border-gray-300 dark:border-gray-600 text-gray-500">لم تقم بإضافة أي أسئلة بعد</div>`;
+        return;
+    }
+
+    let html = '';
+    window._tempFormFields.forEach((f, idx) => {
+        let fieldContent = '';
+        if (f.type === 'predefined') {
+            const isExam = f.field === 'lastAssociationExam';
+            fieldContent = `
+                <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-700 p-2 rounded-lg">
+                    <i data-lucide="lock" class="w-4 h-4 text-gray-400"></i>
+                    <span class="text-sm text-gray-700 dark:text-gray-300 font-medium">${f.label} ${isExam ? '(قائمة منسدلة)' : '(يُعبأ تلقائياً)'}</span>
+                </div>
+            `;
+        } else if (f.type === 'custom_text') {
+            fieldContent = `
+                <input type="text" value="${f.label || ''}" oninput="updateFieldLabel(${idx}, this.value)" class="w-full p-2.5 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 dark:bg-gray-700 dark:text-white text-sm" placeholder="اكتب سؤالك هنا...">
+            `;
+        } else if (f.type === 'custom_choice') {
+            fieldContent = `
+                <input type="text" value="${f.label || ''}" oninput="updateFieldLabel(${idx}, this.value)" class="w-full mb-2 p-2.5 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 dark:bg-gray-700 dark:text-white font-bold text-sm" placeholder="اكتب سؤالك هنا...">
+                <div class="text-xs text-blue-600 font-bold mb-2">⭕ خيار واحد فقط (Radio)</div>
+                <div class="space-y-2 mb-2 pl-4 border-r-2 border-gray-100 dark:border-gray-700">
+                    ${f.options.map((opt, optIdx) => `
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="circle" class="w-4 h-4 text-gray-400"></i>
+                            <input type="text" value="${opt || ''}" oninput="updateFieldOption(${idx}, ${optIdx}, this.value)" class="flex-1 text-sm p-2 border border-gray-200 dark:border-gray-600 rounded-xl outline-none bg-white dark:bg-gray-800 dark:text-gray-200 focus:border-blue-500" placeholder="نص الخيار ${optIdx + 1}...">
+                            <button onclick="removeFieldOption(${idx}, ${optIdx})" class="text-red-400 hover:text-red-600 p-1"><i data-lucide="x" class="w-4 h-4"></i></button>
+                        </div>
+                    `).join('')}
+                </div>
+                <button onclick="addFieldOption(${idx})" class="text-xs text-blue-600 font-bold flex items-center gap-1 hover:bg-blue-50 p-1.5 rounded-lg transition">
+                    <i data-lucide="plus" class="w-3 h-3"></i> إضافة خيار
+                </button>
+            `;
+        } else if (f.type === 'custom_checkbox') {
+            fieldContent = `
+                <input type="text" value="${f.label || ''}" oninput="updateFieldLabel(${idx}, this.value)" class="w-full mb-2 p-2.5 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-gray-50 dark:bg-gray-700 dark:text-white font-bold text-sm" placeholder="اكتب سؤالك هنا...">
+                <div class="text-xs text-purple-600 font-bold mb-2">☑️ اختيار متعدد (تحديد أكثر من خيار)</div>
+                <div class="space-y-2 mb-2 pl-4 border-r-2 border-purple-100 dark:border-purple-800">
+                    ${f.options.map((opt, optIdx) => `
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="square" class="w-4 h-4 text-purple-500"></i>
+                            <input type="text" value="${opt || ''}" oninput="updateFieldOption(${idx}, ${optIdx}, this.value)" class="flex-1 text-sm p-2 border border-gray-200 dark:border-gray-600 rounded-xl outline-none bg-white dark:bg-gray-800 dark:text-gray-200 focus:border-purple-500" placeholder="نص الخيار ${optIdx + 1}...">
+                            <button onclick="removeFieldOption(${idx}, ${optIdx})" class="text-red-400 hover:text-red-600 p-1"><i data-lucide="x" class="w-4 h-4"></i></button>
+                        </div>
+                    `).join('')}
+                </div>
+                <button onclick="addFieldOption(${idx})" class="text-xs text-purple-600 font-bold flex items-center gap-1 hover:bg-purple-50 p-1.5 rounded-lg transition">
+                    <i data-lucide="plus" class="w-3 h-3"></i> إضافة خيار
+                </button>
+            `;
+        }
+
+        html += `
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 relative">
+            <div class="flex justify-between items-center mb-2 pl-10">
+                <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-red-600 bg-red-50 dark:bg-red-900/20 px-2.5 py-1 rounded-lg border border-red-100 dark:border-red-800">
+                    <input type="checkbox" ${f.isRequired ? 'checked' : ''} onchange="window.toggleFieldRequired(${idx}, this.checked)" class="w-4 h-4 rounded text-red-600 focus:ring-red-500">
+                    <span>إجباري (مطلوب)</span>
+                </label>
+            </div>
+            <button onclick="removeFormField(${idx})" class="absolute top-3 left-3 text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg transition" title="حذف السؤال">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+            <div class="pr-2 pl-2">
+                ${fieldContent}
+            </div>
+        </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+    lucide.createIcons();
+}
+
+async function saveForm(event) {
+    const title = $('#form-title').value.trim();
+    const description = $('#form-desc').value.trim();
+    const endDate = $('#form-end-date').value;
+    
+    if (!title) {
+        showToast("يرجى إدخال عنوان النموذج", "error");
+        return;
+    }
+    
+    if (window._tempFormFields.length === 0) {
+        showToast("يرجى إضافة سؤال واحد على الأقل", "error");
+        return;
+    }
+
+    const formData = {
+        title: title,
+        description: description,
+        level: state.currentLevel,
+        endDate: endDate,
+        fields: window._tempFormFields,
+        isActive: true
+    };
+
+    const btn = event.currentTarget;
+    const oldText = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto"></i>';
+    btn.disabled = true;
+
+    try {
+        if (window._currentFormId) {
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "forms", window._currentFormId), formData);
+            showToast("تم تحديث النموذج بنجاح");
+        } else {
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "forms"), formData);
+            showToast("تم إنشاء النموذج بنجاح");
+        }
+        router.navigate('forms');
+    } catch(e) {
+        console.error(e);
+        showToast("حدث خطأ أثناء الحفظ", "error");
+        btn.innerHTML = oldText;
+        btn.disabled = false;
+        lucide.createIcons();
+    }
+}
+
+// 4. Form Viewer (For Student/Parent/Teacher answering)
+function renderFormViewer() {
+    const container = $('#view-container');
+    const formId = window._currentFormId;
+    const studentId = window._currentFormStudentId;
+    
+    if (!formId || !studentId) {
+        showToast("خطأ في البيانات", "error");
+        router.navigate(state.isTeacher ? 'forms' : 'home');
+        return;
+    }
+
+    const form = state.forms.find(f => f.id === formId);
+    const student = state.students.find(s => s.id === studentId);
+    
+    if (!form || !student) {
+        showToast("النموذج أو الطالب غير موجود", "error");
+        router.navigate(state.isTeacher ? 'forms' : 'home');
+        return;
+    }
+
+    const existingResponse = state.formResponses.find(r => r.formId === formId && r.studentId === studentId);
+    let responsesData = existingResponse ? (existingResponse.responses || {}) : {};
+
+    const assocExamOptions = ['لم يختبر', '1', '2', '3', '5', '8', '10', '13', '15', '20', '25', '30 (خاتم)'];
+
+    let html = `
+    <div class="space-y-4 animate-fade-in pb-20 max-w-xl mx-auto">
+        <div class="flex items-center gap-3 mb-6">
+            <button onclick="router.navigate(state.isTeacher ? 'form_responses' : 'home')" class="p-2 bg-white dark:bg-gray-800 rounded-full shadow-sm text-gray-600 hover:text-gray-900 border border-gray-100 dark:border-gray-700">
+                <i data-lucide="arrow-right" class="w-5 h-5"></i>
+            </button>
+            <div>
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">${form.title}</h2>
+                <p class="text-sm text-gray-500">الطالب: <span class="font-bold text-blue-600">${student.name}</span></p>
+            </div>
+        </div>
+
+        ${form.description ? `<div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl text-sm text-blue-800 dark:text-blue-200 border border-blue-100 dark:border-blue-800">${form.description}</div>` : ''}
+        
+        <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-5">
+    `;
+
+    form.fields.forEach((f) => {
+        let value = responsesData[f.id];
+        if (value === undefined && f.type === 'predefined') {
+            if (f.field === 'lastAssociationExam') value = student.lastAssociationExam || student.last_association_exam || 'لم يختبر';
+            else if (student[f.field]) value = student[f.field];
+            else value = '';
+        }
+        if (value === undefined) value = '';
+
+        const reqBadge = f.isRequired ? `<span class="text-red-500 font-bold mr-1">*</span>` : '';
+
+        html += `<div class="space-y-2">
+            <label class="block font-bold text-gray-800 dark:text-gray-200 text-sm">${f.label} ${reqBadge}</label>
+        `;
+
+        if (f.type === 'predefined' && f.field === 'lastAssociationExam') {
+            // Dropdown for Last Association Exam
+            html += `
+            <select name="${f.id}" class="w-full p-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 dark:bg-gray-700 dark:text-white font-bold">
+                ${assocExamOptions.map(opt => `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`).join('')}
+            </select>
+            `;
+        } else if (f.type === 'custom_choice') {
+            html += `<div class="space-y-2">`;
+            f.options.forEach(opt => {
+                const checked = value === opt ? 'checked' : '';
+                html += `
+                <label class="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-600 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                    <input type="radio" name="${f.id}" value="${opt}" ${checked} class="w-4 h-4 text-blue-600">
+                    <span class="text-gray-700 dark:text-gray-300 text-sm font-medium">${opt}</span>
+                </label>
+                `;
+            });
+            html += `</div>`;
+        } else if (f.type === 'custom_checkbox') {
+            // Multi select checkboxes
+            const selectedArray = Array.isArray(value) ? value : (typeof value === 'string' && value ? value.split(', ') : []);
+            html += `<div class="space-y-2">`;
+            f.options.forEach(opt => {
+                const checked = selectedArray.includes(opt) ? 'checked' : '';
+                html += `
+                <label class="flex items-center gap-3 p-3 border border-purple-200 dark:border-purple-900/40 rounded-xl cursor-pointer hover:bg-purple-50/50 dark:hover:bg-purple-900/20 transition">
+                    <input type="checkbox" name="${f.id}" value="${opt}" ${checked} class="w-4 h-4 text-purple-600 rounded">
+                    <span class="text-gray-700 dark:text-gray-300 text-sm font-medium">${opt}</span>
+                </label>
+                `;
+            });
+            html += `</div>`;
+        } else {
+            // Text or Predefined
+            const isReadonly = f.type === 'predefined' && f.field === 'name';
+            html += `<input type="text" name="${f.id}" value="${value}" class="w-full p-3 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 dark:bg-gray-700 dark:text-white" ${isReadonly ? 'readonly disabled' : ''}>`;
+        }
+        
+        html += `</div>`;
+    });
+
+    html += `
+        </div>
+        <div class="pt-4">
+            <button onclick="submitFormResponse(event)" class="w-full bg-blue-600 text-white p-4 rounded-xl font-bold shadow-md hover:bg-blue-700 transition text-lg flex justify-center items-center gap-2">
+                <i data-lucide="send" class="w-5 h-5"></i>
+                إرسال الإجابة
+            </button>
+        </div>
+    </div>
+    `;
+
+    container.innerHTML = html;
+    lucide.createIcons();
+}
+
+async function submitFormResponse(event) {
+    const formId = window._currentFormId;
+    const studentId = window._currentFormStudentId;
+    const form = state.forms.find(f => f.id === formId);
+    
+    if (!form) return;
+
+    let responses = {};
+    let missingRequired = false;
+    let firstMissingLabel = '';
+    
+    form.fields.forEach(f => {
+        if (f.type === 'custom_choice') {
+            const selected = document.querySelector(`input[name="${f.id}"]:checked`);
+            responses[f.id] = selected ? selected.value : '';
+        } else if (f.type === 'custom_checkbox') {
+            const checkedEls = Array.from(document.querySelectorAll(`input[name="${f.id}"]:checked`));
+            responses[f.id] = checkedEls.map(el => el.value);
+        } else if (f.type === 'predefined' && f.field === 'lastAssociationExam') {
+            const sel = document.querySelector(`select[name="${f.id}"]`);
+            responses[f.id] = sel ? sel.value : '';
+        } else {
+            const input = document.querySelector(`input[name="${f.id}"]`);
+            responses[f.id] = input ? input.value.trim() : '';
+        }
+
+        // Validate required
+        if (f.isRequired) {
+            const val = responses[f.id];
+            const isEmpty = !val || (Array.isArray(val) && val.length === 0);
+            if (isEmpty && !missingRequired) {
+                missingRequired = true;
+                firstMissingLabel = f.label;
+            }
+        }
+    });
+
+    if (missingRequired) {
+        showToast(`يرجى إجابة السؤال المطلوب: "${firstMissingLabel}"`, "error");
+        return;
+    }
+
+    const existingResponse = state.formResponses.find(r => r.formId === formId && r.studentId === studentId);
+    
+    const btn = event.currentTarget;
+    const oldText = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin mx-auto"></i>';
+    btn.disabled = true;
+
+    try {
+        if (existingResponse) {
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "form_responses", existingResponse.id), { responses: responses });
+        } else {
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "form_responses"), {
+                form_id: formId,
+                student_id: studentId,
+                level: state.currentLevel,
+                responses: responses
+            });
+        }
+        showToast("تم إرسال الإجابة بنجاح! 🎉");
+        setTimeout(() => {
+            router.navigate(state.isTeacher ? 'form_responses' : 'home');
+        }, 800);
+    } catch(e) {
+        console.error(e);
+        showToast("حدث خطأ أثناء الإرسال", "error");
+        btn.innerHTML = oldText;
+        btn.disabled = false;
+        lucide.createIcons();
+    }
+}
+
+// 5. Form Responses Viewer (Teacher)
+function renderFormResponses() {
+    const container = $('#view-container');
+    const formId = window._currentFormId;
+    const form = state.forms.find(f => f.id === formId);
+    
+    if (!form) {
+        router.navigate('forms');
+        return;
+    }
+
+    const responses = state.formResponses.filter(r => r.formId === formId);
+    const respondedStudentIds = responses.map(r => r.studentId);
+    const unrespondedStudents = state.students.filter(s => !respondedStudentIds.includes(s.id));
+
+    let html = `
+    <div class="space-y-4 animate-fade-in pb-20">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+                <button onclick="router.navigate('forms')" class="p-2 bg-white dark:bg-gray-800 rounded-full shadow-sm text-gray-600 hover:text-gray-900 border border-gray-100 dark:border-gray-700">
+                    <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                </button>
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">${form.title}</h2>
+            </div>
+            
+            <div class="flex gap-2">
+                <button onclick="exportFormPDF('${formId}')" class="px-3 py-2 bg-red-50 text-red-700 rounded-xl text-sm font-bold flex items-center gap-1 hover:bg-red-100 transition border border-red-200">
+                    <i data-lucide="file-text" class="w-4 h-4"></i> PDF
+                </button>
+                <button onclick="exportFormXLSX('${formId}')" class="px-3 py-2 bg-green-50 text-green-700 rounded-xl text-sm font-bold flex items-center gap-1 hover:bg-green-100 transition border border-green-200">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Excel
+                </button>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="bg-blue-50 p-4 rounded-2xl text-center border border-blue-100">
+                <div class="text-3xl font-bold text-blue-700">${responses.length}</div>
+                <div class="text-xs text-blue-600 mt-1 font-bold">أجابوا</div>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-2xl text-center border border-gray-200 dark:border-gray-700">
+                <div class="text-3xl font-bold text-gray-600 dark:text-gray-400">${unrespondedStudents.length}</div>
+                <div class="text-xs text-gray-500 mt-1 font-bold">لم يجيبوا</div>
+            </div>
+        </div>
+        
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+            <button onclick="$('#tab-responded').classList.remove('hidden'); $('#tab-unresponded').classList.add('hidden'); this.classList.add('border-blue-500','text-blue-600'); this.nextElementSibling.classList.remove('border-blue-500','text-blue-600');" class="px-4 py-2 border-b-2 border-blue-500 text-blue-600 font-bold transition">
+                الإجابات
+            </button>
+            <button onclick="$('#tab-unresponded').classList.remove('hidden'); $('#tab-responded').classList.add('hidden'); this.classList.add('border-blue-500','text-blue-600'); this.previousElementSibling.classList.remove('border-blue-500','text-blue-600');" class="px-4 py-2 border-b-2 border-transparent text-gray-500 font-bold transition">
+                لم يجيبوا
+            </button>
+        </div>
+        
+        <div id="tab-responded" class="space-y-3">
+    `;
+
+    if (responses.length === 0) {
+        html += `<div class="text-center py-8 text-gray-500">لا توجد إجابات بعد</div>`;
+    } else {
+        responses.forEach(r => {
+            const student = state.students.find(s => s.id === r.studentId);
+            if (!student) return;
+            
+            html += `
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold text-gray-800 dark:text-gray-100">${student.name}</h3>
+                    <button onclick="window._currentFormStudentId='${student.id}'; router.navigate('form_viewer');" class="text-blue-600 text-xs font-bold hover:underline">
+                        تعديل
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+            `;
+            
+            form.fields.forEach(f => {
+                const rawVal = r.responses[f.id];
+                const displayVal = Array.isArray(rawVal) ? rawVal.join(', ') : (rawVal || '-');
+                html += `
+                <div class="bg-gray-50 dark:bg-gray-700 p-2 rounded-lg">
+                    <span class="block text-xs text-gray-500 mb-1">${f.label}</span>
+                    <span class="font-medium text-gray-800 dark:text-gray-200">${displayVal}</span>
+                </div>
+                `;
+            });
+            
+            html += `</div></div>`;
+        });
+    }
+
+    html += `
+        </div>
+        
+        <div id="tab-unresponded" class="hidden space-y-2">
+    `;
+    
+    if (unrespondedStudents.length === 0) {
+        html += `<div class="text-center py-8 text-gray-500">الجميع أجابوا على النموذج</div>`;
+    } else {
+        unrespondedStudents.forEach(s => {
+            html += `
+            <div class="flex justify-between items-center bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
+                <span class="font-medium text-gray-800 dark:text-gray-200">${s.name}</span>
+                <button onclick="window._currentFormStudentId='${s.id}'; router.navigate('form_viewer');" class="text-xs bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-100 font-bold">إدخال نيابة عنه</button>
+            </div>
+            `;
+        });
+    }
+    
+    html += `</div></div>`;
+    container.innerHTML = html;
+    lucide.createIcons();
+}
+
+// 6. Export Functions
+function exportFormXLSX(formId) {
+    if (typeof XLSX === 'undefined') {
+        showToast("مكتبة التصدير غير متوفرة", "error");
+        return;
+    }
+    
+    const form = state.forms.find(f => f.id === formId);
+    if (!form) return;
+    
+    const responses = state.formResponses.filter(r => r.formId === formId);
+    
+    // Filter fields to avoid duplicating Name column if predefined 'name' or label 'الاسم' exists
+    const exportFields = form.fields.filter(f => !(f.type === 'predefined' && f.field === 'name') && f.label !== 'الاسم');
+
+    const data = responses.map(r => {
+        const student = state.students.find(s => s.id === r.studentId) || { name: 'طالب محذوف' };
+        const row = { 'اسم الطالب': student.name };
+        
+        exportFields.forEach(f => {
+            const rawVal = r.responses[f.id];
+            row[f.label] = Array.isArray(rawVal) ? rawVal.join(', ') : (rawVal || '');
+        });
+        return row;
+    });
+    
+    if (data.length === 0) {
+        showToast("لا توجد بيانات للتصدير", "error");
+        return;
+    }
+    
+    const ws = XLSX.utils.json_to_sheet(data);
+    
+    // Set column widths
+    const cols = [{ wch: 30 }]; // Student Name
+    exportFields.forEach(() => cols.push({ wch: 22 }));
+    ws['!cols'] = cols;
+    
+    const dateStr = new Date().toISOString().split('T')[0];
+    const filename = `استبيان_${form.title.replace(/\s+/g, '_')}_${dateStr}.xlsx`;
+    
+    downloadXLSX(filename, [{ sheet: ws, name: 'الإجابات' }]);
+}
+
+function exportFormPDF(formId) {
+    const form = state.forms.find(f => f.id === formId);
+    if (!form) return;
+    
+    const responses = state.formResponses.filter(r => r.formId === formId);
+    
+    if (responses.length === 0) {
+        showToast("لا توجد بيانات للتصدير", "error");
+        return;
+    }
+    
+    showToast("جاري تجهيز ملف PDF...");
+    
+    // Filter out redundant name field to avoid double columns
+    const pdfFields = form.fields.filter(f => !(f.type === 'predefined' && f.field === 'name') && f.label !== 'الاسم');
+
+    const div = document.createElement('div');
+    div.style.cssText = "padding: 20px; background: white; color: #111827; font-family: system-ui, -apple-system, sans-serif; direction: rtl; text-align: right; width: 100%; box-sizing: border-box;";
+    
+    let tableHtml = `
+    <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="font-size: 22px; font-weight: bold; margin-bottom: 6px; color: #1f2937;">${form.title}</h1>
+        <p style="font-size: 13px; color: #4b5563;">إجمالي الإجابات: ${responses.length}</p>
+    </div>
+    <table style="width: 100%; text-align: right; border-collapse: collapse; border: 1px solid #d1d5db; font-size: 12px; table-layout: auto;">
+        <thead>
+            <tr style="background-color: #f3f4f6;">
+                <th style="border: 1px solid #d1d5db; padding: 10px 8px; font-weight: bold; text-align: right; white-space: normal !important; word-spacing: normal !important; letter-spacing: normal !important;">اسم الطالب</th>
+    `;
+    
+    pdfFields.forEach(f => {
+        // Explicit styles for th to fix space and text wrap issues
+        tableHtml += `<th style="border: 1px solid #d1d5db; padding: 10px 8px; font-weight: bold; text-align: right; white-space: normal !important; word-spacing: normal !important; letter-spacing: normal !important;">${f.label}</th>`;
+    });
+    
+    tableHtml += `</tr></thead><tbody>`;
+    
+    responses.forEach((r, idx) => {
+        const student = state.students.find(s => s.id === r.studentId) || { name: 'غير معروف' };
+        const rowBg = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
+        tableHtml += `<tr style="background-color: ${rowBg};"><td style="border: 1px solid #e5e7eb; padding: 8px; font-weight: bold;">${student.name}</td>`;
+        pdfFields.forEach(f => {
+            const rawVal = r.responses[f.id];
+            const displayVal = Array.isArray(rawVal) ? rawVal.join(', ') : (rawVal || '-');
+            tableHtml += `<td style="border: 1px solid #e5e7eb; padding: 8px; word-break: break-word; white-space: normal;">${displayVal}</td>`;
+        });
+        tableHtml += `</tr>`;
+    });
+    
+    tableHtml += `</tbody></table>`;
+    div.innerHTML = tableHtml;
+    
+    const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `استبيان_${form.title.replace(/\s+/g, '_')}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, scrollY: 0, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+    
+    html2pdf().set(opt).from(div).save().then(() => {
+        showToast("تم التحميل بنجاح! 📄");
+    }).catch(e => {
+        showToast("حدث خطأ أثناء التصدير", "error");
+        console.error(e);
+    });
+}

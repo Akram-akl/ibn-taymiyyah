@@ -639,5 +639,64 @@ ALTER TABLE student_plans ADD COLUMN IF NOT EXISTS study_days JSONB DEFAULT '[0,
 ALTER TABLE student_plans ADD COLUMN IF NOT EXISTS pages_per_day NUMERIC DEFAULT 1;
 ALTER TABLE student_plans ADD COLUMN IF NOT EXISTS original_snapshot JSONB;
 
-NOTIFY pgrst, 'reload schema';
+-- ================================================
+-- FORMS (Surveys) FEATURE
+-- ================================================
 
+CREATE TABLE IF NOT EXISTS forms (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    level TEXT NOT NULL,
+    fields JSONB DEFAULT '[]'::jsonb,
+    is_active BOOLEAN DEFAULT TRUE,
+    end_date TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS form_responses (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    form_id UUID REFERENCES forms(id) ON DELETE CASCADE,
+    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
+    level TEXT NOT NULL,
+    responses JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(form_id, student_id)
+);
+
+-- RLS for forms
+ALTER TABLE forms ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read forms" ON forms;
+CREATE POLICY "Allow public read forms" ON forms FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert forms" ON forms;
+CREATE POLICY "Allow public insert forms" ON forms FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update forms" ON forms;
+CREATE POLICY "Allow public update forms" ON forms FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete forms" ON forms;
+CREATE POLICY "Allow public delete forms" ON forms FOR DELETE USING (true);
+
+-- RLS for form_responses
+ALTER TABLE form_responses ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read form_responses" ON form_responses;
+CREATE POLICY "Allow public read form_responses" ON form_responses FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert form_responses" ON form_responses;
+CREATE POLICY "Allow public insert form_responses" ON form_responses FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update form_responses" ON form_responses;
+CREATE POLICY "Allow public update form_responses" ON form_responses FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete form_responses" ON form_responses;
+CREATE POLICY "Allow public delete form_responses" ON form_responses FOR DELETE USING (true);
+
+-- Add to realtime
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'forms') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE forms;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'form_responses') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE form_responses;
+    END IF;
+END $$;
+
+NOTIFY pgrst, 'reload schema';
