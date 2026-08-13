@@ -13,13 +13,26 @@
         // Diagnostic script - Runs before anything else
         (function () {
             window.onerror = function (msg, url, line, col, error) {
-                if (msg === 'Script error.' || line === 0) return false;
+                // Suppress cross-origin "Script error" noise from iOS share sheet / in-app browsers
+                var msgStr = (msg || '').toString().toLowerCase();
+                if (msgStr.indexOf('script error') !== -1) return false;
+                if (!line || line === 0) return false;
+                if (!url || url === 'about:blank' || url === 'null' || url === '') return false;
                 var div = document.createElement('div');
                 div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:red;color:white;z-index:99999;padding:10px;font-size:12px;direction:ltr;';
                 div.innerHTML = '<b>System Error:</b> ' + msg + '<br>Line: ' + line + ' at ' + url;
                 document.body.appendChild(div);
                 return false;
             };
+
+            // Suppress cross-origin unhandled promise rejections on iOS
+            window.addEventListener('unhandledrejection', function(event) {
+                var msg = (event && event.reason && event.reason.message) ? event.reason.message.toLowerCase() : '';
+                if (msg.indexOf('script error') !== -1 || msg === '' || !event.reason) {
+                    event.preventDefault();
+                }
+            });
+
             try {
                 eval('const testConst = 1;');
                 eval('let testLet = 1;');
