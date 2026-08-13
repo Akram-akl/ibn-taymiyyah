@@ -3067,7 +3067,7 @@ async function generateGroupWeeklyReport(groupId) {
 
         // 5. Open WhatsApp (Generic)
         const url = `https://wa.me/?text=${encodeURIComponent(reportText)}`;
-        window.open(url, '_blank');
+        window.location.href = url;
 
     } catch (e) {
         console.error(e);
@@ -3934,6 +3934,7 @@ function renderCriteriaButtons(existingScores) {
             </div>
             ${absUndoBtn}
         </div>
+        ${currentGradingCompId !== 'DIRECT_GRADING' ? `
         <div class="col-span-1 mt-1 w-full flex gap-2">
             <button onclick="openCustomPointsModal()" class="flex-1 py-3 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 rounded-xl font-bold transition flex items-center justify-center gap-2 border border-emerald-300 dark:border-emerald-800 shadow-sm">
                 <i data-lucide="sparkles" class="w-5 h-5"></i>
@@ -3943,7 +3944,7 @@ function renderCriteriaButtons(existingScores) {
                 <i data-lucide="trash-2" class="w-5 h-5"></i>
                 تصفير درجاته
             </button>
-        </div>
+        </div>` : ''}
     `;
     lucide.createIcons();
 }
@@ -5132,7 +5133,7 @@ async function confirmAbsence(type) {
             : "السلام عليكم ولي أمر الطالب " + student.name + "،\nتم تسجيل غياب للطالب اليوم (" + label + ").\nنرجو الحرص على الحضور.";
 
         var url = "https://wa.me/" + phone + "?text=" + encodeURIComponent(msg);
-        window.open(url, '_blank');
+        window.location.href = url;
     }
 }
 
@@ -5145,8 +5146,9 @@ async function generateWeeklyReport() {
         return;
     }
 
-    const comp = state.competitions.find(c => c.id === currentGradingCompId);
-    if (!comp) return;
+    const isDirectGrading = (currentGradingCompId === 'DIRECT_GRADING');
+    const comp = isDirectGrading ? null : state.competitions.find(c => c.id === currentGradingCompId);
+    if (!isDirectGrading && !comp) return;
 
     // 1. Calculate Date Range (based on active days)
     const dateStrings = generateReportDatesForPreviousPeriod();
@@ -5171,27 +5173,30 @@ async function generateWeeklyReport() {
         snap.forEach(d => scores.push(d.data()));
 
         // NEW: Fetch Activity Days Log
-        const activityQuery = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "activity_days"),
-            window.firebaseOps.where("competitionId", "==", comp.id),
-            window.firebaseOps.where("date", "in", dateStrings)
-        );
-        const activitySnap = await window.firebaseOps.getDocs(activityQuery);
         const activityLog = {}; // date -> points
         let activityDaysTaken = 0;
         let totalActivityPossible = 0;
-        activitySnap.forEach(d => {
-            const data = d.data();
-            activityLog[data.date] = data.points;
-            activityDaysTaken++;
-            totalActivityPossible += (parseFloat(data.points) || 0);
-        });
+        
+        if (!isDirectGrading && comp) {
+            const activityQuery = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "activity_days"),
+                window.firebaseOps.where("competitionId", "==", comp.id),
+                window.firebaseOps.where("date", "in", dateStrings)
+            );
+            const activitySnap = await window.firebaseOps.getDocs(activityQuery);
+            activitySnap.forEach(d => {
+                const data = d.data();
+                activityLog[data.date] = data.points;
+                activityDaysTaken++;
+                totalActivityPossible += (parseFloat(data.points) || 0);
+            });
+        }
 
         // Calculate Totals per Criteria
         let reportText = `📊 *تقرير الفترة السابقة* 📊\n`;
         reportText += `👤 ال${getLabel('student')}: ${student.name}\n`;
 
-        reportText += `📅 الفترة: ${dateStrings[0]} إلى ${dateStrings[dateStrings.length - 1]}\n`;
+        reportText += `📅 الفترة: ${dateStrings[0]} إلى ${dateStrings[dateStrings.length - 1]} (عدد الأيام: ${dateStrings.length})\n`;
         if (activityDaysTaken > 0) {
             reportText += `🎪 تم إقامة نشاط (${activityDaysTaken} يوم)\n`;
         }
@@ -5203,7 +5208,7 @@ async function generateWeeklyReport() {
         const daysPassed = dateStrings.length;
         const normalDaysCount = daysPassed - activityDaysTaken;
 
-        if (comp.criteria) {
+        if (!isDirectGrading && comp && comp.criteria) {
             comp.criteria.forEach(c => {
                 // Earned
                 const cScores = scores.filter(s => String(s.criteriaId) === String(c.id) || (s.criteriaName && c.name && s.criteriaName.trim() === c.name.trim()));
@@ -5220,7 +5225,7 @@ async function generateWeeklyReport() {
         }
 
         // Add Activity Points if any
-        if (activityDaysTaken > 0) {
+        if (!isDirectGrading && activityDaysTaken > 0) {
             const activityScores = scores.filter(s => s.criteriaId === 'ACTIVITY_DAY');
             const activityEarned = activityScores.reduce((sum, s) => sum + s.points, 0);
         reportText += `🏃 نقاط النشاط: ${activityEarned} / ${totalActivityPossible}\n`;
@@ -5233,7 +5238,7 @@ async function generateWeeklyReport() {
         let absentDays = [];
         if (absences.length > 0) {
             const deduction = absences.reduce((sum, s) => sum + s.points, 0);
-            reportText += `⚠️ خصم غياب: ${deduction}\n`;
+            if (!isDirectGrading) reportText += `⚠️ خصم غياب: ${deduction}\n`;
             absences.forEach(ab => {
                 absentDays.push(`${ab.date} (${ab.criteriaName || 'غياب'})`);
             });
@@ -5241,7 +5246,9 @@ async function generateWeeklyReport() {
         }
 
         if (absentDays.length > 0) {
-            reportText += `❌ أيام الغياب:\n${absentDays.join('\n')}\n`;
+            reportText += `❌ أيام الغياب (${absentDays.length}):\n${absentDays.join('\n')}\n`;
+        } else if (isDirectGrading) {
+            reportText += `✅ أيام الغياب: 0\n`;
         }
 
         // Add Teacher Notes if any
@@ -5257,43 +5264,60 @@ async function generateWeeklyReport() {
         }
 
         // Add Custom Points (CUSTOM_*) if any
-        const customScores = scores.filter(s => s.criteriaId && s.criteriaId.startsWith('CUSTOM_'));
-        if (customScores.length > 0) {
-            const customTotal = customScores.reduce((sum, s) => sum + (parseFloat(s.points) || 0), 0);
-            reportText += `⚡ نقاط مخصصة: ${customTotal}\n`;
-            customScores.forEach(cs => {
-                const sign = cs.points > 0 ? '+' : '';
-                reportText += `  • ${cs.criteriaName || 'مخصص'}: ${sign}${cs.points}\n`;
-            });
-            totalEarned += customTotal;
+        if (!isDirectGrading) {
+            const customScores = scores.filter(s => s.criteriaId && s.criteriaId.startsWith('CUSTOM_'));
+            if (customScores.length > 0) {
+                const customTotal = customScores.reduce((sum, s) => sum + (parseFloat(s.points) || 0), 0);
+                reportText += `⚡ نقاط مخصصة: ${customTotal}\n`;
+                customScores.forEach(cs => {
+                    const sign = cs.points > 0 ? '+' : '';
+                    reportText += `  • ${cs.criteriaName || 'مخصص'}: ${sign}${cs.points}\n`;
+                });
+                totalEarned += customTotal;
+            }
         }
 
         // Add Quran Memorization/Review if any
-        /*
-        const quranScores = scores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
-        if (quranScores.length > 0) {
-            const memScores = quranScores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION');
-            const revScores = quranScores.filter(s => s.criteriaId === 'QURAN_REVIEW');
-            if (memScores.length > 0) {
-                const memTotal = memScores.reduce((sum, s) => sum + (parseFloat(s.points) || 0), 0);
-                reportText += `📖 حفظ القرآن: ${memTotal}\n`;
-                totalEarned += memTotal;
+        if (isDirectGrading) {
+            const quranScores = scores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
+            if (quranScores.length > 0) {
+                const gradeCounts = {};
+                quranScores.forEach(s => {
+                    const grade = s.quranGrade || 'بدون تقدير';
+                    gradeCounts[grade] = (gradeCounts[grade] || 0) + 1;
+                });
+                reportText += `🌟 التقدير العام:\n`;
+                for (const [grade, count] of Object.entries(gradeCounts)) {
+                    reportText += `  • ${count} أيام ${grade}\n`;
+                }
             }
-            if (revScores.length > 0) {
-                const revTotal = revScores.reduce((sum, s) => sum + (parseFloat(s.points) || 0), 0);
-                reportText += `📗 مراجعة القرآن: ${revTotal}\n`;
-                totalEarned += revTotal;
+        } else {
+            const quranScores = scores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
+            if (quranScores.length > 0) {
+                const memScores = quranScores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION');
+                const revScores = quranScores.filter(s => s.criteriaId === 'QURAN_REVIEW');
+                if (memScores.length > 0) {
+                    const memTotal = memScores.reduce((sum, s) => sum + (parseFloat(s.points) || 0), 0);
+                    reportText += `📖 حفظ القرآن: ${memTotal}\n`;
+                    totalEarned += memTotal;
+                }
+                if (revScores.length > 0) {
+                    const revTotal = revScores.reduce((sum, s) => sum + (parseFloat(s.points) || 0), 0);
+                    reportText += `📗 مراجعة القرآن: ${revTotal}\n`;
+                    totalEarned += revTotal;
+                }
             }
         }
-        */
 
         reportText += `------------------\n`;
-        reportText += `✨ *المجموع النهائي: ${totalEarned} / ${totalPossible}*\n`;
+        if (!isDirectGrading) {
+            reportText += `✨ *المجموع النهائي: ${totalEarned} / ${totalPossible}*\n`;
+        }
         reportText += `\n${state.currentLevel === 'ijazat' ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
 
         // Send
         const url = `https://wa.me/${student.studentNumber}?text=${encodeURIComponent(reportText)}`;
-        window.open(url, '_blank');
+        window.location.href = url;
 
     } catch (e) {
         console.error(e);
@@ -6260,7 +6284,7 @@ function contactTeacher(studentName, teacherPhone) {
     }
 
     const message = encodeURIComponent(messageText);
-    window.open(`https://wa.me/${teacherPhone}?text=${message}`, '_blank');
+    window.location.href = `https://wa.me/${teacherPhone}?text=${message}`;
 }
 
 function openTeacherSelectionModal() {
@@ -7580,6 +7604,7 @@ function openBulkWhatsAppModal() {
                 <div>
                     <label class="block text-sm font-bold mb-2">المسابقة المستهدفة</label>
                     <select id="wa-comp-select" class="w-full bg-gray-50 dark:bg-gray-700 border rounded-xl px-4 py-3">
+                        <option value="DIRECT_GRADING">📌 بدون مسابقة (رصد مباشر)</option>
                         ${state.competitions.filter(c => !c.level || c.level === state.currentLevel).map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
                     </select>
                 </div>
@@ -7604,7 +7629,69 @@ function openBulkWhatsAppModal() {
     toggleModal('bulk-wa-start-modal', true);
 }
 
+async function buildDirectGradingWhatsAppQueue(startDate, endDate) {
+    const students = state.students.filter(s => s.level === state.currentLevel && s.studentNumber && s.studentNumber.trim() !== '');
+    if (!students.length) { showToast('لا يوجد طلاب لديهم أرقام جوال', 'error'); return; }
+
+    const dateRange = [];
+    let curr = new Date(startDate);
+    const endD = new Date(endDate);
+    while (curr <= endD) {
+        dateRange.push(curr.toISOString().split('T')[0]);
+        curr.setDate(curr.getDate() + 1);
+    }
+
+    const sSnap = await window.firebaseOps.getDocs(
+        window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'scores'),
+            window.firebaseOps.where('level', '==', state.currentLevel),
+            window.firebaseOps.where('date', 'in', dateRange.slice(0, 10))
+        )
+    );
+    const allScores = [];
+    sSnap.forEach(d => allScores.push(d.data()));
+
+    bulkWhatsAppQueue = [];
+
+    students.forEach(st => {
+        const sScores = allScores.filter(s => s.studentId === st.id);
+        const absences = sScores.filter(s => s.criteriaId === 'ABSENCE_RECORD');
+        const quranScores = sScores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
+
+        const gradeCounts = {};
+        quranScores.forEach(s => {
+            const grade = s.quranGrade || 'بدون تقدير';
+            gradeCounts[grade] = (gradeCounts[grade] || 0) + 1;
+        });
+
+        let reportText = `📊 *تقرير الرصد المباشر* 📊\n`;
+        reportText += `👤 ${getLabel('student')}: ${st.name}\n`;
+        reportText += `📅 الفترة: ${startDate} إلى ${endDate} (${dateRange.length} أيام)\n`;
+        reportText += `------------------\n`;
+
+        if (absences.length > 0) {
+            const absentDays = absences.map(a => a.date).join(', ');
+            reportText += `❌ أيام الغياب (${absences.length}): ${absentDays}\n`;
+        } else {
+            reportText += `✅ حضور كامل\n`;
+        }
+
+        if (Object.keys(gradeCounts).length > 0) {
+            reportText += `🌟 التقدير:\n`;
+            Object.entries(gradeCounts).forEach(([grade, count]) => {
+                reportText += `  • ${count} ${count === 1 ? 'يوم' : 'أيام'} ${grade}\n`;
+            });
+        }
+
+        reportText += `------------------\n`;
+        reportText += `\n${state.currentLevel === 'ijazat' ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
+
+        bulkWhatsAppQueue.push({ id: st.id, name: st.name, phone: st.studentNumber, text: reportText, sent: false });
+    });
+}
+
 async function buildWhatsAppQueue(btn) {
+
     const compId = $('#wa-comp-select').value;
     const startDate = $('#wa-start-date').value;
     const endDate = $('#wa-end-date').value;
@@ -7617,6 +7704,19 @@ async function buildWhatsAppQueue(btn) {
     lucide.createIcons();
 
     try {
+        // Handle Direct Grading (no competition)
+        if (compId === 'DIRECT_GRADING') {
+            await buildDirectGradingWhatsAppQueue(startDate, endDate);
+            if (!bulkWhatsAppQueue || bulkWhatsAppQueue.length === 0) {
+                showToast('لا يوجد طلاب لديهم أرقام جوال', 'error');
+                return;
+            }
+            bulkWhatsAppCurrentIndex = 0;
+            closeModal('bulk-wa-start-modal');
+            showBulkWhatsAppRunner();
+            return;
+        }
+
         const comp = state.competitions.find(c => c.id === compId);
         if (!comp) throw new Error("Competition not found");
         console.log('[WA-REPORT v5] comp:', comp.name, 'level:', comp.level, 'criteria count:', (comp.criteria||[]).length);
@@ -7837,7 +7937,7 @@ function sendSingleBulkWhatsApp(index, url) {
             bulkWhatsAppCurrentIndex++;
         }
     }
-    window.open(url, '_blank');
+    window.location.href = url;
     renderBulkWhatsAppList();
 }
 
@@ -7878,6 +7978,7 @@ function openReportsModal() {
                 <div>
                     <label class="block text-sm font-bold mb-2">المسابقة</label>
                     <select id="report-comp-select" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-4 py-3">
+                        <option value="DIRECT_GRADING">📌 بدون مسابقة (رصد مباشر)</option>
                         ${state.competitions.filter(c => !c.level || c.level === state.currentLevel).map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
                     </select>
                 </div>
@@ -7908,7 +8009,77 @@ function openReportsModal() {
     toggleModal('report-modal', true);
 }
 
+async function generateDirectGradingPDFReport(startDate, endDate) {
+    showToast("جاري إعداد تقرير الرصد المباشر...", "info");
+    closeModal('report-modal');
+
+    try {
+        const students = state.students.filter(s => s.level === state.currentLevel);
+        if (!students.length) { showToast("لا يوجد طلاب", "error"); return; }
+
+        const dateRange = [];
+        let curr = new Date(startDate);
+        const endD = new Date(endDate);
+        while (curr <= endD) {
+            dateRange.push(curr.toISOString().split('T')[0]);
+            curr.setDate(curr.getDate() + 1);
+        }
+        if (dateRange.length > 10) {
+            showToast("الفترة كبيرة جداً، الرجاء اختيار فترة 10 أيام كحد أقصى", "error"); return;
+        }
+
+        const sSnap = await window.firebaseOps.getDocs(
+            window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "scores"),
+                window.firebaseOps.where("date", "in", dateRange)
+            )
+        );
+
+        const allScores = [];
+        sSnap.forEach(d => allScores.push(d.data()));
+
+        let reportText = `📊 *تقرير الرصد المباشر المجمع* 📊\n`;
+        reportText += `📅 الفترة: ${startDate} إلى ${endDate} (${dateRange.length} أيام)\n`;
+        reportText += `👥 عدد ${getLabel('students')}: ${students.length}\n`;
+        reportText += `------------------\n`;
+
+        for (const student of students) {
+            const sScores = allScores.filter(s => s.studentId === student.id);
+            const absences = sScores.filter(s => s.criteriaId === 'ABSENCE_RECORD');
+            const quranScores = sScores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
+
+            const gradeCounts = {};
+            quranScores.forEach(s => {
+                const grade = s.quranGrade || 'بدون تقدير';
+                gradeCounts[grade] = (gradeCounts[grade] || 0) + 1;
+            });
+
+            reportText += `\n👤 ${student.name}\n`;
+            if (absences.length > 0) {
+                reportText += `  ❌ غياب: ${absences.length} ${absences.length === 1 ? 'يوم' : 'أيام'}\n`;
+            } else {
+                reportText += `  ✅ حضور كامل\n`;
+            }
+            if (Object.keys(gradeCounts).length > 0) {
+                reportText += `  🌟 التقدير: `;
+                reportText += Object.entries(gradeCounts).map(([g, c]) => `${c} ${g}`).join(' | ');
+                reportText += `\n`;
+            }
+        }
+
+        reportText += `\n------------------\n`;
+        reportText += `\n${state.currentLevel === 'ijazat' ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
+
+        const url = `https://wa.me/?text=${encodeURIComponent(reportText)}`;
+        window.location.href = url;
+    } catch (e) {
+        console.error(e);
+        showToast("خطأ في إعداد التقرير", "error");
+    }
+}
+
 async function generatePDFReport() {
+
     const compId = $('#report-comp-select').value;
     const startDate = $('#report-start-date').value;
     const endDate = $('#report-end-date').value;
@@ -7921,6 +8092,12 @@ async function generatePDFReport() {
 
     if (startDate > endDate) {
         showToast("تاريخ البداية يجب أن يكون قبل تاريخ النهاية", "error");
+        return;
+    }
+
+    // Handle Direct Grading report separately
+    if (compId === 'DIRECT_GRADING') {
+        await generateDirectGradingPDFReport(startDate, endDate);
         return;
     }
 
@@ -8842,13 +9019,17 @@ function openDirectGradingStudent(studentId) {
 
     const grid = $('#criteria-buttons-grid');
     grid.innerHTML = `
-        <div class="col-span-1 grid grid-cols-1 gap-3 w-full mb-3">
+        <div class="col-span-1 grid grid-cols-2 gap-3 w-full mb-3">
             <button onclick="openAbsenceOptions()" class="bg-orange-50 text-orange-700 border border-orange-200 py-3 rounded-xl font-bold hover:bg-orange-100 transition flex items-center justify-center gap-2">
                 <i data-lucide="user-x" class="w-4 h-4"></i>
                 <span>تسجيل غياب</span>
             </button>
-            <button id="absence-undo-btn" class="hidden"></button>
-            <button onclick="openTransferStudent('${studentId}')" class="bg-purple-50 text-purple-700 border border-purple-200 py-3 rounded-xl font-bold hover:bg-purple-100 transition flex items-center justify-center gap-2">
+            <button onclick="generateWeeklyReport()" class="bg-emerald-50 text-emerald-700 border border-emerald-200 py-3 rounded-xl font-bold hover:bg-emerald-100 transition flex items-center justify-center gap-2">
+                <i data-lucide="file-text" class="w-4 h-4"></i>
+                <span>تقرير أسبوعي</span>
+            </button>
+            <button id="absence-undo-btn" class="hidden col-span-2"></button>
+            <button onclick="openTransferStudent('${studentId}')" class="col-span-2 bg-purple-50 text-purple-700 border border-purple-200 py-3 rounded-xl font-bold hover:bg-purple-100 transition flex items-center justify-center gap-2">
                 <i data-lucide="arrow-right-left" class="w-4 h-4"></i>
                 <span>نقل ${getLabel('student')}</span>
             </button>
@@ -8863,9 +9044,76 @@ function openDirectGradingStudent(studentId) {
     refreshCriteriaButtons(studentId, 'DIRECT_GRADING', _initDate);
 
     // Load plan tracking for direct grading
-    const _dgPlanDate = new Date().toLocaleDateString('en-CA');
+    const _dgPlanDate = _initDate;
     if (typeof loadPlanTrackingForStudent === 'function') {
         loadPlanTrackingForStudent(studentId, _dgPlanDate);
+    }
+
+    // Listen for date changes in Direct Grading to reload Quran inputs
+    const _dgDateInput = document.getElementById('modal-grading-date');
+    if (_dgDateInput && !_dgDateInput._dgListenerAttached) {
+        _dgDateInput._dgListenerAttached = true;
+        _dgDateInput.addEventListener('change', async function() {
+            const selectedDate = this.value;
+            // Reload quran scores for the new date
+            try {
+                const q = window.firebaseOps.query(
+                    window.firebaseOps.collection(window.db, "scores"),
+                    window.firebaseOps.where("studentId", "==", currentRateStudentId),
+                    window.firebaseOps.where("date", "==", selectedDate)
+                );
+                const snap = await window.firebaseOps.getDocs(q);
+                const dayScores = [];
+                snap.forEach(d => dayScores.push({ id: d.id, ...d.data() }));
+
+                // Reset Quran fields first
+                ['memorization', 'review'].forEach(type => {
+                    const startS = document.getElementById(`rate-quran-start-sura-${type}`);
+                    const endS   = document.getElementById(`rate-quran-end-sura-${type}`);
+                    const startA = document.getElementById(`rate-quran-start-aya-${type}`);
+                    const endA   = document.getElementById(`rate-quran-end-aya-${type}`);
+                    const gradeEl= document.getElementById(`rate-quran-grade-${type}`);
+                    if (startS) startS.value = '';
+                    if (endS)   endS.value   = '';
+                    if (startA) { startA.innerHTML = '<option value="">الآية..</option>'; startA.disabled = true; }
+                    if (endA)   { endA.innerHTML   = '<option value="">الآية..</option>'; endA.disabled   = true; }
+                    if (gradeEl) gradeEl.value = '';
+                });
+
+                // Populate with saved data if exists
+                const memScore = dayScores.find(s => s.criteriaId === 'QURAN_MEMORIZATION');
+                const revScore = dayScores.find(s => s.criteriaId === 'QURAN_REVIEW');
+
+                async function populateQuranFields(score, type) {
+                    if (!score) return;
+                    const sSura = document.getElementById(`rate-quran-start-sura-${type}`);
+                    const eSura = document.getElementById(`rate-quran-end-sura-${type}`);
+                    const gradeEl = document.getElementById(`rate-quran-grade-${type}`);
+                    // Fields are saved as quranStartSura, quranStartAya, quranEndSura, quranEndAya
+                    if (sSura && score.quranStartSura) {
+                        sSura.value = score.quranStartSura;
+                        sSura.dispatchEvent(new Event('change'));
+                        await new Promise(r => setTimeout(r, 120));
+                        const sAya = document.getElementById(`rate-quran-start-aya-${type}`);
+                        if (sAya && score.quranStartAya) sAya.value = score.quranStartAya;
+                    }
+                    if (eSura && score.quranEndSura) {
+                        eSura.value = score.quranEndSura;
+                        eSura.dispatchEvent(new Event('change'));
+                        await new Promise(r => setTimeout(r, 120));
+                        const eAya = document.getElementById(`rate-quran-end-aya-${type}`);
+                        if (eAya && score.quranEndAya) eAya.value = score.quranEndAya;
+                    }
+                    if (gradeEl && score.quranGrade) gradeEl.value = score.quranGrade;
+                }
+
+                await populateQuranFields(memScore, 'memorization');
+                await populateQuranFields(revScore, 'review');
+
+                // Also reload absence undo button state
+                refreshCriteriaButtons(currentRateStudentId, 'DIRECT_GRADING', selectedDate);
+            } catch(err) { console.error('Date change reload error:', err); }
+        });
     }
 }
 
@@ -8948,7 +9196,7 @@ async function submitAbsence(label, points) {
                 : `السلام عليكم ولي أمر الطالب ${student.name}،\nتم تسجيل غياب للطالب اليوم (${label}).\nنرجو الحرص على الحضور.`;
 
             const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-            window.open(url, '_blank');
+            window.location.href = url;
         }
 
         showToast("تم تسجيل الغياب بنجاح");

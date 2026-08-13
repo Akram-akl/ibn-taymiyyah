@@ -13,6 +13,7 @@
         // Diagnostic script - Runs before anything else
         (function () {
             window.onerror = function (msg, url, line, col, error) {
+                if (msg === 'Script error.' || line === 0) return false;
                 var div = document.createElement('div');
                 div.style.cssText = 'position:fixed;top:0;left:0;right:0;background:red;color:white;z-index:99999;padding:10px;font-size:12px;direction:ltr;';
                 div.innerHTML = '<b>System Error:</b> ' + msg + '<br>Line: ' + line + ' at ' + url;
