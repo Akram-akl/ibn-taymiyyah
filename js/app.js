@@ -53,6 +53,11 @@ let formResponsesUnsubscribe = null;
 
 // --- Global Error Handler for Debugging ---
 window.onerror = function (msg, url, line, col, error) {
+    var msgStr = (msg || '').toString().toLowerCase();
+    if (msgStr.indexOf('script error') !== -1) return true;
+    if (!line || line === 0) return true;
+    if (!url || url === 'about:blank' || url === 'null' || url === '') return true;
+
     var errorDiv = document.getElementById('error-display');
     if (!errorDiv) {
         errorDiv = document.createElement('div');
