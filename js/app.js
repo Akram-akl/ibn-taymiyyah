@@ -3731,6 +3731,7 @@ function filterGradingList(val) {
 function openRateStudent(studentId) {
     ensureRateStudentModal();
     currentRateStudentId = studentId;
+    window.currentRateStudentId = studentId;
     const s = state.students.find(x => x.id === studentId);
     $('#rate-student-name').textContent = s ? s.name : `تقييم ${getLabel('student')}`;
     if(document.getElementById('rate-note-text')) document.getElementById('rate-note-text').value = '';
@@ -9298,9 +9299,11 @@ function getNextActiveDate(fromDate) {
  * @param {string} section - 'hifz' | 'review' — أي قسم ضغط عليه المعلم
  */
 function openTomorrowPlanModal(section) {
-    if (!state.isTeacher) return;
-    const studentId = window.currentRateStudentId;
-    if (!studentId) return;
+    const studentId = window.currentRateStudentId || (typeof currentRateStudentId !== 'undefined' ? currentRateStudentId : null);
+    if (!studentId) {
+        showToast('يرجى اختيار طالب أولاً', 'error');
+        return;
+    }
 
     const currentDate = document.getElementById('modal-grading-date')?.value || new Date().toISOString().split('T')[0];
     const tomorrowDate = getNextActiveDate(currentDate);
@@ -9410,6 +9413,7 @@ function openTomorrowPlanModal(section) {
         }
     }
 }
+window.openTomorrowPlanModal = openTomorrowPlanModal;
 
 /**
  * تحديث قوائم الآيات في نافذة خطة الغد
