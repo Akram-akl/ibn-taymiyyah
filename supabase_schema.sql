@@ -699,4 +699,70 @@ BEGIN
     END IF;
 END $$;
 
+-- ================================================
+-- TOMORROW PLANS FEATURE
+-- خطة الغد: يحدد المعلم ما سيُسمَّع للطالب غداً
+-- ================================================
+
+CREATE TABLE IF NOT EXISTS tomorrow_plans (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
+    level TEXT NOT NULL,
+    -- قسم الحفظ / مراجعة صغرى
+    hifz_start_sura INTEGER,
+    hifz_start_ayah INTEGER,
+    hifz_end_sura INTEGER,
+    hifz_end_ayah INTEGER,
+    hifz_start_page NUMERIC,
+    hifz_end_page NUMERIC,
+    hifz_sections JSONB DEFAULT '[]'::jsonb,
+    -- قسم المراجعة الكبرى
+    review_start_sura INTEGER,
+    review_start_ayah INTEGER,
+    review_end_sura INTEGER,
+    review_end_ayah INTEGER,
+    review_start_page NUMERIC,
+    review_end_page NUMERIC,
+    review_sections JSONB DEFAULT '[]'::jsonb,
+    -- التاريخ الذي ستُطبَّق فيه الخطة (= غد وقت الإنشاء)
+    for_date TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    -- خطة واحدة لكل طالب لكل يوم
+    UNIQUE(student_id, for_date)
+);
+
+ALTER TABLE tomorrow_plans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public all tomorrow_plans" ON tomorrow_plans;
+CREATE POLICY "Allow public all tomorrow_plans" ON tomorrow_plans FOR ALL USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_tomorrow_plans_student_date ON tomorrow_plans(student_id, for_date);
+CREATE INDEX IF NOT EXISTS idx_tomorrow_plans_level ON tomorrow_plans(level);
+
+-- Add to Realtime
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'tomorrow_plans') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE tomorrow_plans;
+    END IF;
+END $$;
+
+-- ================================================
+-- KEEP-ALIVE: استعلام دوري لمنع تجميد المشروع
+-- (يعمل فقط إذا كان pg_cron مفعّلاً - الخطط المدفوعة)
+-- ================================================
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+        PERFORM cron.schedule(
+            'keep-alive-project',
+            '0 9 */3 * *',
+            $cron$SELECT count(*) FROM students LIMIT 1$cron$
+        );
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    -- pg_cron not available, skip silently
+    NULL;
+END $$;
+
 NOTIFY pgrst, 'reload schema';

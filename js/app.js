@@ -3808,12 +3808,18 @@ function openRateStudent(studentId) {
     const _initDate = document.getElementById('modal-grading-date')?.value || mainDate;
     refreshCriteriaButtons(studentId, currentGradingCompId, _initDate);
 
-    // مراقبة تغيير التاريخ في المودال لتحديث أزرار التراجع
+    // مراقبة تغيير التاريخ في المودال لتحديث أزرار التراجع وتحميل خطة الغد
     const modalDateInput = document.getElementById('modal-grading-date');
     if (modalDateInput && !modalDateInput._undoListenerAttached) {
         modalDateInput._undoListenerAttached = true;
         modalDateInput.addEventListener('change', function() {
             refreshCriteriaButtons(currentRateStudentId, currentGradingCompId, this.value);
+            if (typeof loadPlanTrackingForStudent === 'function') {
+                loadPlanTrackingForStudent(currentRateStudentId, this.value);
+            }
+            if (typeof loadTomorrowPlanForStudent === 'function') {
+                loadTomorrowPlanForStudent(currentRateStudentId, this.value);
+            }
         });
     }
 
@@ -3821,6 +3827,10 @@ function openRateStudent(studentId) {
     const _planTrackDate = document.getElementById('modal-grading-date')?.value || new Date().toLocaleDateString('en-CA');
     if (typeof loadPlanTrackingForStudent === 'function') {
         loadPlanTrackingForStudent(studentId, _planTrackDate);
+    }
+    // Load tomorrow plan if created for this student on this date
+    if (typeof loadTomorrowPlanForStudent === 'function') {
+        loadTomorrowPlanForStudent(studentId, _planTrackDate);
     }
 }
 
@@ -4268,6 +4278,9 @@ window.submitQuranRecord = async (quranType) => {
             undoBtn.setAttribute('data-score-id', savedId);
             undoBtn.classList.remove('hidden');
             undoBtn.classList.add('flex');
+        }
+        if (typeof showTomorrowNextActionPrompt === 'function') {
+            showTomorrowNextActionPrompt(quranType === 'memorization' ? 'hifz' : 'review');
         }
         lucide.createIcons();
     } catch (e) {
@@ -9249,6 +9262,494 @@ function openRegistrationLinkModal() {
     lucide.createIcons();
 }
 
+// =====================================================
+// TOMORROW PLAN — خطة الغد
+// =====================================================
+
+// متغيرات مؤقتة للخطة الحالية
+window._tomorrowPlanCache = null; // آخر خطة غد محملة للطالب الحالي
+window._tomorrowPlanStudentId = null; // الطالب الحالي
+
+/**
+ * يحسب التاريخ التالي من أيام الحلقة النشطة
+ */
+function getNextActiveDate(fromDate) {
+    const activeDays = (state.activeWeekDays && state.activeWeekDays.length > 0)
+        ? state.activeWeekDays : ['sun', 'mon', 'tue', 'wed', 'thu'];
+    const dayMap = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+    const activeNums = new Set(activeDays.map(d => dayMap[d] ?? 0));
+    const cur = new Date((fromDate || new Date().toISOString().split('T')[0]) + 'T00:00:00');
+    cur.setDate(cur.getDate() + 1); // ابدأ من اليوم التالي
+    let limit = 14;
+    while (limit-- > 0) {
+        if (activeNums.has(cur.getDay())) {
+            return cur.toISOString().split('T')[0];
+        }
+        cur.setDate(cur.getDate() + 1);
+    }
+    // إذا لم توجد أيام نشطة، أرجع اليوم التالي مباشرةً
+    const fallback = new Date((fromDate || new Date().toISOString().split('T')[0]) + 'T00:00:00');
+    fallback.setDate(fallback.getDate() + 1);
+    return fallback.toISOString().split('T')[0];
+}
+
+/**
+ * يفتح نافذة تحديد خطة الغد (Popup في المنتصف)
+ * @param {string} section - 'hifz' | 'review' — أي قسم ضغط عليه المعلم
+ */
+function openTomorrowPlanModal(section) {
+    if (!state.isTeacher) return;
+    const studentId = window.currentRateStudentId;
+    if (!studentId) return;
+
+    const currentDate = document.getElementById('modal-grading-date')?.value || new Date().toISOString().split('T')[0];
+    const tomorrowDate = getNextActiveDate(currentDate);
+    const student = state.students.find(s => s.id === studentId);
+    const studentName = student?.name || getLabel('student');
+
+    if (!window.QuranService || !window.QuranService.isLoaded()) {
+        showToast('يرجى الانتظار لتحميل بيانات المصحف', 'error');
+        return;
+    }
+    const suras = window.QuranService.getSuras();
+    const suraOpts = `<option value="">السورة..</option>` + suras.map(s => `<option value="${s.number}">${s.name}</option>`).join('');
+
+    // قراءة القيم الحالية من نافذة التقييم (إن وُجدت) لملء الحقول تلقائياً
+    const existingPlan = window._tomorrowPlanCache;
+    const prefill = section === 'hifz' ? {
+        ss: existingPlan?.hifzStartSura || document.getElementById('rate-quran-start-sura-memorization')?.value || '',
+        sa: existingPlan?.hifzStartAyah || document.getElementById('rate-quran-start-aya-memorization')?.value || '',
+        es: existingPlan?.hifzEndSura   || document.getElementById('rate-quran-end-sura-memorization')?.value || '',
+        ea: existingPlan?.hifzEndAyah   || document.getElementById('rate-quran-end-aya-memorization')?.value || ''
+    } : {
+        ss: existingPlan?.reviewStartSura || document.getElementById('rate-quran-start-sura-review')?.value || '',
+        sa: existingPlan?.reviewStartAyah || document.getElementById('rate-quran-start-aya-review')?.value || '',
+        es: existingPlan?.reviewEndSura   || document.getElementById('rate-quran-end-sura-review')?.value || '',
+        ea: existingPlan?.reviewEndAyah   || document.getElementById('rate-quran-end-aya-review')?.value || ''
+    };
+
+    const sectionLabel = section === 'hifz' ? '📝 حفظ / مراجعة صغرى' : '🔄 مراجعة / مراجعة كبرى';
+    const sectionColor = section === 'hifz' ? 'emerald' : 'purple';
+
+    let modal = document.getElementById('tomorrow-plan-modal');
+    if (!modal) { modal = document.createElement('div'); modal.id = 'tomorrow-plan-modal'; document.body.appendChild(modal); }
+    modal.className = 'fixed inset-0 bg-black/60 z-[500] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center p-5 border-b border-gray-100 dark:border-gray-700 shrink-0">
+                <div>
+                    <h3 class="font-bold text-base text-indigo-700 dark:text-indigo-400 flex items-center gap-2">
+                        <i data-lucide="calendar-plus" class="w-5 h-5"></i>إرسال خطة الغد
+                    </h3>
+                    <p class="text-[10px] text-gray-400 mt-0.5">${studentName} — للجلسة القادمة (${tomorrowDate})</p>
+                </div>
+                <button onclick="document.getElementById('tomorrow-plan-modal').remove()" class="text-gray-400 hover:text-gray-600 p-2 rounded-full bg-gray-50 dark:bg-gray-700 transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5 overflow-y-auto flex-1 space-y-4">
+                <!-- معلومة -->
+                <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl p-3 text-xs text-indigo-700 dark:text-indigo-300 leading-relaxed">
+                    💡 حدد المقطع الذي سيسمعه الطالب غداً. وفي الجلسة القادمة سيظهر له خيار التأكيد المباشر بدون الحاجة لاختيار السور مجدداً.
+                </div>
+
+                <!-- قسم المقطع المطلوب -->
+                <div class="bg-${sectionColor}-50 dark:bg-${sectionColor}-900/10 border border-${sectionColor}-200 dark:border-${sectionColor}-700 rounded-xl p-4 space-y-3">
+                    <h4 class="font-bold text-xs text-${sectionColor}-700 dark:text-${sectionColor}-400">${sectionLabel}</h4>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <p class="text-[10px] font-bold text-gray-500 mb-1">من سورة</p>
+                            <select id="tp-start-sura" onchange="_tpUpdateAyahs('start')" class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-1 py-1.5 text-[11px] font-bold">${suraOpts}</select>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-bold text-gray-500 mb-1">من آية</p>
+                            <select id="tp-start-ayah" disabled class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-1 py-1.5 text-[11px]"><option value="">الآية..</option></select>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-bold text-gray-500 mb-1">إلى سورة</p>
+                            <select id="tp-end-sura" onchange="_tpUpdateAyahs('end')" class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-1 py-1.5 text-[11px] font-bold">${suraOpts}</select>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-bold text-gray-500 mb-1">إلى آية</p>
+                            <select id="tp-end-ayah" disabled class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-1 py-1.5 text-[11px]"><option value="">الآية..</option></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- زر التراجع (يظهر إذا كانت خطة موجودة مسبقاً) -->
+                ${existingPlan ? `
+                <button onclick="deleteTomorrowPlan(); document.getElementById('tomorrow-plan-modal').remove();"
+                    class="w-full py-2.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-xl text-xs font-bold hover:bg-red-100 transition flex items-center justify-center gap-2">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i> حذف خطة الغد المحفوظة مسبقاً
+                </button>` : ''}
+            </div>
+            <div class="p-5 border-t border-gray-100 dark:border-gray-700 shrink-0 grid grid-cols-2 gap-3">
+                <button onclick="document.getElementById('tomorrow-plan-modal').remove()" class="py-3 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold text-sm hover:bg-gray-200 transition">إلغاء</button>
+                <button onclick="_tpSave('${section}', '${studentId}', '${tomorrowDate}')"
+                    class="py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition flex items-center justify-center gap-2">
+                    <i data-lucide="calendar-check" class="w-4 h-4"></i> حفظ الخطة
+                </button>
+            </div>
+        </div>`;
+
+    lucide.createIcons();
+
+    // ملء القيم المسبقة
+    if (prefill.ss) {
+        const startSuraEl = document.getElementById('tp-start-sura');
+        if (startSuraEl) {
+            startSuraEl.value = prefill.ss;
+            _tpUpdateAyahs('start', prefill.sa);
+        }
+    }
+    if (prefill.es) {
+        const endSuraEl = document.getElementById('tp-end-sura');
+        if (endSuraEl) {
+            endSuraEl.value = prefill.es;
+            _tpUpdateAyahs('end', prefill.ea);
+        }
+    }
+}
+
+/**
+ * تحديث قوائم الآيات في نافذة خطة الغد
+ */
+window._tpUpdateAyahs = function(prefix, preselect) {
+    const suraEl = document.getElementById(`tp-${prefix}-sura`);
+    const ayahEl = document.getElementById(`tp-${prefix}-ayah`);
+    if (!suraEl || !ayahEl || !window.QuranService) return;
+    const suraNo = parseInt(suraEl.value);
+    if (!suraNo) { ayahEl.disabled = true; return; }
+    const ayahs = window.QuranService.getAyahs(suraNo)
+        .filter(a => a.aya_no > 0).sort((a, b) => a.aya_no - b.aya_no);
+    ayahEl.innerHTML = '<option value="">الآية..</option>' + ayahs.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
+    ayahEl.disabled = false;
+    if (preselect) ayahEl.value = preselect;
+};
+
+/**
+ * حفظ خطة الغد في قاعدة البيانات
+ */
+window._tpSave = async function(section, studentId, forDate) {
+    const startSura = parseInt(document.getElementById('tp-start-sura')?.value);
+    const startAyah = parseInt(document.getElementById('tp-start-ayah')?.value);
+    const endSura   = parseInt(document.getElementById('tp-end-sura')?.value);
+    const endAyah   = parseInt(document.getElementById('tp-end-ayah')?.value);
+
+    if (!startSura || !startAyah || !endSura || !endAyah) {
+        showToast('يرجى تحديد السورة والآية كاملاً', 'error');
+        return;
+    }
+
+    // بناء بيانات الأيات لحساب الصفحات
+    let startPage = 1, endPage = 1, sections = [];
+    try {
+        const ayahs = getPlanAyahRange(startSura, startAyah, endSura, endAyah);
+        if (ayahs.length > 0) {
+            startPage = ayahs[0].page || 1;
+            endPage   = ayahs[ayahs.length - 1].page || 1;
+            sections  = buildSectionsFromAyahs(ayahs);
+        }
+    } catch(e) { console.warn('tp sections:', e); }
+
+    // تجهيز البيانات حسب القسم
+    const existing = window._tomorrowPlanCache;
+    const planData = {
+        student_id: studentId,
+        level: state.currentLevel,
+        for_date: forDate,
+    };
+
+    if (section === 'hifz') {
+        planData.hifz_start_sura = startSura;
+        planData.hifz_start_ayah = startAyah;
+        planData.hifz_end_sura   = endSura;
+        planData.hifz_end_ayah   = endAyah;
+        planData.hifz_start_page = startPage;
+        planData.hifz_end_page   = endPage;
+        planData.hifz_sections   = sections;
+        // احتفظ ببيانات المراجعة إذا كانت موجودة مسبقاً
+        if (existing) {
+            planData.review_start_sura = existing.reviewStartSura;
+            planData.review_start_ayah = existing.reviewStartAyah;
+            planData.review_end_sura   = existing.reviewEndSura;
+            planData.review_end_ayah   = existing.reviewEndAyah;
+            planData.review_start_page = existing.reviewStartPage;
+            planData.review_end_page   = existing.reviewEndPage;
+            planData.review_sections   = existing.reviewSections || [];
+        }
+    } else {
+        planData.review_start_sura = startSura;
+        planData.review_start_ayah = startAyah;
+        planData.review_end_sura   = endSura;
+        planData.review_end_ayah   = endAyah;
+        planData.review_start_page = startPage;
+        planData.review_end_page   = endPage;
+        planData.review_sections   = sections;
+        // احتفظ ببيانات الحفظ إذا كانت موجودة مسبقاً
+        if (existing) {
+            planData.hifz_start_sura = existing.hifzStartSura;
+            planData.hifz_start_ayah = existing.hifzStartAyah;
+            planData.hifz_end_sura   = existing.hifzEndSura;
+            planData.hifz_end_ayah   = existing.hifzEndAyah;
+            planData.hifz_start_page = existing.hifzStartPage;
+            planData.hifz_end_page   = existing.hifzEndPage;
+            planData.hifz_sections   = existing.hifzSections || [];
+        }
+    }
+
+    try {
+        const saveBtn = document.querySelector('#tomorrow-plan-modal button[onclick*="_tpSave"]');
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>'; lucide.createIcons(); }
+
+        if (existing?.id) {
+            // تحديث السجل الموجود
+            await window.firebaseOps.updateDoc(
+                window.firebaseOps.doc(window.db, 'tomorrow_plans', existing.id),
+                { ...planData, updatedAt: new Date().toISOString() }
+            );
+        } else {
+            // إنشاء سجل جديد
+            await window.firebaseOps.addDoc(
+                window.firebaseOps.collection(window.db, 'tomorrow_plans'),
+                { ...planData, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+            );
+        }
+
+        const suraName = window.QuranService?.getSuras()?.find(s => s.number === startSura)?.name || `سورة ${startSura}`;
+        showToast(`✅ تم إرسال خطة الغد — ${suraName} (${startAyah}-${endAyah})`, 'success');
+        document.getElementById('tomorrow-plan-modal')?.remove();
+
+        // تحديث الكاش وإعادة تحميل البانر
+        await loadTomorrowPlanForStudent(studentId, forDate);
+
+    } catch(e) {
+        console.error('save tomorrow plan:', e);
+        showToast('حدث خطأ أثناء حفظ خطة الغد', 'error');
+    }
+};
+
+/**
+ * تحميل خطة الغد للطالب وعرض بطاقات التأكيد "هل أتم الطالب خطته؟"
+ * @param {string} studentId
+ * @param {string} forDate - التاريخ الذي تُطبَّق فيه (اليوم المفتوح في نافذة التقييم)
+ */
+async function loadTomorrowPlanForStudent(studentId, forDate) {
+    window._tomorrowPlanStudentId = studentId;
+    window._tomorrowPlanCache = null;
+
+    const banner = document.getElementById('tomorrow-plan-banner');
+    const bannerText = document.getElementById('tomorrow-plan-banner-text');
+    if (banner) banner.classList.add('hidden');
+
+    const hifzPrompt = document.getElementById('tp-hifz-prompt-card');
+    const hifzFields = document.getElementById('rate-quran-hifz-fields');
+    const reviewPrompt = document.getElementById('tp-review-prompt-card');
+    const reviewFields = document.getElementById('rate-quran-review-fields');
+
+    // إعادة الضبط الافتراضي
+    if (hifzPrompt) hifzPrompt.classList.add('hidden');
+    if (hifzFields) hifzFields.classList.remove('hidden');
+    if (reviewPrompt) reviewPrompt.classList.add('hidden');
+    if (reviewFields) reviewFields.classList.remove('hidden');
+
+    try {
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'tomorrow_plans'),
+            window.firebaseOps.where('student_id', '==', studentId),
+            window.firebaseOps.where('for_date', '==', forDate)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        if (snap.empty) return;
+
+        const plan = snap.docs[0].data();
+        plan.id = snap.docs[0].id;
+        window._tomorrowPlanCache = plan;
+
+        const suras = window.QuranService?.getSuras() || [];
+
+        // معالجة خطة الحفظ
+        if (plan.hifzStartSura) {
+            const sName = suras.find(s => s.number === plan.hifzStartSura)?.name || `سورة ${plan.hifzStartSura}`;
+            const eName = suras.find(s => s.number === plan.hifzEndSura)?.name || `سورة ${plan.hifzEndSura}`;
+            const desc = (plan.hifzStartSura === plan.hifzEndSura)
+                ? `📖 ${sName} (من آية ${plan.hifzStartAyah} إلى ${plan.hifzEndAyah})`
+                : `📖 من ${sName} (${plan.hifzStartAyah}) إلى ${eName} (${plan.hifzEndAyah})`;
+
+            const hifzDescEl = document.getElementById('tp-hifz-prompt-text');
+            if (hifzDescEl) hifzDescEl.textContent = desc;
+            if (hifzPrompt) hifzPrompt.classList.remove('hidden');
+            if (hifzFields) hifzFields.classList.add('hidden');
+
+            _fillQuranFields('memorization', plan.hifzStartSura, plan.hifzStartAyah, plan.hifzEndSura, plan.hifzEndAyah);
+        }
+
+        // معالجة خطة المراجعة
+        if (plan.reviewStartSura) {
+            const sName = suras.find(s => s.number === plan.reviewStartSura)?.name || `سورة ${plan.reviewStartSura}`;
+            const eName = suras.find(s => s.number === plan.reviewEndSura)?.name || `سورة ${plan.reviewEndSura}`;
+            const desc = (plan.reviewStartSura === plan.reviewEndSura)
+                ? `📖 ${sName} (من آية ${plan.reviewStartAyah} إلى ${plan.reviewEndAyah})`
+                : `📖 من ${sName} (${plan.reviewStartAyah}) إلى ${eName} (${plan.reviewEndAyah})`;
+
+            const reviewDescEl = document.getElementById('tp-review-prompt-text');
+            if (reviewDescEl) reviewDescEl.textContent = desc;
+            if (reviewPrompt) reviewPrompt.classList.remove('hidden');
+            if (reviewFields) reviewFields.classList.add('hidden');
+
+            _fillQuranFields('review', plan.reviewStartSura, plan.reviewStartAyah, plan.reviewEndSura, plan.reviewEndAyah);
+        }
+
+        // تحديث الأيقونات
+        if (window.lucide) window.lucide.createIcons();
+
+    } catch(e) {
+        console.warn('load tomorrow plan:', e);
+    }
+}
+
+/**
+ * تأكيد إتمام الطالب لخطة اليوم المحددة مسبقاً (زر "نعم")
+ * @param {string} type - 'memorization' | 'review'
+ */
+window.confirmCompleteTomorrowPlan = async function(type) {
+    const plan = window._tomorrowPlanCache;
+    if (!plan) {
+        showToast('لم يتم العثور على خطة', 'error');
+        return;
+    }
+
+    const isHifz = type === 'memorization';
+    const startSura = isHifz ? plan.hifzStartSura : plan.reviewStartSura;
+    const startAyah = isHifz ? plan.hifzStartAyah : plan.reviewStartAyah;
+    const endSura   = isHifz ? plan.hifzEndSura   : plan.reviewEndSura;
+    const endAyah   = isHifz ? plan.hifzEndAyah   : plan.reviewEndAyah;
+    const gradeVal  = document.getElementById(isHifz ? 'tp-hifz-prompt-grade' : 'tp-review-prompt-grade')?.value || 'ممتاز';
+
+    // ملء الحقول والقيمة
+    _fillQuranFields(type, startSura, startAyah, endSura, endAyah);
+    const gradeSelect = document.getElementById(`rate-quran-grade-${type}`);
+    if (gradeSelect) gradeSelect.value = gradeVal;
+
+    // تسجيل مباشر في قاعدة البيانات
+    await submitQuranRecord(type);
+
+    // إخفاء بطاقة السؤال وإظهار زر خطة الغد الجديدة
+    const promptCard = document.getElementById(isHifz ? 'tp-hifz-prompt-card' : 'tp-review-prompt-card');
+    if (promptCard) promptCard.classList.add('hidden');
+    const fieldsContainer = document.getElementById(isHifz ? 'rate-quran-hifz-fields' : 'rate-quran-review-fields');
+    if (fieldsContainer) fieldsContainer.classList.remove('hidden');
+
+    // فتح نافذة خطة الغد تلقائياً إذا أراد المعلم
+    showTomorrowNextActionPrompt(isHifz ? 'hifz' : 'review');
+};
+
+/**
+ * رفض إتمام الخطة والعودة لتسجيل مقطع آخر يدوياً (زر "لا")
+ * @param {string} type - 'memorization' | 'review'
+ */
+window.dismissTomorrowPlanPrompt = function(type) {
+    const isHifz = type === 'memorization';
+    const promptCard = document.getElementById(isHifz ? 'tp-hifz-prompt-card' : 'tp-review-prompt-card');
+    if (promptCard) promptCard.classList.add('hidden');
+    const fieldsContainer = document.getElementById(isHifz ? 'rate-quran-hifz-fields' : 'rate-quran-review-fields');
+    if (fieldsContainer) fieldsContainer.classList.remove('hidden');
+
+    // إعادة تعيين الحقول لتمكين المعلم من الاختيار اليدوي
+    const startSura = document.getElementById(`rate-quran-start-sura-${type}`);
+    const endSura   = document.getElementById(`rate-quran-end-sura-${type}`);
+    if (startSura) startSura.value = "";
+    if (endSura) endSura.value = "";
+    const startAya  = document.getElementById(`rate-quran-start-aya-${type}`);
+    const endAya    = document.getElementById(`rate-quran-end-aya-${type}`);
+    if (startAya) { startAya.innerHTML = '<option value="">الآية..</option>'; startAya.disabled = true; }
+    if (endAya) { endAya.innerHTML = '<option value="">الآية..</option>'; endAya.disabled = true; }
+
+    showToast('تم التحويل للتسجيل اليدوي لمقطع اليوم', 'info');
+};
+
+/**
+ * يعرض شريط إرسال خطة الغد بعد إتمام التسميع
+ */
+function showTomorrowNextActionPrompt(section) {
+    const promptArea = document.getElementById(section === 'hifz' ? 'tp-hifz-next-action' : 'tp-review-next-action');
+    if (!promptArea) return;
+    promptArea.innerHTML = `
+        <div class="mt-2 p-2.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-200 dark:border-indigo-700 flex items-center justify-between gap-2 animate-fade-in">
+            <div class="flex items-center gap-1.5 text-xs font-bold text-indigo-800 dark:text-indigo-300">
+                <i data-lucide="sparkles" class="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0"></i>
+                <span>تم الرصد! حدد خطة الغد؟</span>
+            </div>
+            <button onclick="openTomorrowPlanModal('${section}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0 shadow-sm">
+                <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i> خطة الغد
+            </button>
+        </div>`;
+    promptArea.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+}
+
+/**
+ * ملء حقول السورة/الآية في نافذة التقييم تلقائياً
+ */
+function _fillQuranFields(type, startSura, startAyah, endSura, endAyah) {
+    if (!window.QuranService) return;
+    const startSuraEl = document.getElementById(`rate-quran-start-sura-${type}`);
+    const startAyahEl = document.getElementById(`rate-quran-start-aya-${type}`);
+    const endSuraEl   = document.getElementById(`rate-quran-end-sura-${type}`);
+    const endAyahEl   = document.getElementById(`rate-quran-end-aya-${type}`);
+    if (!startSuraEl || !startAyahEl || !endSuraEl || !endAyahEl) return;
+
+    // ملء قائمة السور (إذا لم تكن مملوءة)
+    const suras = window.QuranService.getSuras();
+    if (startSuraEl.options.length <= 1) {
+        const opts = suras.map(s => `<option value="${s.number}">${s.name}</option>`).join('');
+        startSuraEl.innerHTML = `<option value="">السورة..</option>` + opts;
+        endSuraEl.innerHTML   = `<option value="">السورة..</option>` + opts;
+    }
+
+    // سورة وآية البداية
+    startSuraEl.value = startSura;
+    const startAyahs = window.QuranService.getAyahs(startSura).filter(a => a.aya_no > 0).sort((a,b) => a.aya_no - b.aya_no);
+    startAyahEl.innerHTML = '<option value="">الآية..</option>' + startAyahs.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
+    startAyahEl.disabled = false;
+    startAyahEl.value = startAyah;
+
+    // سورة وآية النهاية
+    endSuraEl.value = endSura;
+    const endAyahs = window.QuranService.getAyahs(endSura).filter(a => a.aya_no > 0).sort((a,b) => a.aya_no - b.aya_no);
+    endAyahEl.innerHTML = '<option value="">الآية..</option>' + endAyahs.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
+    endAyahEl.disabled = false;
+    endAyahEl.value = endAyah;
+}
+
+/**
+ * حذف خطة الغد للطالب الحالي
+ */
+async function deleteTomorrowPlan() {
+    const plan = window._tomorrowPlanCache;
+    if (!plan?.id) return;
+    try {
+        await window.firebaseOps.deleteDoc(
+            window.firebaseOps.doc(window.db, 'tomorrow_plans', plan.id)
+        );
+        window._tomorrowPlanCache = null;
+        // إخفاء البطاقات
+        const hifzPrompt = document.getElementById('tp-hifz-prompt-card');
+        const hifzFields = document.getElementById('rate-quran-hifz-fields');
+        const reviewPrompt = document.getElementById('tp-review-prompt-card');
+        const reviewFields = document.getElementById('rate-quran-review-fields');
+        if (hifzPrompt) hifzPrompt.classList.add('hidden');
+        if (hifzFields) hifzFields.classList.remove('hidden');
+        if (reviewPrompt) reviewPrompt.classList.add('hidden');
+        if (reviewFields) reviewFields.classList.remove('hidden');
+
+        showToast('تم حذف خطة الغد بنجاح', 'success');
+    } catch(e) {
+        console.error('delete tomorrow plan:', e);
+        showToast('حدث خطأ أثناء الحذف', 'error');
+    }
+}
+
 function ensureRateStudentModal() {
     if (document.getElementById('rate-student-modal')) return;
 
@@ -9264,117 +9765,211 @@ function ensureRateStudentModal() {
             
             <div class="p-6 overflow-y-auto flex-1">
                 <p id="rate-date-display" class="text-xs text-gray-500 text-center mb-2 font-bold"></p>
-                
+
                 <div id="rate-quran-section" class="hidden mb-4 space-y-4">
                     <!-- Hifz Box -->
                     <div id="rate-quran-hifz-box" class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right space-y-3 shadow-sm">
-                        <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">📝 تسجيل حفظ أو مراجعة صغرى</h4>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <p class="text-[10px] font-bold text-gray-500 mb-1">من سورة</p>
-                                <select id="rate-quran-start-sura-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('start', 'memorization')">
-                                    <option value="">السورة..</option>
-                                </select>
-                            </div>
-                            <div>
-                                <p class="text-[10px] font-bold text-gray-500 mb-1">من آية</p>
-                                <select id="rate-quran-start-aya-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
-                                    <option value="">الآية..</option>
-                                </select>
-                            </div>
-                            <div>
-                                <p class="text-[10px] font-bold text-gray-500 mb-1">إلى سورة</p>
-                                <select id="rate-quran-end-sura-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('end', 'memorization')">
-                                    <option value="">السورة..</option>
-                                </select>
-                            </div>
-                            <div>
-                                <p class="text-[10px] font-bold text-gray-500 mb-1">إلى آية</p>
-                                <select id="rate-quran-end-aya-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
-                                    <option value="">الآية..</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div>
-                            <p class="text-[10px] font-bold text-gray-500 mb-1">التقدير</p>
-                            <select id="rate-quran-grade-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold">
-                                <option value="">اختر التقدير..</option>
-                                <option value="ممتاز">⭐ ممتاز</option>
-                                <option value="جيد جداً">✨ جيد جداً</option>
-                                <option value="مقبول">👍 مقبول</option>
-                                <option value="سيء">⚠️ سيء</option>
-                                <option value="لم يحفظ">❌ لم يحفظ</option>
-                            </select>
-                        </div>
-                        <div class="flex gap-2 mt-1">
-                            <button onclick="submitQuranRecord('memorization')" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
-                                <i data-lucide="save" class="w-4 h-4"></i>حفظ المقطع
-                            </button>
-                            <button id="quran-memorization-undo-btn" data-score-id=""
-                                onclick="undoScoreById(this.getAttribute('data-score-id'), this, '↩ إلغاء الحفظ')"
-                                class="hidden items-center gap-1 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
-                                <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء
+                        <div class="flex items-center justify-between">
+                            <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">📝 تسجيل حفظ أو مراجعة صغرى</h4>
+                            <button onclick="openTomorrowPlanModal('hifz')" class="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded-lg text-[10px] font-bold hover:bg-indigo-200 transition flex items-center gap-1" title="إرسال خطة الغد">
+                                <i data-lucide="calendar-plus" class="w-3 h-3"></i> خطة الغد
                             </button>
                         </div>
+
+                        <!-- بطاقة خطة اليوم المقررة (تظهر إذا كان المعلم قد حدد خطة للغد مسبقاً) -->
+                        <div id="tp-hifz-prompt-card" class="hidden bg-white/90 dark:bg-gray-800/90 p-3 rounded-xl border-2 border-emerald-400 dark:border-emerald-600 text-right space-y-2.5 animate-fade-in shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                                    <i data-lucide="bookmark-check" class="w-4 h-4 text-emerald-600"></i> خطة اليوم المقررة:
+                                </span>
+                                <span class="text-[10px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-full">مطلوب التسميع</span>
+                            </div>
+                            <p id="tp-hifz-prompt-text" class="text-xs font-bold text-gray-800 dark:text-gray-100 leading-relaxed"></p>
+                            <div class="pt-1 space-y-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">التقدير:</label>
+                                    <select id="tp-hifz-prompt-grade" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs font-bold">
+                                        <option value="ممتاز" selected>⭐ ممتاز</option>
+                                        <option value="جيد جداً">✨ جيد جداً</option>
+                                        <option value="مقبول">👍 مقبول</option>
+                                        <option value="سيء">⚠️ سيء</option>
+                                        <option value="لم يحفظ">❌ لم يحفظ</option>
+                                    </select>
+                                </div>
+                                <p class="text-[11px] font-bold text-gray-700 dark:text-gray-300">هل أتم الطالب خطته؟</p>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button onclick="confirmCompleteTomorrowPlan('memorization')" class="py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 shadow-sm">
+                                        <i data-lucide="check" class="w-3.5 h-3.5"></i> نعم (رصد فوري)
+                                    </button>
+                                    <button onclick="dismissTomorrowPlanPrompt('memorization')" class="py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 text-gray-700 dark:text-gray-300 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 border border-gray-200 dark:border-gray-600">
+                                        <i data-lucide="edit-3" class="w-3.5 h-3.5"></i> لا (تعديل المقطع)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- الحقول اليدوية المعتادة -->
+                        <div id="rate-quran-hifz-fields" class="space-y-3">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-500 mb-1">من سورة</p>
+                                    <select id="rate-quran-start-sura-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('start', 'memorization')">
+                                        <option value="">السورة..</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-500 mb-1">من آية</p>
+                                    <select id="rate-quran-start-aya-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                        <option value="">الآية..</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-500 mb-1">إلى سورة</p>
+                                    <select id="rate-quran-end-sura-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('end', 'memorization')">
+                                        <option value="">السورة..</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-500 mb-1">إلى آية</p>
+                                    <select id="rate-quran-end-aya-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                        <option value="">الآية..</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <p class="text-[10px] font-bold text-gray-500 mb-1">التقدير</p>
+                                <select id="rate-quran-grade-memorization" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold">
+                                    <option value="">اختر التقدير..</option>
+                                    <option value="ممتاز">⭐ ممتاز</option>
+                                    <option value="جيد جداً">✨ جيد جداً</option>
+                                    <option value="مقبول">👍 مقبول</option>
+                                    <option value="سيء">⚠️ سيء</option>
+                                    <option value="لم يحفظ">❌ لم يحفظ</option>
+                                </select>
+                            </div>
+                            <div class="flex gap-2 mt-1">
+                                <button onclick="submitQuranRecord('memorization')" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
+                                    <i data-lucide="save" class="w-4 h-4"></i>حفظ المقطع
+                                </button>
+                                <button onclick="openTomorrowPlanModal('hifz')" class="px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700 rounded-xl text-xs font-bold hover:bg-indigo-100 transition flex items-center gap-1" title="خطة الغد للحفظ">
+                                    <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i> خطة الغد
+                                </button>
+                                <button id="quran-memorization-undo-btn" data-score-id=""
+                                    onclick="undoScoreById(this.getAttribute('data-score-id'), this, '↩ إلغاء الحفظ')"
+                                    class="hidden items-center gap-1 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                                    <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- منطقة زر خطة الغد التالية بعد الرصد -->
+                        <div id="tp-hifz-next-action" class="hidden"></div>
                     </div>
 
                     <!-- Murajaa Box -->
                     <div id="rate-quran-review-box" class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right space-y-3 shadow-sm">
-                        <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">🔄 تسجيل مراجعة أو مراجعة كبرى</h4>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <p class="text-[10px] font-bold text-gray-500 mb-1">من سورة</p>
-                                <select id="rate-quran-start-sura-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('start', 'review')">
-                                    <option value="">السورة..</option>
-                                </select>
-                            </div>
-                            <div>
-                                <p class="text-[10px] font-bold text-gray-500 mb-1">من آية</p>
-                                <select id="rate-quran-start-aya-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
-                                    <option value="">الآية..</option>
-                                </select>
-                            </div>
-                            <div>
-                                <p class="text-[10px] font-bold text-gray-500 mb-1">إلى سورة</p>
-                                <select id="rate-quran-end-sura-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('end', 'review')">
-                                    <option value="">السورة..</option>
-                                </select>
-                            </div>
-                            <div>
-                                <p class="text-[10px] font-bold text-gray-500 mb-1">إلى آية</p>
-                                <select id="rate-quran-end-aya-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
-                                    <option value="">الآية..</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div>
-                            <p class="text-[10px] font-bold text-gray-500 mb-1">التقدير</p>
-                            <select id="rate-quran-grade-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold">
-                                <option value="">اختر التقدير..</option>
-                                <option value="ممتاز">⭐ ممتاز</option>
-                                <option value="جيد جداً">✨ جيد جداً</option>
-                                <option value="مقبول">👍 مقبول</option>
-                                <option value="سيء">⚠️ سيء</option>
-                                <option value="لم يراجع">❌ لم يراجع</option>
-                            </select>
-                        </div>
-                        <div class="flex gap-2 mt-1">
-                            <button onclick="submitQuranRecord('review')" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
-                                <i data-lucide="save" class="w-4 h-4"></i>حفظ المراجعة
-                            </button>
-                            <button id="quran-review-undo-btn" data-score-id=""
-                                onclick="undoScoreById(this.getAttribute('data-score-id'), this, '↩ إلغاء المراجعة')"
-                                class="hidden items-center gap-1 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
-                                <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء
+                        <div class="flex items-center justify-between">
+                            <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">🔄 تسجيل مراجعة أو مراجعة كبرى</h4>
+                            <button onclick="openTomorrowPlanModal('review')" class="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded-lg text-[10px] font-bold hover:bg-indigo-200 transition flex items-center gap-1" title="إرسال خطة الغد">
+                                <i data-lucide="calendar-plus" class="w-3 h-3"></i> خطة الغد
                             </button>
                         </div>
+
+                        <!-- بطاقة خطة اليوم المقررة للمراجعة -->
+                        <div id="tp-review-prompt-card" class="hidden bg-white/90 dark:bg-gray-800/90 p-3 rounded-xl border-2 border-purple-400 dark:border-purple-600 text-right space-y-2.5 animate-fade-in shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-purple-800 dark:text-purple-300 flex items-center gap-1.5">
+                                    <i data-lucide="bookmark-check" class="w-4 h-4 text-purple-600"></i> خطة اليوم المقررة للمراجعة:
+                                </span>
+                                <span class="text-[10px] bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 font-bold px-2 py-0.5 rounded-full">مطلوب التسميع</span>
+                            </div>
+                            <p id="tp-review-prompt-text" class="text-xs font-bold text-gray-800 dark:text-gray-100 leading-relaxed"></p>
+                            <div class="pt-1 space-y-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">التقدير:</label>
+                                    <select id="tp-review-prompt-grade" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs font-bold">
+                                        <option value="ممتاز" selected>⭐ ممتاز</option>
+                                        <option value="جيد جداً">✨ جيد جداً</option>
+                                        <option value="مقبول">👍 مقبول</option>
+                                        <option value="سيء">⚠️ سيء</option>
+                                        <option value="لم يراجع">❌ لم يراجع</option>
+                                    </select>
+                                </div>
+                                <p class="text-[11px] font-bold text-gray-700 dark:text-gray-300">هل أتم الطالب خطته؟</p>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button onclick="confirmCompleteTomorrowPlan('review')" class="py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 shadow-sm">
+                                        <i data-lucide="check" class="w-3.5 h-3.5"></i> نعم (رصد فوري)
+                                    </button>
+                                    <button onclick="dismissTomorrowPlanPrompt('review')" class="py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 text-gray-700 dark:text-gray-300 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 border border-gray-200 dark:border-gray-600">
+                                        <i data-lucide="edit-3" class="w-3.5 h-3.5"></i> لا (تعديل المقطع)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- الحقول اليدوية المعتادة للمراجعة -->
+                        <div id="rate-quran-review-fields" class="space-y-3">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-500 mb-1">من سورة</p>
+                                    <select id="rate-quran-start-sura-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('start', 'review')">
+                                        <option value="">السورة..</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-500 mb-1">من آية</p>
+                                    <select id="rate-quran-start-aya-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                        <option value="">الآية..</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-500 mb-1">إلى سورة</p>
+                                    <select id="rate-quran-end-sura-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold" onchange="updateQuranAyas('end', 'review')">
+                                        <option value="">السورة..</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-bold text-gray-500 mb-1">إلى آية</p>
+                                    <select id="rate-quran-end-aya-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px]" disabled>
+                                        <option value="">الآية..</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <p class="text-[10px] font-bold text-gray-500 mb-1">التقدير</p>
+                                <select id="rate-quran-grade-review" class="w-full bg-white dark:bg-gray-700 border border-gray-200 rounded-lg px-1 py-1.5 text-[11px] font-bold">
+                                    <option value="">اختر التقدير..</option>
+                                    <option value="ممتاز">⭐ ممتاز</option>
+                                    <option value="جيد جداً">✨ جيد جداً</option>
+                                    <option value="مقبول">👍 مقبول</option>
+                                    <option value="سيء">⚠️ سيء</option>
+                                    <option value="لم يراجع">❌ لم يراجع</option>
+                                </select>
+                            </div>
+                            <div class="flex gap-2 mt-1">
+                                <button onclick="submitQuranRecord('review')" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2">
+                                    <i data-lucide="save" class="w-4 h-4"></i>حفظ المراجعة
+                                </button>
+                                <button onclick="openTomorrowPlanModal('review')" class="px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700 rounded-xl text-xs font-bold hover:bg-indigo-100 transition flex items-center gap-1" title="خطة الغد للمراجعة">
+                                    <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i> خطة الغد
+                                </button>
+                                <button id="quran-review-undo-btn" data-score-id=""
+                                    onclick="undoScoreById(this.getAttribute('data-score-id'), this, '↩ إلغاء المراجعة')"
+                                    class="hidden items-center gap-1 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                                    <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- منطقة زر خطة الغد التالية بعد رصد المراجعة -->
+                        <div id="tp-review-next-action" class="hidden"></div>
                     </div>
                 </div>                     
                 <div id="rate-quran-plan-display" class="hidden mb-3 text-sm text-center bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 p-2 rounded-lg font-bold text-emerald-800 dark:text-emerald-400"></div>
 
                 <div class="mb-4 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                     <label class="block text-[11px] font-bold text-gray-500 mb-1">📅 تاريخ الرصد</label>
-                    <input type="date" id="modal-grading-date" onchange="if(typeof loadPlanTrackingForStudent === 'function' && window.currentRateStudentId) loadPlanTrackingForStudent(window.currentRateStudentId, this.value)" class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:border-emerald-500 transition">
+                    <input type="date" id="modal-grading-date" onchange="if(typeof loadPlanTrackingForStudent === 'function' && window.currentRateStudentId) loadPlanTrackingForStudent(window.currentRateStudentId, this.value); if(typeof loadTomorrowPlanForStudent === 'function' && window.currentRateStudentId) loadTomorrowPlanForStudent(window.currentRateStudentId, this.value);" class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:border-emerald-500 transition">
                 </div>
                 
                 <!-- Note Box -->
