@@ -3332,6 +3332,21 @@ async function undoScoreById(scoreId, btnEl, restoreLabel) {
         showToast('✓ تم التراجع بنجاح', 'success');
 
         if (btnEl) {
+            // تفريغ حقول القرآن إذا كان التراجع خاص بالحفظ أو المراجعة
+            if (btnEl.id === 'quran-memorization-undo-btn' || btnEl.id === 'quran-review-undo-btn') {
+                const qType = btnEl.id.includes('memorization') ? 'memorization' : 'review';
+                const sS = document.getElementById(`rate-quran-start-sura-${qType}`);
+                const eS = document.getElementById(`rate-quran-end-sura-${qType}`);
+                const sA = document.getElementById(`rate-quran-start-aya-${qType}`);
+                const eA = document.getElementById(`rate-quran-end-aya-${qType}`);
+                const gr = document.getElementById(`rate-quran-grade-${qType}`);
+                if (sS) sS.value = '';
+                if (eS) eS.value = '';
+                if (sA) { sA.innerHTML = '<option value="">الآية..</option>'; sA.disabled = true; }
+                if (eA) { eA.innerHTML = '<option value="">الآية..</option>'; eA.disabled = true; }
+                if (gr) gr.value = '';
+            }
+
             btnEl.setAttribute('data-score-id', '');
             btnEl.classList.add('hidden');
             btnEl.classList.remove('flex');
@@ -3342,11 +3357,13 @@ async function undoScoreById(scoreId, btnEl, restoreLabel) {
         // إعادة تحميل الواجهة وخطة الغد لتحديث الحالة
         const date = document.getElementById('modal-grading-date')?.value || new Date().toISOString().split('T')[0];
         const studentId = window.currentRateStudentId || (typeof currentRateStudentId !== 'undefined' ? currentRateStudentId : null);
-        if (date && studentId && typeof loadTomorrowPlanForStudent === 'function') {
-            await loadTomorrowPlanForStudent(studentId, date);
-        }
-        if (date && studentId && typeof currentGradingCompId !== 'undefined' && currentGradingCompId && typeof refreshCriteriaButtons === 'function') {
-            await refreshCriteriaButtons(studentId, currentGradingCompId, date);
+        if (date && studentId) {
+            if (typeof refreshStudentGradingState === 'function') {
+                await refreshStudentGradingState(studentId, date);
+            }
+            if (typeof currentGradingCompId !== 'undefined' && currentGradingCompId && typeof refreshCriteriaButtons === 'function') {
+                await refreshCriteriaButtons(studentId, currentGradingCompId, date);
+            }
         }
     } catch (e) {
         console.error('undoScoreById error:', e);
@@ -3783,7 +3800,7 @@ function openRateStudent(studentId) {
             });
         }
         
-        // Reset selections
+        // Reset selections to default empty before loading existing scores
         ['memorization', 'review'].forEach(type => {
             const startS = document.getElementById(`rate-quran-start-sura-${type}`);
             const endS = document.getElementById(`rate-quran-end-sura-${type}`);
@@ -3822,29 +3839,105 @@ function openRateStudent(studentId) {
     const _initDate = document.getElementById('modal-grading-date')?.value || mainDate;
     refreshCriteriaButtons(studentId, currentGradingCompId, _initDate);
 
-    // مراقبة تغيير التاريخ في المودال لتحديث أزرار التراجع وتحميل خطة الغد
+    // مراقبة تغيير التاريخ في المودال لتحديث أزرار التراجع وتحميل خطة الغد والقرآن
     const modalDateInput = document.getElementById('modal-grading-date');
     if (modalDateInput && !modalDateInput._undoListenerAttached) {
         modalDateInput._undoListenerAttached = true;
-        modalDateInput.addEventListener('change', function() {
+        modalDateInput.addEventListener('change', async function() {
             refreshCriteriaButtons(currentRateStudentId, currentGradingCompId, this.value);
-            if (typeof loadPlanTrackingForStudent === 'function') {
-                loadPlanTrackingForStudent(currentRateStudentId, this.value);
-            }
-            if (typeof loadTomorrowPlanForStudent === 'function') {
-                loadTomorrowPlanForStudent(currentRateStudentId, this.value);
-            }
+            await refreshStudentGradingState(currentRateStudentId, this.value);
         });
     }
 
-    // Load plan tracking if student has active plan for today
-    const _planTrackDate = document.getElementById('modal-grading-date')?.value || new Date().toLocaleDateString('en-CA');
-    if (typeof loadPlanTrackingForStudent === 'function') {
-        loadPlanTrackingForStudent(studentId, _planTrackDate);
+    // تحميل حالة الطالب الشاملة (درجات القرآن السابقة + خطة اليوم + خطة الغد)
+    refreshStudentGradingState(studentId, _initDate);
+}
+
+/**
+ * تحميل سجلات القرآن المسجلة لهذا اليوم للطالب، وعرضها في الحقول وتفعيل أزرار التراجع
+ */
+async function loadExistingQuranForDate(studentId, dateVal) {
+    if (!studentId || !dateVal) return { hasHifzScore: false, hasReviewScore: false };
+
+    const hifzUndoBtn = document.getElementById('quran-memorization-undo-btn');
+    const reviewUndoBtn = document.getElementById('quran-review-undo-btn');
+    if (hifzUndoBtn) { hifzUndoBtn.classList.add('hidden'); hifzUndoBtn.classList.remove('flex'); hifzUndoBtn.setAttribute('data-score-id', ''); }
+    if (reviewUndoBtn) { reviewUndoBtn.classList.add('hidden'); reviewUndoBtn.classList.remove('flex'); reviewUndoBtn.setAttribute('data-score-id', ''); }
+
+    let result = { hasHifzScore: false, hasReviewScore: false };
+
+    try {
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "scores"),
+            window.firebaseOps.where("studentId", "==", studentId),
+            window.firebaseOps.where("date", "==", dateVal)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        if (snap.empty) return result;
+
+        snap.forEach(doc => {
+            const data = doc.data();
+            const cid = data.criteriaId;
+            const qType = data.quranType || (cid === 'QURAN_MEMORIZATION' ? 'memorization' : cid === 'QURAN_REVIEW' ? 'review' : null);
+
+            if (qType === 'memorization' || cid === 'QURAN_MEMORIZATION') {
+                const sSura = data.quranStartSura || data.startSura;
+                const sAya  = data.quranStartAya || data.startAyah;
+                const eSura = data.quranEndSura || data.endSura;
+                const eAya  = data.quranEndAya || data.endAyah;
+                const grade = data.quranGrade || data.grade || '';
+
+                if (sSura && sAya) {
+                    result.hasHifzScore = true;
+                    _fillQuranFields('memorization', sSura, sAya, eSura || sSura, eAya || sAya);
+                    const gradeEl = document.getElementById('rate-quran-grade-memorization');
+                    if (gradeEl && grade) gradeEl.value = grade;
+
+                    if (hifzUndoBtn) {
+                        hifzUndoBtn.setAttribute('data-score-id', doc.id);
+                        hifzUndoBtn.classList.remove('hidden');
+                        hifzUndoBtn.classList.add('flex');
+                    }
+                }
+            } else if (qType === 'review' || cid === 'QURAN_REVIEW') {
+                const sSura = data.quranStartSura || data.startSura;
+                const sAya  = data.quranStartAya || data.startAyah;
+                const eSura = data.quranEndSura || data.endSura;
+                const eAya  = data.quranEndAya || data.endAyah;
+                const grade = data.quranGrade || data.grade || '';
+
+                if (sSura && sAya) {
+                    result.hasReviewScore = true;
+                    _fillQuranFields('review', sSura, sAya, eSura || sSura, eAya || sAya);
+                    const gradeEl = document.getElementById('rate-quran-grade-review');
+                    if (gradeEl && grade) gradeEl.value = grade;
+
+                    if (reviewUndoBtn) {
+                        reviewUndoBtn.setAttribute('data-score-id', doc.id);
+                        reviewUndoBtn.classList.remove('hidden');
+                        reviewUndoBtn.classList.add('flex');
+                    }
+                }
+            }
+        });
+        if (window.lucide) window.lucide.createIcons();
+    } catch(e) {
+        console.warn('loadExistingQuranForDate:', e);
     }
-    // Load tomorrow plan if created for this student on this date
+    return result;
+}
+
+/**
+ * تحديث شامل لحالة تقييم الطالب (درجات القرآن، الخطة اليومية، وخطة الغد)
+ */
+async function refreshStudentGradingState(studentId, dateVal) {
+    if (!studentId || !dateVal) return;
+    const scoresStatus = await loadExistingQuranForDate(studentId, dateVal);
+    if (typeof loadPlanTrackingForStudent === 'function') {
+        await loadPlanTrackingForStudent(studentId, dateVal);
+    }
     if (typeof loadTomorrowPlanForStudent === 'function') {
-        loadTomorrowPlanForStudent(studentId, _planTrackDate);
+        await loadTomorrowPlanForStudent(studentId, dateVal, scoresStatus);
     }
 }
 
@@ -9676,17 +9769,29 @@ window._tpSave = async function(section, studentId, forDate) {
         const saveBtn = document.querySelector('#tomorrow-plan-modal button[onclick*="_tpSave"]');
         if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>'; lucide.createIcons(); }
 
-        if (existing?.id) {
-            // تحديث السجل الموجود
+        // فحص مسبق لمنع تكرار القيد الفريد
+        const checkQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'tomorrow_plans'),
+            window.firebaseOps.where('student_id', '==', studentId),
+            window.firebaseOps.where('for_date', '==', forDate)
+        );
+        const checkSnap = await window.firebaseOps.getDocs(checkQ);
+
+        if (!checkSnap.empty) {
+            const existingDocId = checkSnap.docs[0].id;
+            await window.firebaseOps.updateDoc(
+                window.firebaseOps.doc(window.db, 'tomorrow_plans', existingDocId),
+                { ...planData, updated_at: new Date().toISOString() }
+            );
+        } else if (existing?.id) {
             await window.firebaseOps.updateDoc(
                 window.firebaseOps.doc(window.db, 'tomorrow_plans', existing.id),
-                { ...planData, updatedAt: new Date().toISOString() }
+                { ...planData, updated_at: new Date().toISOString() }
             );
         } else {
-            // إنشاء سجل جديد
             await window.firebaseOps.addDoc(
                 window.firebaseOps.collection(window.db, 'tomorrow_plans'),
-                { ...planData, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+                { ...planData, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
             );
         }
 
@@ -9694,8 +9799,12 @@ window._tpSave = async function(section, studentId, forDate) {
         showToast(`✅ تم إرسال خطة الغد — ${suraName} (${startAyah}-${endAyah})`, 'success');
         document.getElementById('tomorrow-plan-modal')?.remove();
 
-        // تحديث الكاش وإعادة تحميل البانر
-        await loadTomorrowPlanForStudent(studentId, forDate);
+        // تحديث الكاش وإعادة تحميل الحالة
+        if (typeof refreshStudentGradingState === 'function') {
+            await refreshStudentGradingState(studentId, forDate);
+        } else {
+            await loadTomorrowPlanForStudent(studentId, forDate);
+        }
 
     } catch(e) {
         console.error('save tomorrow plan:', e);
@@ -9707,8 +9816,9 @@ window._tpSave = async function(section, studentId, forDate) {
  * تحميل خطة الغد للطالب وعرض بطاقات التأكيد "هل أتم الطالب خطته؟"
  * @param {string} studentId
  * @param {string} forDate - التاريخ الذي تُطبَّق فيه (اليوم المفتوح في نافذة التقييم)
+ * @param {Object} existingQuranScores - { hasHifzScore, hasReviewScore }
  */
-async function loadTomorrowPlanForStudent(studentId, forDate) {
+async function loadTomorrowPlanForStudent(studentId, forDate, existingQuranScores) {
     window._tomorrowPlanStudentId = studentId;
     window._tomorrowPlanCache = null;
 
@@ -9721,11 +9831,15 @@ async function loadTomorrowPlanForStudent(studentId, forDate) {
     const reviewPrompt = document.getElementById('tp-review-prompt-card');
     const reviewFields = document.getElementById('rate-quran-review-fields');
 
-    // إعادة الضبط الافتراضي
-    if (hifzPrompt) hifzPrompt.classList.add('hidden');
-    if (hifzFields) hifzFields.classList.remove('hidden');
-    if (reviewPrompt) reviewPrompt.classList.add('hidden');
-    if (reviewFields) reviewFields.classList.remove('hidden');
+    // إعادة الضبط الافتراضي إذا لم تكن هناك درجات مسجلة بالفعل
+    if (!existingQuranScores?.hasHifzScore) {
+        if (hifzPrompt) hifzPrompt.classList.add('hidden');
+        if (hifzFields) hifzFields.classList.remove('hidden');
+    }
+    if (!existingQuranScores?.hasReviewScore) {
+        if (reviewPrompt) reviewPrompt.classList.add('hidden');
+        if (reviewFields) reviewFields.classList.remove('hidden');
+    }
 
     try {
         const q = window.firebaseOps.query(
@@ -9755,36 +9869,40 @@ async function loadTomorrowPlanForStudent(studentId, forDate) {
 
         const suras = window.QuranService?.getSuras() || [];
 
-        // معالجة خطة الحفظ
+        // معالجة خطة الحفظ (فقط إذا لم يكن الطالب قد رُصد له حفظ اليوم بالفعل)
         if (plan.hifzStartSura) {
-            const sName = suras.find(s => s.number === plan.hifzStartSura)?.name || `سورة ${plan.hifzStartSura}`;
-            const eName = suras.find(s => s.number === plan.hifzEndSura)?.name || `سورة ${plan.hifzEndSura}`;
-            const desc = (plan.hifzStartSura === plan.hifzEndSura)
-                ? `📖 ${sName} (من آية ${plan.hifzStartAyah} إلى ${plan.hifzEndAyah})`
-                : `📖 من ${sName} (${plan.hifzStartAyah}) إلى ${eName} (${plan.hifzEndAyah})`;
+            if (!existingQuranScores?.hasHifzScore) {
+                const sName = suras.find(s => s.number === plan.hifzStartSura)?.name || `سورة ${plan.hifzStartSura}`;
+                const eName = suras.find(s => s.number === plan.hifzEndSura)?.name || `سورة ${plan.hifzEndSura}`;
+                const desc = (plan.hifzStartSura === plan.hifzEndSura)
+                    ? `📖 ${sName} (من آية ${plan.hifzStartAyah} إلى ${plan.hifzEndAyah})`
+                    : `📖 من ${sName} (${plan.hifzStartAyah}) إلى ${eName} (${plan.hifzEndAyah})`;
 
-            const hifzDescEl = document.getElementById('tp-hifz-prompt-text');
-            if (hifzDescEl) hifzDescEl.textContent = desc;
-            if (hifzPrompt) hifzPrompt.classList.remove('hidden');
-            if (hifzFields) hifzFields.classList.add('hidden');
+                const hifzDescEl = document.getElementById('tp-hifz-prompt-text');
+                if (hifzDescEl) hifzDescEl.textContent = desc;
+                if (hifzPrompt) hifzPrompt.classList.remove('hidden');
+                if (hifzFields) hifzFields.classList.add('hidden');
 
-            _fillQuranFields('memorization', plan.hifzStartSura, plan.hifzStartAyah, plan.hifzEndSura, plan.hifzEndAyah);
+                _fillQuranFields('memorization', plan.hifzStartSura, plan.hifzStartAyah, plan.hifzEndSura, plan.hifzEndAyah);
+            }
         }
 
-        // معالجة خطة المراجعة
+        // معالجة خطة المراجعة (فقط إذا لم يكن الطالب قد رُصدت له مراجعة اليوم بالفعل)
         if (plan.reviewStartSura) {
-            const sName = suras.find(s => s.number === plan.reviewStartSura)?.name || `سورة ${plan.reviewStartSura}`;
-            const eName = suras.find(s => s.number === plan.reviewEndSura)?.name || `سورة ${plan.reviewEndSura}`;
-            const desc = (plan.reviewStartSura === plan.reviewEndSura)
-                ? `📖 ${sName} (من آية ${plan.reviewStartAyah} إلى ${plan.reviewEndAyah})`
-                : `📖 من ${sName} (${plan.reviewStartAyah}) إلى ${eName} (${plan.reviewEndAyah})`;
+            if (!existingQuranScores?.hasReviewScore) {
+                const sName = suras.find(s => s.number === plan.reviewStartSura)?.name || `سورة ${plan.reviewStartSura}`;
+                const eName = suras.find(s => s.number === plan.reviewEndSura)?.name || `سورة ${plan.reviewEndSura}`;
+                const desc = (plan.reviewStartSura === plan.reviewEndSura)
+                    ? `📖 ${sName} (من آية ${plan.reviewStartAyah} إلى ${plan.reviewEndAyah})`
+                    : `📖 من ${sName} (${plan.reviewStartAyah}) إلى ${eName} (${plan.reviewEndAyah})`;
 
-            const reviewDescEl = document.getElementById('tp-review-prompt-text');
-            if (reviewDescEl) reviewDescEl.textContent = desc;
-            if (reviewPrompt) reviewPrompt.classList.remove('hidden');
-            if (reviewFields) reviewFields.classList.add('hidden');
+                const reviewDescEl = document.getElementById('tp-review-prompt-text');
+                if (reviewDescEl) reviewDescEl.textContent = desc;
+                if (reviewPrompt) reviewPrompt.classList.remove('hidden');
+                if (reviewFields) reviewFields.classList.add('hidden');
 
-            _fillQuranFields('review', plan.reviewStartSura, plan.reviewStartAyah, plan.reviewEndSura, plan.reviewEndAyah);
+                _fillQuranFields('review', plan.reviewStartSura, plan.reviewStartAyah, plan.reviewEndSura, plan.reviewEndAyah);
+            }
         }
 
         // تحديث الأيقونات
