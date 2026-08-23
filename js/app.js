@@ -6160,6 +6160,7 @@ window.showDayDetails = (dateStr) => {
     // Plan info block
     let planHtml = '';
     if (dayPlanItems.length > 0) {
+        planHtml = dayPlanItems.map(p => {
             const isTP = p.isTomorrowPlan || p.record?.isTomorrowPlan;
             const typeLabel = isTP
                 ? (p.planType === 'memorization' ? '📝 خطة الغد (حفظ)' : '🔄 خطة الغد (مراجعة)')
