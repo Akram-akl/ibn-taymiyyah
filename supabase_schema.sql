@@ -274,6 +274,32 @@ CREATE TABLE IF NOT EXISTS transfer_requests (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 13. Tomorrow Plans Table (خطة الغد المباشرة)
+CREATE TABLE IF NOT EXISTS tomorrow_plans (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    student_id UUID REFERENCES students(id) ON DELETE CASCADE,
+    level TEXT,
+    for_date TEXT NOT NULL,
+    hifz_start_sura INTEGER,
+    hifz_start_ayah INTEGER,
+    hifz_end_sura INTEGER,
+    hifz_end_ayah INTEGER,
+    hifz_start_page NUMERIC,
+    hifz_end_page NUMERIC,
+    hifz_sections JSONB DEFAULT '[]'::jsonb,
+    review_start_sura INTEGER,
+    review_start_ayah INTEGER,
+    review_end_sura INTEGER,
+    review_end_ayah INTEGER,
+    review_start_page NUMERIC,
+    review_end_page NUMERIC,
+    review_sections JSONB DEFAULT '[]'::jsonb,
+    completed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(student_id, for_date)
+);
+
 -- =====================================================
 -- Enable Row Level Security (RLS)
 -- =====================================================
@@ -289,6 +315,17 @@ ALTER TABLE plan_daily_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE level_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transfer_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tomorrow_plans ENABLE ROW LEVEL SECURITY;
+
+-- Tomorrow Plans Policies
+DROP POLICY IF EXISTS "Allow public read tomorrow_plans" ON tomorrow_plans;
+CREATE POLICY "Allow public read tomorrow_plans" ON tomorrow_plans FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert tomorrow_plans" ON tomorrow_plans;
+CREATE POLICY "Allow public insert tomorrow_plans" ON tomorrow_plans FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public update tomorrow_plans" ON tomorrow_plans;
+CREATE POLICY "Allow public update tomorrow_plans" ON tomorrow_plans FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public delete tomorrow_plans" ON tomorrow_plans;
+CREATE POLICY "Allow public delete tomorrow_plans" ON tomorrow_plans FOR DELETE USING (true);
 
 -- =====================================================
 -- Create Policies (Using DROP IF EXISTS for idempotency)

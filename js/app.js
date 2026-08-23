@@ -3816,7 +3816,7 @@ function openRateStudent(studentId) {
     }
 
     // عرض التاريخ
-    const dateVal = $('#grading-date').value;
+    const dateVal = document.getElementById('modal-grading-date')?.value || (document.getElementById('grading-date') ? document.getElementById('grading-date').value : mainDate);
     const dateDisplay = document.getElementById('rate-date-display');
     if (dateDisplay) {
         dateDisplay.textContent = `تاريخ الرصد: ${dateVal}`;
@@ -3854,6 +3854,47 @@ function openRateStudent(studentId) {
 }
 
 /**
+ * التأكد من تحميل بيانات القرآن وملء القوائم المنسدلة
+ */
+async function _ensureQuranDropdowns() {
+    if (window.QuranService && !window.QuranService.isLoaded()) {
+        try { await window.QuranService.loadData(); } catch(e){}
+    }
+    const suras = window.QuranService ? window.QuranService.getSuras() : [];
+    if (suras.length > 0) {
+        const opts = suras.map(s => `<option value="${s.number}">${s.name}</option>`).join('');
+        ['memorization', 'review'].forEach(type => {
+            const sSura = document.getElementById(`rate-quran-start-sura-${type}`);
+            const eSura = document.getElementById(`rate-quran-end-sura-${type}`);
+            if (sSura && sSura.options.length <= 1) sSura.innerHTML = `<option value="">السورة..</option>` + opts;
+            if (eSura && eSura.options.length <= 1) eSura.innerHTML = `<option value="">السورة..</option>` + opts;
+        });
+    }
+}
+
+/**
+ * تحليل نص مقطع القرآن في حال لم تُخزن أرقام السور والآيات كأعمدة منفصلة
+ */
+function _parseQuranSectionText(text) {
+    if (!text || typeof text !== 'string' || !window.QuranService) return null;
+    const suras = window.QuranService.getSuras();
+    const m = text.match(/سورة\s+([^\s]+)\s+من\s+آية\s+(\d+)\s+إلى\s+آية\s+(\d+)/);
+    if (m) {
+        const sName = m[1].trim();
+        const sura = suras.find(s => s.name === sName || s.name.includes(sName));
+        if (sura) {
+            return {
+                startSura: sura.number,
+                startAyah: parseInt(m[2]),
+                endSura: sura.number,
+                endAyah: parseInt(m[3])
+            };
+        }
+    }
+    return null;
+}
+
+/**
  * تحميل سجلات القرآن المسجلة لهذا اليوم للطالب، وعرضها في الحقول وتفعيل أزرار التراجع
  */
 async function loadExistingQuranForDate(studentId, dateVal) {
@@ -3867,6 +3908,8 @@ async function loadExistingQuranForDate(studentId, dateVal) {
     let result = { hasHifzScore: false, hasReviewScore: false };
 
     try {
+        await _ensureQuranDropdowns();
+
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "scores"),
             window.firebaseOps.where("studentId", "==", studentId),
@@ -3875,21 +3918,32 @@ async function loadExistingQuranForDate(studentId, dateVal) {
         const snap = await window.firebaseOps.getDocs(q);
         if (snap.empty) return result;
 
-        snap.forEach(doc => {
+        for (const doc of snap.docs) {
             const data = doc.data();
-            const cid = data.criteriaId;
-            const qType = data.quranType || (cid === 'QURAN_MEMORIZATION' ? 'memorization' : cid === 'QURAN_REVIEW' ? 'review' : null);
+            const cid = data.criteriaId || data.criteria_id;
+            const isHifz = cid === 'QURAN_MEMORIZATION' || data.quranType === 'memorization' || data.type === 'memorization';
+            const isReview = cid === 'QURAN_REVIEW' || data.quranType === 'review' || data.type === 'review';
 
-            if (qType === 'memorization' || cid === 'QURAN_MEMORIZATION') {
-                const sSura = data.quranStartSura || data.startSura;
-                const sAya  = data.quranStartAya || data.startAyah;
-                const eSura = data.quranEndSura || data.endSura;
-                const eAya  = data.quranEndAya || data.endAyah;
-                const grade = data.quranGrade || data.grade || '';
+            if (isHifz) {
+                let sSura = data.quranStartSura || data.quran_start_sura || data.startSura || data.start_sura;
+                let sAya  = data.quranStartAya || data.quran_start_aya || data.startAya || data.startAyah || data.start_ayah;
+                let eSura = data.quranEndSura || data.quran_end_sura || data.endSura || data.end_sura || sSura;
+                let eAya  = data.quranEndAya || data.quran_end_aya || data.endAya || data.endAyah || data.end_ayah || sAya;
+                const grade = data.quranGrade || data.quran_grade || data.grade || '';
+
+                if (!sSura && data.quranSection) {
+                    const parsed = _parseQuranSectionText(data.quranSection);
+                    if (parsed) {
+                        sSura = parsed.startSura;
+                        sAya = parsed.startAyah;
+                        eSura = parsed.endSura;
+                        eAya = parsed.endAyah;
+                    }
+                }
 
                 if (sSura && sAya) {
                     result.hasHifzScore = true;
-                    _fillQuranFields('memorization', sSura, sAya, eSura || sSura, eAya || sAya);
+                    await _fillQuranFields('memorization', sSura, sAya, eSura, eAya);
                     const gradeEl = document.getElementById('rate-quran-grade-memorization');
                     if (gradeEl && grade) gradeEl.value = grade;
 
@@ -3899,16 +3953,26 @@ async function loadExistingQuranForDate(studentId, dateVal) {
                         hifzUndoBtn.classList.add('flex');
                     }
                 }
-            } else if (qType === 'review' || cid === 'QURAN_REVIEW') {
-                const sSura = data.quranStartSura || data.startSura;
-                const sAya  = data.quranStartAya || data.startAyah;
-                const eSura = data.quranEndSura || data.endSura;
-                const eAya  = data.quranEndAya || data.endAyah;
-                const grade = data.quranGrade || data.grade || '';
+            } else if (isReview) {
+                let sSura = data.quranStartSura || data.quran_start_sura || data.startSura || data.start_sura;
+                let sAya  = data.quranStartAya || data.quran_start_aya || data.startAya || data.startAyah || data.start_ayah;
+                let eSura = data.quranEndSura || data.quran_end_sura || data.endSura || data.end_sura || sSura;
+                let eAya  = data.quranEndAya || data.quran_end_aya || data.endAya || data.endAyah || data.end_ayah || sAya;
+                const grade = data.quranGrade || data.quran_grade || data.grade || '';
+
+                if (!sSura && data.quranSection) {
+                    const parsed = _parseQuranSectionText(data.quranSection);
+                    if (parsed) {
+                        sSura = parsed.startSura;
+                        sAya = parsed.startAyah;
+                        eSura = parsed.endSura;
+                        eAya = parsed.endAyah;
+                    }
+                }
 
                 if (sSura && sAya) {
                     result.hasReviewScore = true;
-                    _fillQuranFields('review', sSura, sAya, eSura || sSura, eAya || sAya);
+                    await _fillQuranFields('review', sSura, sAya, eSura, eAya);
                     const gradeEl = document.getElementById('rate-quran-grade-review');
                     if (gradeEl && grade) gradeEl.value = grade;
 
@@ -3919,7 +3983,7 @@ async function loadExistingQuranForDate(studentId, dateVal) {
                     }
                 }
             }
-        });
+        }
         if (window.lucide) window.lucide.createIcons();
     } catch(e) {
         console.warn('loadExistingQuranForDate:', e);
@@ -4386,8 +4450,13 @@ window.submitQuranRecord = async (quranType) => {
             undoBtn.classList.remove('hidden');
             undoBtn.classList.add('flex');
         }
-        if (typeof showTomorrowNextActionPrompt === 'function') {
-            showTomorrowNextActionPrompt(quranType === 'memorization' ? 'hifz' : 'review');
+        if (typeof refreshStudentGradingState === 'function') {
+            await refreshStudentGradingState(currentRateStudentId, dateVal);
+        }
+        if (currentGradingCompId && currentGradingCompId !== 'DIRECT_GRADING') {
+            refreshCriteriaButtons(currentRateStudentId, currentGradingCompId, dateVal);
+        } else {
+            refreshCriteriaButtons(currentRateStudentId, 'DIRECT_GRADING', dateVal);
         }
         lucide.createIcons();
     } catch (e) {
@@ -5789,6 +5858,12 @@ async function openStudentReport(studentId) {
 
     // Load tomorrow_plans for calendar display
     try {
+        if (window.QuranService && !window.QuranService.isLoaded()) {
+            try { await window.QuranService.loadData(); } catch(e){}
+        }
+        const suras = window.QuranService?.getSuras() || [];
+        const getSuraName = (no) => suras.find(s => s.number === no)?.name || `سورة ${no}`;
+
         const tpQ = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, 'tomorrow_plans'),
             window.firebaseOps.where('student_id', '==', studentId)
@@ -5805,8 +5880,8 @@ async function openStudentReport(studentId) {
                 const hEndAyah   = d.hifz_end_ayah || d.hifzEndAyah || 1;
 
                 if (hStartSura) {
-                    const sName = window.QuranService?.getSura(hStartSura)?.name || `سورة ${hStartSura}`;
-                    const eName = window.QuranService?.getSura(hEndSura)?.name || `سورة ${hEndSura}`;
+                    const sName = getSuraName(hStartSura);
+                    const eName = getSuraName(hEndSura);
                     const desc = (hStartSura === hEndSura)
                         ? `${sName} (من آية ${hStartAyah} إلى ${hEndAyah})`
                         : `من ${sName} (${hStartAyah}) إلى ${eName} (${hEndAyah})`;
@@ -5821,7 +5896,7 @@ async function openStudentReport(studentId) {
                             plannedStartAyah: hStartAyah,
                             plannedEndSura: hEndSura,
                             plannedEndAyah: hEndAyah,
-                            plannedSections: [{ text: desc }],
+                            plannedSections: [{ text: desc, suraName: sName, fromAyah: hStartAyah, toAyah: hEndAyah }],
                             customDesc: desc,
                             isTomorrowPlan: true
                         }
@@ -5834,8 +5909,8 @@ async function openStudentReport(studentId) {
                 const rEndAyah   = d.review_end_ayah || d.reviewEndAyah || 1;
 
                 if (rStartSura) {
-                    const sName = window.QuranService?.getSura(rStartSura)?.name || `سورة ${rStartSura}`;
-                    const eName = window.QuranService?.getSura(rEndSura)?.name || `سورة ${rEndSura}`;
+                    const sName = getSuraName(rStartSura);
+                    const eName = getSuraName(rEndSura);
                     const desc = (rStartSura === rEndSura)
                         ? `${sName} (من آية ${rStartAyah} إلى ${rEndAyah})`
                         : `من ${sName} (${rStartAyah}) إلى ${eName} (${rEndAyah})`;
@@ -5850,7 +5925,7 @@ async function openStudentReport(studentId) {
                             plannedStartAyah: rStartAyah,
                             plannedEndSura: rEndSura,
                             plannedEndAyah: rEndAyah,
-                            plannedSections: [{ text: desc }],
+                            plannedSections: [{ text: desc, suraName: sName, fromAyah: rStartAyah, toAyah: rEndAyah }],
                             customDesc: desc,
                             isTomorrowPlan: true
                         }
@@ -5863,56 +5938,6 @@ async function openStudentReport(studentId) {
     const todayDate = new Date();
     window._currentCalendarYear = todayDate.getFullYear();
     window._currentCalendarMonth = todayDate.getMonth();
-    
-    // Prepare upcoming plan card HTML
-    const tomorrowPlanItems = (window._currentStudentPlannedDays || []).filter(p => p.isTomorrowPlan || p.record?.isTomorrowPlan);
-    let upcomingPlanBannerHTML = '';
-    if (tomorrowPlanItems.length > 0) {
-        const sortedPlans = [...tomorrowPlanItems].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        const latestPlan = sortedPlans[0];
-        const hifzPlan = sortedPlans.find(p => p.planType === 'memorization');
-        const reviewPlan = sortedPlans.find(p => p.planType === 'review');
-
-        const firstRec = (hifzPlan || reviewPlan)?.record || {};
-        const startSu = firstRec.plannedStartSura || 1;
-        const startAy = firstRec.plannedStartAyah || 1;
-        const endSu = firstRec.plannedEndSura || startSu;
-        const endAy = firstRec.plannedEndAyah || 1;
-
-        upcomingPlanBannerHTML = `
-            <div class="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 text-white rounded-2xl p-4 mb-4 shadow-lg border border-indigo-400/30 space-y-2.5 animate-fade-in">
-                <div class="flex justify-between items-center">
-                    <div class="flex items-center gap-2">
-                        <div class="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
-                            <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
-                        </div>
-                        <div>
-                            <h3 class="font-bold text-xs">خطة الغد المقررة من المعلم</h3>
-                            <p class="text-[10px] text-indigo-200">لتاريخ (${latestPlan.date})</p>
-                        </div>
-                    </div>
-                    <span class="text-[10px] bg-white/20 text-white font-bold px-2 py-0.5 rounded-full border border-white/20">مطلوب التحضير</span>
-                </div>
-                
-                <div class="bg-black/15 rounded-xl p-3 space-y-1.5 border border-white/10">
-                    ${hifzPlan ? `
-                    <div class="flex items-start gap-1.5 text-xs font-bold">
-                        <span class="px-1.5 py-0.5 bg-emerald-500/90 rounded text-[10px] shrink-0">📝 الحفظ</span>
-                        <span class="leading-relaxed">${hifzPlan.record?.customDesc || 'مقرر الحفظ'}</span>
-                    </div>` : ''}
-                    ${reviewPlan ? `
-                    <div class="flex items-start gap-1.5 text-xs font-bold">
-                        <span class="px-1.5 py-0.5 bg-purple-500/90 rounded text-[10px] shrink-0">🔄 المراجعة</span>
-                        <span class="leading-relaxed">${reviewPlan.record?.customDesc || 'مقرر المراجعة'}</span>
-                    </div>` : ''}
-                </div>
-                
-                <button onclick="window.openWardReader('${startSu}','${startAy}','${endSu}','${endAy}')" class="w-full py-2 bg-white hover:bg-indigo-50 text-indigo-800 font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md">
-                    <i data-lucide="book-open" class="w-4 h-4 text-indigo-600"></i> قراءة الورد في المصحف الآن
-                </button>
-            </div>
-        `;
-    }
 
     // Will be generated dynamically via renderStudentCalendar
     const calendarHTML = `
@@ -6005,9 +6030,6 @@ async function openStudentReport(studentId) {
                 <div class="text-center py-2 text-gray-400 text-xs">جاري حساب الترتيب...</div>
             </div>
             ` : ''}
-
-            <!-- Upcoming Tomorrow Plan Banner -->
-            ${upcomingPlanBannerHTML}
 
             <!-- Memorization Plan -->
             ${student.memorizationPlan || student.reviewPlan ? `
@@ -6300,14 +6322,119 @@ window.renderStudentCalendar = (year, month) => {
     lucide.createIcons();
 }
 
-// Show specific day details for parent
+// Show specific day details for student/parent
+window._openQuranForScore = async (scoreId) => {
+    const score = window._currentDayUniqueScores ? window._currentDayUniqueScores.find(s => s.id === scoreId) : null;
+    if (!score || !score.quranStartSura || !score.quranEndSura) {
+        showToast('التفاصيل الدقيقة للآيات غير متوفرة لهذا السجل', 'error');
+        return;
+    }
+    
+    if (!window.QuranService || !window.QuranService.isLoaded()) {
+        if (window.QuranService) {
+            try { await window.QuranService.loadData(); } catch(e){}
+        }
+    }
+    if (!window.QuranService || !window.QuranService.isLoaded()) {
+        showToast('برجاء الانتظار لحين تحميل المصحف', 'error');
+        return;
+    }
+
+    const sections = [];
+    const startSura = Number(score.quranStartSura);
+    const endSura = Number(score.quranEndSura);
+    const startAya = Number(score.quranStartAya);
+    const endAya = Number(score.quranEndAya);
+
+    if (isNaN(startSura) || isNaN(endSura) || isNaN(startAya) || isNaN(endAya)) {
+        showToast('بيانات الآيات غير مكتملة في هذا السجل', 'error');
+        return;
+    }
+
+    const suras = window.QuranService.getSuras();
+    if (startSura === endSura) {
+        const sObj = suras.find(s => s.number == startSura);
+        const allAyahsInSura = window.QuranService.getAyahs(startSura).filter(a => a.aya_no > 0);
+        
+        let safeStart = startAya > 0 ? startAya : 1;
+        let safeEnd = endAya > 0 ? endAya : (allAyahsInSura.length > 0 ? Math.max(...allAyahsInSura.map(a => a.aya_no)) : 300);
+
+        if (safeEnd < safeStart) {
+            let temp = safeStart;
+            safeStart = safeEnd;
+            safeEnd = temp;
+        }
+
+        sections.push({
+            suraNo: startSura,
+            suraName: sObj ? sObj.name : startSura,
+            fromAyah: safeStart,
+            toAyah: safeEnd
+        });
+    } else {
+        const sObjStart = suras.find(s => s.number == startSura);
+        const startAll = window.QuranService.getAyahs(startSura).filter(a => a.aya_no > 0);
+        sections.push({
+            suraNo: startSura,
+            suraName: sObjStart ? sObjStart.name : startSura,
+            fromAyah: startAya > 0 ? startAya : 1,
+            toAyah: startAll.length > 0 ? Math.max(...startAll.map(a => a.aya_no)) : 300
+        });
+        
+        for (let i = startSura + 1; i < endSura; i++) {
+            const mid = suras.find(s => s.number == i);
+            const midAll = window.QuranService.getAyahs(i).filter(a => a.aya_no > 0);
+            if (mid) {
+                sections.push({
+                    suraNo: i,
+                    suraName: mid.name,
+                    fromAyah: 1,
+                    toAyah: midAll.length > 0 ? Math.max(...midAll.map(a => a.aya_no)) : 300
+                });
+            }
+        }
+        
+        const sObjEnd = suras.find(s => s.number == endSura);
+        sections.push({
+            suraNo: endSura,
+            suraName: sObjEnd ? sObjEnd.name : endSura,
+            fromAyah: 1,
+            toAyah: endAya > 0 ? endAya : 1
+        });
+    }
+    const ayahsHtml = window.QuranService.getTextForSections(sections);
+    
+    let viewerModal = document.getElementById('quran-ayah-viewer');
+    if (!viewerModal) {
+        viewerModal = document.createElement('div');
+        viewerModal.id = 'quran-ayah-viewer';
+        document.body.appendChild(viewerModal);
+    }
+    viewerModal.className = 'fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in';
+    viewerModal.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center p-5 border-b border-gray-100 dark:border-gray-700">
+                <h3 class="font-bold text-lg text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+                    <i data-lucide="book-open" class="w-5 h-5"></i>
+                    عرض السور والآيات
+                </h3>
+                <button onclick="document.getElementById('quran-ayah-viewer').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 p-2 rounded-full transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-6">
+                ${ayahsHtml}
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
+};
+
 window.showDayDetails = (dateStr) => {
     const scores = window._currentStudentScores || [];
     const dayScores = scores.filter(s => s.date === dateStr);
     const dayPlanItems = (window._currentStudentPlannedDays || []).filter(p => p.date === dateStr);
     
-    if (dayScores.length === 0 && dayPlanItems.length === 0) return;
-
     // Plan info block
     let planHtml = '';
     if (dayPlanItems.length > 0) {
@@ -6335,7 +6462,7 @@ window.showDayDetails = (dateStr) => {
                 <p class="text-sm font-bold text-gray-700 dark:text-gray-200">${desc}</p>
                 ${p.record?.plannedStartPage ? `<p class="text-[10px] text-gray-400 mt-0.5">ص${p.record.plannedStartPage} - ${p.record.plannedEndPage}</p>` : ''}
                 
-                <button onclick="window.openWardReader('${startSu}','${startAy}','${endSu}','${endAy}')" class="mt-2 w-full py-1.5 bg-${typeColor}-600 hover:bg-${typeColor}-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5">
+                <button onclick="window.openWardReader('${startSu}','${startAy}','${endSu}','${endAy}')" class="mt-2 w-full py-1.5 bg-${typeColor}-600 hover:bg-${typeColor}-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm">
                     <i data-lucide="book-open" class="w-3.5 h-3.5"></i> قراءة الورد
                 </button>
             </div>`;
@@ -6345,9 +6472,8 @@ window.showDayDetails = (dateStr) => {
     let html = `<div class="space-y-3">${planHtml}`;
 
     if (dayScores.length > 0) {
-        const grouped = {};
-        dayScores.forEach(s => { grouped[s.criteriaId || s.criteriaName || Math.random()] = s; });
-        const uniqueScores = Object.values(grouped);
+        const uniqueScores = dayScores;
+        window._currentDayUniqueScores = uniqueScores;
 
         uniqueScores.forEach(s => {
             const isPositive = s.points > 0;
@@ -6363,16 +6489,14 @@ window.showDayDetails = (dateStr) => {
             } else if (isNote) {
                 badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-yellow-100 text-yellow-800">💬 ملاحظة</span>`;
             } else if (s.points === 0) {
-                // For direct grading custom items
                 badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-gray-100 text-gray-800">✓ تم الرصد</span>`;
             } else {
                 badge = `<span class="text-sm font-bold px-2 py-1 rounded-lg ${isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${isPositive ? '+' : ''}${s.points}</span>`;
             }
 
-            // Filter note visibility
             if (isNote && !state.isTeacher) {
-                if (state.isParent && s.visibility === 'student') return; // Hide from parent
-                if (!state.isParent && s.visibility === 'parent') return; // Hide from student
+                if (state.isParent && s.visibility === 'student') return;
+                if (!state.isParent && s.visibility === 'parent') return;
             }
 
             html += `
@@ -6399,113 +6523,12 @@ window.showDayDetails = (dateStr) => {
             </div>
             `;
         });
-
-        window._openQuranForScore = (scoreId) => {
-            const score = window._currentDayUniqueScores ? window._currentDayUniqueScores.find(s => s.id === scoreId) : null;
-            if (!score || !score.quranStartSura || !score.quranEndSura) {
-                showToast('التفاصيل الدقيقة للآيات غير متوفرة لهذا السجل القديم', 'error');
-                return;
-            }
-            
-            if (!window.QuranService || !window.QuranService.isLoaded()) {
-                showToast('برجاء الانتظار لحين تحميل المصحف', 'error');
-                return;
-            }
-
-            const sections = [];
-        const startSura = Number(score.quranStartSura);
-        const endSura = Number(score.quranEndSura);
-        const startAya = Number(score.quranStartAya);
-        const endAya = Number(score.quranEndAya);
-
-        if (isNaN(startSura) || isNaN(endSura) || isNaN(startAya) || isNaN(endAya)) {
-            showToast('بيانات الآيات غير مكتملة في هذا السجل', 'error');
-            return;
-        }
-
-        const suras = window.QuranService.getSuras();
-        if (startSura === endSura) {
-            const sObj = suras.find(s => s.number == startSura);
-            const allAyahsInSura = window.QuranService.getAyahs(startSura).filter(a => a.aya_no > 0);
-            
-            // Adjust old zeroes properly
-            let safeStart = startAya > 0 ? startAya : 1;
-            let safeEnd = endAya > 0 ? endAya : (allAyahsInSura.length > 0 ? Math.max(...allAyahsInSura.map(a => a.aya_no)) : 300);
-
-            // Important: Fix the "shows 1 aya" issue where toAyah is less than fromAyah due to backwards old selection
-            if (safeEnd < safeStart) {
-                let temp = safeStart;
-                safeStart = safeEnd;
-                safeEnd = temp;
-            }
-
-            sections.push({
-                suraNo: startSura,
-                suraName: sObj ? sObj.name : startSura,
-                fromAyah: safeStart,
-                toAyah: safeEnd
-            });
-        } else {
-            // سورة البداية
-            const sObjStart = suras.find(s => s.number == startSura);
-            const startAll = window.QuranService.getAyahs(startSura).filter(a => a.aya_no > 0);
-            sections.push({
-                suraNo: startSura,
-                suraName: sObjStart ? sObjStart.name : startSura,
-                fromAyah: startAya > 0 ? startAya : 1,
-                toAyah: startAll.length > 0 ? Math.max(...startAll.map(a => a.aya_no)) : 300
-            });
-            
-            // السور التي في المنتصف
-            for (let i = startSura + 1; i < endSura; i++) {
-                const mid = suras.find(s => s.number == i);
-                const midAll = window.QuranService.getAyahs(i).filter(a => a.aya_no > 0);
-                if (mid) {
-                    sections.push({
-                        suraNo: i,
-                        suraName: mid.name,
-                        fromAyah: 1,
-                        toAyah: midAll.length > 0 ? Math.max(...midAll.map(a => a.aya_no)) : 300
-                    });
-                }
-            }
-            
-            // سورة النهاية
-            const sObjEnd = suras.find(s => s.number == endSura);
-            sections.push({
-                suraNo: endSura,
-                suraName: sObjEnd ? sObjEnd.name : endSura,
-                fromAyah: 1,
-                toAyah: endAya > 0 ? endAya : 1
-            });
-        }
-            const ayahsHtml = window.QuranService.getTextForSections(sections);
-            
-            let viewerModal = document.getElementById('quran-ayah-viewer');
-            if (!viewerModal) {
-                viewerModal = document.createElement('div');
-                viewerModal.id = 'quran-ayah-viewer';
-                document.body.appendChild(viewerModal);
-            }
-            viewerModal.className = 'fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in';
-            viewerModal.innerHTML = `
-                <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
-                    <div class="flex justify-between items-center p-5 border-b border-gray-100 dark:border-gray-700">
-                        <h3 class="font-bold text-lg text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                            <i data-lucide="book-open" class="w-5 h-5"></i>
-                            عرض السور والآيات
-                        </h3>
-                        <button onclick="document.getElementById('quran-ayah-viewer').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 p-2 rounded-full transition">
-                            <i data-lucide="x" class="w-5 h-5"></i>
-                        </button>
-                    </div>
-                    <div class="p-6 overflow-y-auto space-y-6">
-                        ${ayahsHtml}
-                    </div>
-                </div>
-            `;
-            lucide.createIcons();
-        };
+    } else if (dayPlanItems.length === 0) {
+        html += `
+        <div class="py-8 text-center text-gray-400 space-y-2">
+            <i data-lucide="calendar" class="w-8 h-8 mx-auto opacity-40"></i>
+            <p class="text-xs">لا توجد سجلات أو خطط مسجلة لتاريخ هذا اليوم</p>
+        </div>`;
     }
 
     html += `</div>`;
@@ -9219,7 +9242,7 @@ window.filterDirectStudents = function() {
 function openDirectGradingStudent(studentId) {
     ensureRateStudentModal();
     currentRateStudentId = studentId;
-    // Set a dummy competition ID so existing functions work but save isolated
+    window.currentRateStudentId = studentId;
     currentGradingCompId = 'DIRECT_GRADING';
     currentGradingGroupId = null; // Independent of groups
     
@@ -9227,8 +9250,9 @@ function openDirectGradingStudent(studentId) {
     $('#rate-student-name').textContent = s ? s.name : `تقييم ${getLabel('student')}`;
     
     // Set Date
+    const todayStr = new Date().toISOString().split('T')[0];
     if (document.getElementById('modal-grading-date')) {
-        document.getElementById('modal-grading-date').value = new Date().toISOString().split('T')[0];
+        document.getElementById('modal-grading-date').value = todayStr;
     }
     
     // Handle Ijazat Note visibility
@@ -9273,9 +9297,6 @@ function openDirectGradingStudent(studentId) {
         });
     }
 
-    // Always use today for Direct Grading unless specified
-    const todayStr = new Date().toLocaleDateString('en-CA');
-
     const grid = $('#criteria-buttons-grid');
     grid.innerHTML = `
         <div class="col-span-1 grid grid-cols-2 gap-3 w-full mb-3">
@@ -9302,78 +9323,18 @@ function openDirectGradingStudent(studentId) {
     const _initDate = document.getElementById('modal-grading-date')?.value || todayStr;
     refreshCriteriaButtons(studentId, 'DIRECT_GRADING', _initDate);
 
-    // Load plan tracking for direct grading
-    const _dgPlanDate = _initDate;
-    if (typeof loadPlanTrackingForStudent === 'function') {
-        loadPlanTrackingForStudent(studentId, _dgPlanDate);
-    }
-
-    // Listen for date changes in Direct Grading to reload Quran inputs
+    // مراقبة تغيير التاريخ في المودال لتحديث الرصد والخطط
     const _dgDateInput = document.getElementById('modal-grading-date');
     if (_dgDateInput && !_dgDateInput._dgListenerAttached) {
         _dgDateInput._dgListenerAttached = true;
         _dgDateInput.addEventListener('change', async function() {
-            const selectedDate = this.value;
-            // Reload quran scores for the new date
-            try {
-                const q = window.firebaseOps.query(
-                    window.firebaseOps.collection(window.db, "scores"),
-                    window.firebaseOps.where("studentId", "==", currentRateStudentId),
-                    window.firebaseOps.where("date", "==", selectedDate)
-                );
-                const snap = await window.firebaseOps.getDocs(q);
-                const dayScores = [];
-                snap.forEach(d => dayScores.push({ id: d.id, ...d.data() }));
-
-                // Reset Quran fields first
-                ['memorization', 'review'].forEach(type => {
-                    const startS = document.getElementById(`rate-quran-start-sura-${type}`);
-                    const endS   = document.getElementById(`rate-quran-end-sura-${type}`);
-                    const startA = document.getElementById(`rate-quran-start-aya-${type}`);
-                    const endA   = document.getElementById(`rate-quran-end-aya-${type}`);
-                    const gradeEl= document.getElementById(`rate-quran-grade-${type}`);
-                    if (startS) startS.value = '';
-                    if (endS)   endS.value   = '';
-                    if (startA) { startA.innerHTML = '<option value="">الآية..</option>'; startA.disabled = true; }
-                    if (endA)   { endA.innerHTML   = '<option value="">الآية..</option>'; endA.disabled   = true; }
-                    if (gradeEl) gradeEl.value = '';
-                });
-
-                // Populate with saved data if exists
-                const memScore = dayScores.find(s => s.criteriaId === 'QURAN_MEMORIZATION');
-                const revScore = dayScores.find(s => s.criteriaId === 'QURAN_REVIEW');
-
-                async function populateQuranFields(score, type) {
-                    if (!score) return;
-                    const sSura = document.getElementById(`rate-quran-start-sura-${type}`);
-                    const eSura = document.getElementById(`rate-quran-end-sura-${type}`);
-                    const gradeEl = document.getElementById(`rate-quran-grade-${type}`);
-                    // Fields are saved as quranStartSura, quranStartAya, quranEndSura, quranEndAya
-                    if (sSura && score.quranStartSura) {
-                        sSura.value = score.quranStartSura;
-                        sSura.dispatchEvent(new Event('change'));
-                        await new Promise(r => setTimeout(r, 120));
-                        const sAya = document.getElementById(`rate-quran-start-aya-${type}`);
-                        if (sAya && score.quranStartAya) sAya.value = score.quranStartAya;
-                    }
-                    if (eSura && score.quranEndSura) {
-                        eSura.value = score.quranEndSura;
-                        eSura.dispatchEvent(new Event('change'));
-                        await new Promise(r => setTimeout(r, 120));
-                        const eAya = document.getElementById(`rate-quran-end-aya-${type}`);
-                        if (eAya && score.quranEndAya) eAya.value = score.quranEndAya;
-                    }
-                    if (gradeEl && score.quranGrade) gradeEl.value = score.quranGrade;
-                }
-
-                await populateQuranFields(memScore, 'memorization');
-                await populateQuranFields(revScore, 'review');
-
-                // Also reload absence undo button state
-                refreshCriteriaButtons(currentRateStudentId, 'DIRECT_GRADING', selectedDate);
-            } catch(err) { console.error('Date change reload error:', err); }
+            refreshCriteriaButtons(currentRateStudentId, 'DIRECT_GRADING', this.value);
+            await refreshStudentGradingState(currentRateStudentId, this.value);
         });
     }
+
+    // تحميل حالة الطالب الشاملة (درجات القرآن السابقة + خطة اليوم + خطة الغد)
+    refreshStudentGradingState(studentId, _initDate);
 }
 
 // Override openAbsenceOptions to check plan FIRST, then handle DIRECT_GRADING vs competition
@@ -9799,11 +9760,12 @@ window._tpSave = async function(section, studentId, forDate) {
         showToast(`✅ تم إرسال خطة الغد — ${suraName} (${startAyah}-${endAyah})`, 'success');
         document.getElementById('tomorrow-plan-modal')?.remove();
 
-        // تحديث الكاش وإعادة تحميل الحالة
+        // تحديث الكاش وإعادة تحميل الحالة للتاريخ المفتوح حالياً في نافذة التقييم
+        const activeModalDate = document.getElementById('modal-grading-date')?.value || new Date().toISOString().split('T')[0];
         if (typeof refreshStudentGradingState === 'function') {
-            await refreshStudentGradingState(studentId, forDate);
+            await refreshStudentGradingState(studentId, activeModalDate);
         } else {
-            await loadTomorrowPlanForStudent(studentId, forDate);
+            await loadTomorrowPlanForStudent(studentId, activeModalDate);
         }
 
     } catch(e) {
@@ -9813,35 +9775,20 @@ window._tpSave = async function(section, studentId, forDate) {
 };
 
 /**
- * تحميل خطة الغد للطالب وعرض بطاقات التأكيد "هل أتم الطالب خطته؟"
+ * تحميل خطة الغد المقررة لهذا اليوم للطالب، وملء الحقول بها تلقائياً إذا لم يكن قد سُجل له تسميع اليوم
  * @param {string} studentId
- * @param {string} forDate - التاريخ الذي تُطبَّق فيه (اليوم المفتوح في نافذة التقييم)
+ * @param {string} forDate - تاريخ الرصد المعروض
  * @param {Object} existingQuranScores - { hasHifzScore, hasReviewScore }
  */
 async function loadTomorrowPlanForStudent(studentId, forDate, existingQuranScores) {
     window._tomorrowPlanStudentId = studentId;
     window._tomorrowPlanCache = null;
 
-    const banner = document.getElementById('tomorrow-plan-banner');
-    const bannerText = document.getElementById('tomorrow-plan-banner-text');
-    if (banner) banner.classList.add('hidden');
-
-    const hifzPrompt = document.getElementById('tp-hifz-prompt-card');
-    const hifzFields = document.getElementById('rate-quran-hifz-fields');
-    const reviewPrompt = document.getElementById('tp-review-prompt-card');
-    const reviewFields = document.getElementById('rate-quran-review-fields');
-
-    // إعادة الضبط الافتراضي إذا لم تكن هناك درجات مسجلة بالفعل
-    if (!existingQuranScores?.hasHifzScore) {
-        if (hifzPrompt) hifzPrompt.classList.add('hidden');
-        if (hifzFields) hifzFields.classList.remove('hidden');
-    }
-    if (!existingQuranScores?.hasReviewScore) {
-        if (reviewPrompt) reviewPrompt.classList.add('hidden');
-        if (reviewFields) reviewFields.classList.remove('hidden');
-    }
-
     try {
+        if (window.QuranService && !window.QuranService.isLoaded()) {
+            try { await window.QuranService.loadData(); } catch(e){}
+        }
+
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, 'tomorrow_plans'),
             window.firebaseOps.where('student_id', '==', studentId),
@@ -9867,137 +9814,32 @@ async function loadTomorrowPlanForStudent(studentId, forDate, existingQuranScore
         };
         window._tomorrowPlanCache = plan;
 
-        const suras = window.QuranService?.getSuras() || [];
-
-        // معالجة خطة الحفظ (فقط إذا لم يكن الطالب قد رُصد له حفظ اليوم بالفعل)
-        if (plan.hifzStartSura) {
-            if (!existingQuranScores?.hasHifzScore) {
-                const sName = suras.find(s => s.number === plan.hifzStartSura)?.name || `سورة ${plan.hifzStartSura}`;
-                const eName = suras.find(s => s.number === plan.hifzEndSura)?.name || `سورة ${plan.hifzEndSura}`;
-                const desc = (plan.hifzStartSura === plan.hifzEndSura)
-                    ? `📖 ${sName} (من آية ${plan.hifzStartAyah} إلى ${plan.hifzEndAyah})`
-                    : `📖 من ${sName} (${plan.hifzStartAyah}) إلى ${eName} (${plan.hifzEndAyah})`;
-
-                const hifzDescEl = document.getElementById('tp-hifz-prompt-text');
-                if (hifzDescEl) hifzDescEl.textContent = desc;
-                if (hifzPrompt) hifzPrompt.classList.remove('hidden');
-                if (hifzFields) hifzFields.classList.add('hidden');
-
-                _fillQuranFields('memorization', plan.hifzStartSura, plan.hifzStartAyah, plan.hifzEndSura, plan.hifzEndAyah);
-            }
+        // ملء حقول الحفظ تلقائياً بالخطة المقررة إذا لم يكن الطالب قد رُصد له حفظ اليوم
+        if (plan.hifzStartSura && !existingQuranScores?.hasHifzScore) {
+            await _fillQuranFields('memorization', plan.hifzStartSura, plan.hifzStartAyah || 1, plan.hifzEndSura || plan.hifzStartSura, plan.hifzEndAyah || 1);
         }
 
-        // معالجة خطة المراجعة (فقط إذا لم يكن الطالب قد رُصدت له مراجعة اليوم بالفعل)
-        if (plan.reviewStartSura) {
-            if (!existingQuranScores?.hasReviewScore) {
-                const sName = suras.find(s => s.number === plan.reviewStartSura)?.name || `سورة ${plan.reviewStartSura}`;
-                const eName = suras.find(s => s.number === plan.reviewEndSura)?.name || `سورة ${plan.reviewEndSura}`;
-                const desc = (plan.reviewStartSura === plan.reviewEndSura)
-                    ? `📖 ${sName} (من آية ${plan.reviewStartAyah} إلى ${plan.reviewEndAyah})`
-                    : `📖 من ${sName} (${plan.reviewStartAyah}) إلى ${eName} (${plan.reviewEndAyah})`;
-
-                const reviewDescEl = document.getElementById('tp-review-prompt-text');
-                if (reviewDescEl) reviewDescEl.textContent = desc;
-                if (reviewPrompt) reviewPrompt.classList.remove('hidden');
-                if (reviewFields) reviewFields.classList.add('hidden');
-
-                _fillQuranFields('review', plan.reviewStartSura, plan.reviewStartAyah, plan.reviewEndSura, plan.reviewEndAyah);
-            }
+        // ملء حقول المراجعة تلقائياً بالخطة المقررة إذا لم تكن قد رُصدت له مراجعة اليوم
+        if (plan.reviewStartSura && !existingQuranScores?.hasReviewScore) {
+            await _fillQuranFields('review', plan.reviewStartSura, plan.reviewStartAyah || 1, plan.reviewEndSura || plan.reviewStartSura, plan.reviewEndAyah || 1);
         }
 
-        // تحديث الأيقونات
         if (window.lucide) window.lucide.createIcons();
-
     } catch(e) {
         console.warn('load tomorrow plan:', e);
     }
 }
 
-/**
- * تأكيد إتمام الطالب لخطة اليوم المحددة مسبقاً (زر "نعم")
- * @param {string} type - 'memorization' | 'review'
- */
-window.confirmCompleteTomorrowPlan = async function(type) {
-    const plan = window._tomorrowPlanCache;
-    if (!plan) {
-        showToast('لم يتم العثور على خطة', 'error');
-        return;
-    }
 
-    const isHifz = type === 'memorization';
-    const startSura = isHifz ? plan.hifzStartSura : plan.reviewStartSura;
-    const startAyah = isHifz ? plan.hifzStartAyah : plan.reviewStartAyah;
-    const endSura   = isHifz ? plan.hifzEndSura   : plan.reviewEndSura;
-    const endAyah   = isHifz ? plan.hifzEndAyah   : plan.reviewEndAyah;
-    const gradeVal  = document.getElementById(isHifz ? 'tp-hifz-prompt-grade' : 'tp-review-prompt-grade')?.value || 'ممتاز';
-
-    // ملء الحقول والقيمة
-    _fillQuranFields(type, startSura, startAyah, endSura, endAyah);
-    const gradeSelect = document.getElementById(`rate-quran-grade-${type}`);
-    if (gradeSelect) gradeSelect.value = gradeVal;
-
-    // تسجيل مباشر في قاعدة البيانات
-    await submitQuranRecord(type);
-
-    // إخفاء بطاقة السؤال وإظهار زر خطة الغد الجديدة
-    const promptCard = document.getElementById(isHifz ? 'tp-hifz-prompt-card' : 'tp-review-prompt-card');
-    if (promptCard) promptCard.classList.add('hidden');
-    const fieldsContainer = document.getElementById(isHifz ? 'rate-quran-hifz-fields' : 'rate-quran-review-fields');
-    if (fieldsContainer) fieldsContainer.classList.remove('hidden');
-
-    // فتح نافذة خطة الغد تلقائياً إذا أراد المعلم
-    showTomorrowNextActionPrompt(isHifz ? 'hifz' : 'review');
-};
-
-/**
- * رفض إتمام الخطة والعودة لتسجيل مقطع آخر يدوياً (زر "لا")
- * @param {string} type - 'memorization' | 'review'
- */
-window.dismissTomorrowPlanPrompt = function(type) {
-    const isHifz = type === 'memorization';
-    const promptCard = document.getElementById(isHifz ? 'tp-hifz-prompt-card' : 'tp-review-prompt-card');
-    if (promptCard) promptCard.classList.add('hidden');
-    const fieldsContainer = document.getElementById(isHifz ? 'rate-quran-hifz-fields' : 'rate-quran-review-fields');
-    if (fieldsContainer) fieldsContainer.classList.remove('hidden');
-
-    // إعادة تعيين الحقول لتمكين المعلم من الاختيار اليدوي
-    const startSura = document.getElementById(`rate-quran-start-sura-${type}`);
-    const endSura   = document.getElementById(`rate-quran-end-sura-${type}`);
-    if (startSura) startSura.value = "";
-    if (endSura) endSura.value = "";
-    const startAya  = document.getElementById(`rate-quran-start-aya-${type}`);
-    const endAya    = document.getElementById(`rate-quran-end-aya-${type}`);
-    if (startAya) { startAya.innerHTML = '<option value="">الآية..</option>'; startAya.disabled = true; }
-    if (endAya) { endAya.innerHTML = '<option value="">الآية..</option>'; endAya.disabled = true; }
-
-    showToast('تم التحويل للتسجيل اليدوي لمقطع اليوم', 'info');
-};
-
-/**
- * يعرض شريط إرسال خطة الغد بعد إتمام التسميع
- */
-function showTomorrowNextActionPrompt(section) {
-    const promptArea = document.getElementById(section === 'hifz' ? 'tp-hifz-next-action' : 'tp-review-next-action');
-    if (!promptArea) return;
-    promptArea.innerHTML = `
-        <div class="mt-2 p-2.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-200 dark:border-indigo-700 flex items-center justify-between gap-2 animate-fade-in">
-            <div class="flex items-center gap-1.5 text-xs font-bold text-indigo-800 dark:text-indigo-300">
-                <i data-lucide="sparkles" class="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0"></i>
-                <span>تم الرصد! حدد خطة الغد؟</span>
-            </div>
-            <button onclick="openTomorrowPlanModal('${section}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0 shadow-sm">
-                <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i> خطة الغد
-            </button>
-        </div>`;
-    promptArea.classList.remove('hidden');
-    if (window.lucide) window.lucide.createIcons();
-}
 
 /**
  * ملء حقول السورة/الآية في نافذة التقييم تلقائياً
  */
-function _fillQuranFields(type, startSura, startAyah, endSura, endAyah) {
+async function _fillQuranFields(type, startSura, startAyah, endSura, endAyah) {
     if (!window.QuranService) return;
+    if (!window.QuranService.isLoaded()) {
+        try { await window.QuranService.loadData(); } catch(e){}
+    }
     const startSuraEl = document.getElementById(`rate-quran-start-sura-${type}`);
     const startAyahEl = document.getElementById(`rate-quran-start-aya-${type}`);
     const endSuraEl   = document.getElementById(`rate-quran-end-sura-${type}`);
@@ -10006,25 +9848,25 @@ function _fillQuranFields(type, startSura, startAyah, endSura, endAyah) {
 
     // ملء قائمة السور (إذا لم تكن مملوءة)
     const suras = window.QuranService.getSuras();
-    if (startSuraEl.options.length <= 1) {
+    if (startSuraEl.options.length <= 1 && suras.length > 0) {
         const opts = suras.map(s => `<option value="${s.number}">${s.name}</option>`).join('');
         startSuraEl.innerHTML = `<option value="">السورة..</option>` + opts;
         endSuraEl.innerHTML   = `<option value="">السورة..</option>` + opts;
     }
 
     // سورة وآية البداية
-    startSuraEl.value = startSura;
+    startSuraEl.value = String(startSura);
     const startAyahs = window.QuranService.getAyahs(startSura).filter(a => a.aya_no > 0).sort((a,b) => a.aya_no - b.aya_no);
     startAyahEl.innerHTML = '<option value="">الآية..</option>' + startAyahs.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
     startAyahEl.disabled = false;
-    startAyahEl.value = startAyah;
+    startAyahEl.value = String(startAyah);
 
     // سورة وآية النهاية
-    endSuraEl.value = endSura;
+    endSuraEl.value = String(endSura);
     const endAyahs = window.QuranService.getAyahs(endSura).filter(a => a.aya_no > 0).sort((a,b) => a.aya_no - b.aya_no);
     endAyahEl.innerHTML = '<option value="">الآية..</option>' + endAyahs.map(a => `<option value="${a.aya_no}">${a.aya_no}</option>`).join('');
     endAyahEl.disabled = false;
-    endAyahEl.value = endAyah;
+    endAyahEl.value = String(endAyah);
 }
 
 /**
@@ -10038,17 +9880,11 @@ async function deleteTomorrowPlan() {
             window.firebaseOps.doc(window.db, 'tomorrow_plans', plan.id)
         );
         window._tomorrowPlanCache = null;
-        // إخفاء البطاقات
-        const hifzPrompt = document.getElementById('tp-hifz-prompt-card');
-        const hifzFields = document.getElementById('rate-quran-hifz-fields');
-        const reviewPrompt = document.getElementById('tp-review-prompt-card');
-        const reviewFields = document.getElementById('rate-quran-review-fields');
-        if (hifzPrompt) hifzPrompt.classList.add('hidden');
-        if (hifzFields) hifzFields.classList.remove('hidden');
-        if (reviewPrompt) reviewPrompt.classList.add('hidden');
-        if (reviewFields) reviewFields.classList.remove('hidden');
-
         showToast('تم حذف خطة الغد بنجاح', 'success');
+        const activeModalDate = document.getElementById('modal-grading-date')?.value || new Date().toISOString().split('T')[0];
+        if (window.currentRateStudentId) {
+            await refreshStudentGradingState(window.currentRateStudentId, activeModalDate);
+        }
     } catch(e) {
         console.error('delete tomorrow plan:', e);
         showToast('حدث خطأ أثناء الحذف', 'error');
@@ -10077,41 +9913,9 @@ function ensureRateStudentModal() {
                     <div id="rate-quran-hifz-box" class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right space-y-3 shadow-sm">
                         <div class="flex items-center justify-between">
                             <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">📝 تسجيل حفظ أو مراجعة صغرى</h4>
-                            <button onclick="openTomorrowPlanModal('hifz')" class="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded-lg text-[10px] font-bold hover:bg-indigo-200 transition flex items-center gap-1" title="إرسال خطة الغد">
-                                <i data-lucide="calendar-plus" class="w-3 h-3"></i> خطة الغد
+                            <button onclick="openTomorrowPlanModal('hifz')" class="px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded-lg text-[10px] font-bold hover:bg-indigo-200 transition flex items-center gap-1" title="تحديد خطة الغد للحفظ">
+                                <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i> خطة الغد
                             </button>
-                        </div>
-
-                        <!-- بطاقة خطة اليوم المقررة (تظهر إذا كان المعلم قد حدد خطة للغد مسبقاً) -->
-                        <div id="tp-hifz-prompt-card" class="hidden bg-white/90 dark:bg-gray-800/90 p-3 rounded-xl border-2 border-emerald-400 dark:border-emerald-600 text-right space-y-2.5 animate-fade-in shadow-sm">
-                            <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                                    <i data-lucide="bookmark-check" class="w-4 h-4 text-emerald-600"></i> خطة اليوم المقررة:
-                                </span>
-                                <span class="text-[10px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-full">مطلوب التسميع</span>
-                            </div>
-                            <p id="tp-hifz-prompt-text" class="text-xs font-bold text-gray-800 dark:text-gray-100 leading-relaxed"></p>
-                            <div class="pt-1 space-y-2">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">التقدير:</label>
-                                    <select id="tp-hifz-prompt-grade" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs font-bold">
-                                        <option value="ممتاز" selected>⭐ ممتاز</option>
-                                        <option value="جيد جداً">✨ جيد جداً</option>
-                                        <option value="مقبول">👍 مقبول</option>
-                                        <option value="سيء">⚠️ سيء</option>
-                                        <option value="لم يحفظ">❌ لم يحفظ</option>
-                                    </select>
-                                </div>
-                                <p class="text-[11px] font-bold text-gray-700 dark:text-gray-300">هل أتم الطالب خطته؟</p>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <button onclick="confirmCompleteTomorrowPlan('memorization')" class="py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 shadow-sm">
-                                        <i data-lucide="check" class="w-3.5 h-3.5"></i> نعم (رصد فوري)
-                                    </button>
-                                    <button onclick="dismissTomorrowPlanPrompt('memorization')" class="py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 text-gray-700 dark:text-gray-300 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 border border-gray-200 dark:border-gray-600">
-                                        <i data-lucide="edit-3" class="w-3.5 h-3.5"></i> لا (تعديل المقطع)
-                                    </button>
-                                </div>
-                            </div>
                         </div>
 
                         <!-- الحقول اليدوية المعتادة -->
@@ -10167,50 +9971,15 @@ function ensureRateStudentModal() {
                                 </button>
                             </div>
                         </div>
-
-                        <!-- منطقة زر خطة الغد التالية بعد الرصد -->
-                        <div id="tp-hifz-next-action" class="hidden"></div>
                     </div>
 
                     <!-- Murajaa Box -->
                     <div id="rate-quran-review-box" class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right space-y-3 shadow-sm">
                         <div class="flex items-center justify-between">
                             <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">🔄 تسجيل مراجعة أو مراجعة كبرى</h4>
-                            <button onclick="openTomorrowPlanModal('review')" class="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded-lg text-[10px] font-bold hover:bg-indigo-200 transition flex items-center gap-1" title="إرسال خطة الغد">
-                                <i data-lucide="calendar-plus" class="w-3 h-3"></i> خطة الغد
+                            <button onclick="openTomorrowPlanModal('review')" class="px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded-lg text-[10px] font-bold hover:bg-indigo-200 transition flex items-center gap-1" title="تحديد خطة الغد للمراجعة">
+                                <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i> خطة الغد
                             </button>
-                        </div>
-
-                        <!-- بطاقة خطة اليوم المقررة للمراجعة -->
-                        <div id="tp-review-prompt-card" class="hidden bg-white/90 dark:bg-gray-800/90 p-3 rounded-xl border-2 border-purple-400 dark:border-purple-600 text-right space-y-2.5 animate-fade-in shadow-sm">
-                            <div class="flex items-center justify-between">
-                                <span class="text-xs font-bold text-purple-800 dark:text-purple-300 flex items-center gap-1.5">
-                                    <i data-lucide="bookmark-check" class="w-4 h-4 text-purple-600"></i> خطة اليوم المقررة للمراجعة:
-                                </span>
-                                <span class="text-[10px] bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 font-bold px-2 py-0.5 rounded-full">مطلوب التسميع</span>
-                            </div>
-                            <p id="tp-review-prompt-text" class="text-xs font-bold text-gray-800 dark:text-gray-100 leading-relaxed"></p>
-                            <div class="pt-1 space-y-2">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">التقدير:</label>
-                                    <select id="tp-review-prompt-grade" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs font-bold">
-                                        <option value="ممتاز" selected>⭐ ممتاز</option>
-                                        <option value="جيد جداً">✨ جيد جداً</option>
-                                        <option value="مقبول">👍 مقبول</option>
-                                        <option value="سيء">⚠️ سيء</option>
-                                        <option value="لم يراجع">❌ لم يراجع</option>
-                                    </select>
-                                </div>
-                                <p class="text-[11px] font-bold text-gray-700 dark:text-gray-300">هل أتم الطالب خطته؟</p>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <button onclick="confirmCompleteTomorrowPlan('review')" class="py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 shadow-sm">
-                                        <i data-lucide="check" class="w-3.5 h-3.5"></i> نعم (رصد فوري)
-                                    </button>
-                                    <button onclick="dismissTomorrowPlanPrompt('review')" class="py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 text-gray-700 dark:text-gray-300 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 border border-gray-200 dark:border-gray-600">
-                                        <i data-lucide="edit-3" class="w-3.5 h-3.5"></i> لا (تعديل المقطع)
-                                    </button>
-                                </div>
-                            </div>
                         </div>
 
                         <!-- الحقول اليدوية المعتادة للمراجعة -->
@@ -10266,16 +10035,13 @@ function ensureRateStudentModal() {
                                 </button>
                             </div>
                         </div>
-
-                        <!-- منطقة زر خطة الغد التالية بعد رصد المراجعة -->
-                        <div id="tp-review-next-action" class="hidden"></div>
                     </div>
                 </div>                     
                 <div id="rate-quran-plan-display" class="hidden mb-3 text-sm text-center bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 p-2 rounded-lg font-bold text-emerald-800 dark:text-emerald-400"></div>
 
                 <div class="mb-4 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                     <label class="block text-[11px] font-bold text-gray-500 mb-1">📅 تاريخ الرصد</label>
-                    <input type="date" id="modal-grading-date" onchange="if(typeof loadPlanTrackingForStudent === 'function' && window.currentRateStudentId) loadPlanTrackingForStudent(window.currentRateStudentId, this.value); if(typeof loadTomorrowPlanForStudent === 'function' && window.currentRateStudentId) loadTomorrowPlanForStudent(window.currentRateStudentId, this.value);" class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:border-emerald-500 transition">
+                    <input type="date" id="modal-grading-date" onchange="if(typeof refreshStudentGradingState === 'function' && window.currentRateStudentId) refreshStudentGradingState(window.currentRateStudentId, this.value);" class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:border-emerald-500 transition">
                 </div>
                 
                 <!-- Note Box -->
@@ -11748,26 +11514,13 @@ async function loadPlanTrackingForStudent(studentId, dateStr) {
 
     try {
         const entries = await getStudentPlanEntriesForDate(studentId, dateStr);
-        
-        // Hide manual boxes if student has active plans, regardless of today's entries
-        const qPlans = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, 'student_plans'),
-            window.firebaseOps.where('student_id', '==', studentId),
-            window.firebaseOps.where('status', '==', 'active')
-        );
-        const plansSnap = await window.firebaseOps.getDocs(qPlans);
-        const activePlans = plansSnap.docs.map(d => d.data());
-
-        const hasHifzPlan = activePlans.some(p => p.planType === 'memorization' || p.plan_type === 'memorization');
-        const hasReviewPlan = activePlans.some(p => p.planType === 'review' || p.plan_type === 'review');
 
         const hBox = document.getElementById('rate-quran-hifz-box');
         const rBox = document.getElementById('rate-quran-review-box');
         if (quranSec) {
             quranSec.classList.remove('hidden');
-            if (hasHifzPlan && hBox) hBox.classList.add('hidden'); else if (hBox) hBox.classList.remove('hidden');
-            if (hasReviewPlan && rBox) rBox.classList.add('hidden'); else if (rBox) rBox.classList.remove('hidden');
-            if (hasHifzPlan && hasReviewPlan) quranSec.classList.add('hidden');
+            if (hBox) hBox.classList.remove('hidden');
+            if (rBox) rBox.classList.remove('hidden');
         }
 
         if (entries.length === 0) {
@@ -12194,10 +11947,15 @@ window.viewPlanSchedule = async function(planId) {
 };
 
 
-window.openWardReader = function(startSura, startAyah, endSura, endAyah) {
+window.openWardReader = async function(startSura, startAyah, endSura, endAyah) {
     startSura = parseInt(startSura) || 1;
     startAyah = parseInt(startAyah) || 1;
     endSura = parseInt(endSura) || startSura;
+    if (!window.QuranService || !window.QuranService.isLoaded()) {
+        if (window.QuranService) {
+            try { await window.QuranService.loadData(); } catch(e){}
+        }
+    }
     if (!window.QuranService || !window.QuranService.isLoaded()) {
         showToast('بيانات القرآن غير محملة', 'error'); return;
     }
