@@ -5771,6 +5771,56 @@ async function openStudentReport(studentId) {
     window._currentCalendarYear = todayDate.getFullYear();
     window._currentCalendarMonth = todayDate.getMonth();
     
+    // Prepare upcoming plan card HTML
+    const tomorrowPlanItems = (window._currentStudentPlannedDays || []).filter(p => p.isTomorrowPlan || p.record?.isTomorrowPlan);
+    let upcomingPlanBannerHTML = '';
+    if (tomorrowPlanItems.length > 0) {
+        const sortedPlans = [...tomorrowPlanItems].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        const latestPlan = sortedPlans[0];
+        const hifzPlan = sortedPlans.find(p => p.planType === 'memorization');
+        const reviewPlan = sortedPlans.find(p => p.planType === 'review');
+
+        const firstRec = (hifzPlan || reviewPlan)?.record || {};
+        const startSu = firstRec.plannedStartSura || 1;
+        const startAy = firstRec.plannedStartAyah || 1;
+        const endSu = firstRec.plannedEndSura || startSu;
+        const endAy = firstRec.plannedEndAyah || 1;
+
+        upcomingPlanBannerHTML = `
+            <div class="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 text-white rounded-2xl p-4 mb-4 shadow-lg border border-indigo-400/30 space-y-2.5 animate-fade-in">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
+                            <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-xs">خطة الغد المقررة من المعلم</h3>
+                            <p class="text-[10px] text-indigo-200">لتاريخ (${latestPlan.date})</p>
+                        </div>
+                    </div>
+                    <span class="text-[10px] bg-white/20 text-white font-bold px-2 py-0.5 rounded-full border border-white/20">مطلوب التحضير</span>
+                </div>
+                
+                <div class="bg-black/15 rounded-xl p-3 space-y-1.5 border border-white/10">
+                    ${hifzPlan ? `
+                    <div class="flex items-start gap-1.5 text-xs font-bold">
+                        <span class="px-1.5 py-0.5 bg-emerald-500/90 rounded text-[10px] shrink-0">📝 الحفظ</span>
+                        <span class="leading-relaxed">${hifzPlan.record?.customDesc || 'مقرر الحفظ'}</span>
+                    </div>` : ''}
+                    ${reviewPlan ? `
+                    <div class="flex items-start gap-1.5 text-xs font-bold">
+                        <span class="px-1.5 py-0.5 bg-purple-500/90 rounded text-[10px] shrink-0">🔄 المراجعة</span>
+                        <span class="leading-relaxed">${reviewPlan.record?.customDesc || 'مقرر المراجعة'}</span>
+                    </div>` : ''}
+                </div>
+                
+                <button onclick="window.openWardReader('${startSu}','${startAy}','${endSu}','${endAy}')" class="w-full py-2 bg-white hover:bg-indigo-50 text-indigo-800 font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md">
+                    <i data-lucide="book-open" class="w-4 h-4 text-indigo-600"></i> قراءة الورد في المصحف الآن
+                </button>
+            </div>
+        `;
+    }
+
     // Will be generated dynamically via renderStudentCalendar
     const calendarHTML = `
         <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border" id="student-calendar-container">
@@ -5863,6 +5913,9 @@ async function openStudentReport(studentId) {
             </div>
             ` : ''}
 
+            <!-- Upcoming Tomorrow Plan Banner -->
+            ${upcomingPlanBannerHTML}
+
             <!-- Memorization Plan -->
             ${student.memorizationPlan || student.reviewPlan ? `
             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border">
@@ -5871,9 +5924,6 @@ async function openStudentReport(studentId) {
                 ${student.reviewPlan ? `<p class="text-sm"><span class="font-bold text-purple-600">المراجعة:</span> ${student.reviewPlan}</p>` : ''}
             </div>
             ` : ''}
-
-            <!-- Quran Recitation Log (Removed) -->
-
 
             <!-- Visual Calendar -->
             ${calendarHTML}
@@ -6096,19 +6146,26 @@ window.renderStudentCalendar = (year, month) => {
         }
         
         if (plannedTasks.length > 0) {
+            const hasTomorrow = plannedTasks.some(p => p.isTomorrowPlan || p.record?.isTomorrowPlan);
             const hasHifz = plannedTasks.some(p => p.planType === 'memorization');
             const hasReview = plannedTasks.some(p => p.planType === 'review');
             const hasMinor = plannedTasks.some(p => p.planType === 'minor_review');
             
             if (!hasData) {
-                dayClass = 'bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-300 dark:border-emerald-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-emerald-400 transition';
+                dayClass = hasTomorrow
+                    ? 'bg-indigo-50/90 dark:bg-indigo-950/50 border-2 border-indigo-400 dark:border-indigo-600 rounded-lg p-1 text-center min-h-[48px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-indigo-400 transition shadow-sm'
+                    : 'bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-300 dark:border-emerald-800 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-emerald-400 transition';
             }
             
-            let dots = '';
-            if (hasHifz)  dots += `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>`;
-            if (hasReview) dots += `<span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>`;
-            if (hasMinor) dots += `<span class="w-1.5 h-1.5 rounded-full bg-orange-400"></span>`;
-            dayContentTags.push(`<div class="flex gap-1 mt-1">${dots}</div>`);
+            if (hasTomorrow) {
+                dayContentTags.push(`<span class="text-[9px] font-bold bg-indigo-600 text-white px-1.5 py-0.2 rounded mt-0.5 shadow-sm">📖 خطة</span>`);
+            } else {
+                let dots = '';
+                if (hasHifz)  dots += `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>`;
+                if (hasReview) dots += `<span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>`;
+                if (hasMinor) dots += `<span class="w-1.5 h-1.5 rounded-full bg-orange-400"></span>`;
+                dayContentTags.push(`<div class="flex gap-1 mt-1">${dots}</div>`);
+            }
         }
 
         if (dayData || plannedTasks.length > 0) {
@@ -6143,6 +6200,7 @@ window.renderStudentCalendar = (year, month) => {
                 <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-500"></span> إضافة</div>
                 <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-orange-500"></span> خصم</div>
                 <div class="flex items-center gap-1"><span class="w-3 h-3 flex items-center justify-center text-[8px]">❌</span> غياب</div>
+                <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-indigo-600"></span> خطة الغد</div>
             </div>
         </div>
     `;
