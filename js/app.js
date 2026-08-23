@@ -3326,14 +3326,27 @@ async function undoScoreById(scoreId, btnEl, restoreLabel) {
         if (btnEl) {
             btnEl.disabled = true;
             btnEl.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i>';
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
         }
         await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'scores', scoreId));
         showToast('✓ تم التراجع بنجاح', 'success');
-        // إعادة تحميل أزرار المعايير لتحديث الواجهة
-        const date = document.getElementById('modal-grading-date')?.value;
-        if (date && currentRateStudentId && currentGradingCompId) {
-            await refreshCriteriaButtons(currentRateStudentId, currentGradingCompId, date);
+
+        if (btnEl) {
+            btnEl.setAttribute('data-score-id', '');
+            btnEl.classList.add('hidden');
+            btnEl.classList.remove('flex');
+            btnEl.disabled = false;
+            btnEl.textContent = restoreLabel || '↩ إلغاء';
+        }
+
+        // إعادة تحميل الواجهة وخطة الغد لتحديث الحالة
+        const date = document.getElementById('modal-grading-date')?.value || new Date().toISOString().split('T')[0];
+        const studentId = window.currentRateStudentId || (typeof currentRateStudentId !== 'undefined' ? currentRateStudentId : null);
+        if (date && studentId && typeof loadTomorrowPlanForStudent === 'function') {
+            await loadTomorrowPlanForStudent(studentId, date);
+        }
+        if (date && studentId && typeof currentGradingCompId !== 'undefined' && currentGradingCompId && typeof refreshCriteriaButtons === 'function') {
+            await refreshCriteriaButtons(studentId, currentGradingCompId, date);
         }
     } catch (e) {
         console.error('undoScoreById error:', e);
@@ -5680,6 +5693,79 @@ async function openStudentReport(studentId) {
             });
         }
     } catch(e) { console.warn('calendar plan load:', e); }
+
+    // Load tomorrow_plans for calendar display
+    try {
+        const tpQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'tomorrow_plans'),
+            window.firebaseOps.where('student_id', '==', studentId)
+        );
+        const tpSnap = await window.firebaseOps.getDocs(tpQ);
+        tpSnap.forEach(doc => {
+            const d = doc.data();
+            d.id = doc.id;
+            const forDate = d.for_date || d.forDate;
+            if (forDate) {
+                const hStartSura = d.hifz_start_sura || d.hifzStartSura;
+                const hStartAyah = d.hifz_start_ayah || d.hifzStartAyah || 1;
+                const hEndSura   = d.hifz_end_sura || d.hifzEndSura || hStartSura;
+                const hEndAyah   = d.hifz_end_ayah || d.hifzEndAyah || 1;
+
+                if (hStartSura) {
+                    const sName = window.QuranService?.getSura(hStartSura)?.name || `سورة ${hStartSura}`;
+                    const eName = window.QuranService?.getSura(hEndSura)?.name || `سورة ${hEndSura}`;
+                    const desc = (hStartSura === hEndSura)
+                        ? `${sName} (من آية ${hStartAyah} إلى ${hEndAyah})`
+                        : `من ${sName} (${hStartAyah}) إلى ${eName} (${hEndAyah})`;
+
+                    window._currentStudentPlannedDays.push({
+                        date: forDate,
+                        planType: 'memorization',
+                        isTomorrowPlan: true,
+                        status: d.completed ? 'completed' : 'pending',
+                        record: {
+                            plannedStartSura: hStartSura,
+                            plannedStartAyah: hStartAyah,
+                            plannedEndSura: hEndSura,
+                            plannedEndAyah: hEndAyah,
+                            plannedSections: [{ text: desc }],
+                            customDesc: desc,
+                            isTomorrowPlan: true
+                        }
+                    });
+                }
+
+                const rStartSura = d.review_start_sura || d.reviewStartSura;
+                const rStartAyah = d.review_start_ayah || d.reviewStartAyah || 1;
+                const rEndSura   = d.review_end_sura || d.reviewEndSura || rStartSura;
+                const rEndAyah   = d.review_end_ayah || d.reviewEndAyah || 1;
+
+                if (rStartSura) {
+                    const sName = window.QuranService?.getSura(rStartSura)?.name || `سورة ${rStartSura}`;
+                    const eName = window.QuranService?.getSura(rEndSura)?.name || `سورة ${rEndSura}`;
+                    const desc = (rStartSura === rEndSura)
+                        ? `${sName} (من آية ${rStartAyah} إلى ${rEndAyah})`
+                        : `من ${sName} (${rStartAyah}) إلى ${eName} (${rEndAyah})`;
+
+                    window._currentStudentPlannedDays.push({
+                        date: forDate,
+                        planType: 'review',
+                        isTomorrowPlan: true,
+                        status: d.completed ? 'completed' : 'pending',
+                        record: {
+                            plannedStartSura: rStartSura,
+                            plannedStartAyah: rStartAyah,
+                            plannedEndSura: rEndSura,
+                            plannedEndAyah: rEndAyah,
+                            plannedSections: [{ text: desc }],
+                            customDesc: desc,
+                            isTomorrowPlan: true
+                        }
+                    });
+                }
+            }
+        });
+    } catch(e) { console.warn('calendar tomorrow_plans load:', e); }
     
     const todayDate = new Date();
     window._currentCalendarYear = todayDate.getFullYear();
@@ -6074,10 +6160,12 @@ window.showDayDetails = (dateStr) => {
     // Plan info block
     let planHtml = '';
     if (dayPlanItems.length > 0) {
-        planHtml = dayPlanItems.map(p => {
-            const typeLabel = p.planType === 'memorization' ? '📝 خطة الحفظ' : p.planType === 'minor_review' ? '📗 مراجعة صغرى' : '🔄 خطة المراجعة';
+            const isTP = p.isTomorrowPlan || p.record?.isTomorrowPlan;
+            const typeLabel = isTP
+                ? (p.planType === 'memorization' ? '📝 خطة الغد (حفظ)' : '🔄 خطة الغد (مراجعة)')
+                : (p.planType === 'memorization' ? '📝 خطة الحفظ' : p.planType === 'minor_review' ? '📗 مراجعة صغرى' : '🔄 خطة المراجعة');
             const typeColor = p.planType === 'memorization' ? 'emerald' : p.planType === 'minor_review' ? 'orange' : 'purple';
-            const desc = typeof formatPlanDayDesc === 'function' ? formatPlanDayDesc(p.record?.plannedSections || []) : 'ورد اليوم';
+            const desc = p.record?.customDesc || (typeof formatPlanDayDesc === 'function' ? formatPlanDayDesc(p.record?.plannedSections || []) : 'ورد اليوم');
             const statusMap = { pending: ['⏳ معلق','gray'], completed: ['✅ أنجز','green'], different: ['⚡ جزئي','amber'], absent: ['❌ غياب','red'] };
             const [statusLabel, sc] = statusMap[p.status] || ['⏳ معلق','gray'];
             const r = p.record || {};
@@ -9275,23 +9363,36 @@ window._tomorrowPlanStudentId = null; // الطالب الحالي
  * يحسب التاريخ التالي من أيام الحلقة النشطة
  */
 function getNextActiveDate(fromDate) {
-    const activeDays = (state.activeWeekDays && state.activeWeekDays.length > 0)
-        ? state.activeWeekDays : ['sun', 'mon', 'tue', 'wed', 'thu'];
-    const dayMap = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
-    const activeNums = new Set(activeDays.map(d => dayMap[d] ?? 0));
-    const cur = new Date((fromDate || new Date().toISOString().split('T')[0]) + 'T00:00:00');
+    if (!fromDate) fromDate = new Date().toISOString().split('T')[0];
+    const parts = fromDate.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const cur = new Date(year, month, day);
     cur.setDate(cur.getDate() + 1); // ابدأ من اليوم التالي
-    let limit = 14;
-    while (limit-- > 0) {
-        if (activeNums.has(cur.getDay())) {
-            return cur.toISOString().split('T')[0];
+    
+    const activeDays = (state.activeWeekDays && state.activeWeekDays.length > 0)
+        ? state.activeWeekDays : null;
+        
+    if (activeDays) {
+        const dayMap = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+        const activeNums = new Set(activeDays.map(d => dayMap[d] ?? 0));
+        let limit = 14;
+        while (limit-- > 0) {
+            if (activeNums.has(cur.getDay())) {
+                const y = cur.getFullYear();
+                const m = String(cur.getMonth() + 1).padStart(2, '0');
+                const d = String(cur.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
+            cur.setDate(cur.getDate() + 1);
         }
-        cur.setDate(cur.getDate() + 1);
     }
-    // إذا لم توجد أيام نشطة، أرجع اليوم التالي مباشرةً
-    const fallback = new Date((fromDate || new Date().toISOString().split('T')[0]) + 'T00:00:00');
-    fallback.setDate(fallback.getDate() + 1);
-    return fallback.toISOString().split('T')[0];
+    
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, '0');
+    const d = String(cur.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 }
 
 /**
@@ -9445,6 +9546,16 @@ window._tpSave = async function(section, studentId, forDate) {
         return;
     }
 
+    if (endSura < startSura) {
+        showToast('لا يمكن أن تكون سورة النهاية قبل سورة البداية في المصحف', 'error');
+        return;
+    }
+
+    if (endSura === startSura && endAyah < startAyah) {
+        showToast('لا يمكن أن تكون آية النهاية قبل آية البداية في نفس السورة', 'error');
+        return;
+    }
+
     // بناء بيانات الأيات لحساب الصفحات
     let startPage = 1, endPage = 1, sections = [];
     try {
@@ -9566,8 +9677,21 @@ async function loadTomorrowPlanForStudent(studentId, forDate) {
         const snap = await window.firebaseOps.getDocs(q);
         if (snap.empty) return;
 
-        const plan = snap.docs[0].data();
-        plan.id = snap.docs[0].id;
+        const raw = snap.docs[0].data();
+        const plan = {
+            id: snap.docs[0].id,
+            studentId: raw.student_id || raw.studentId,
+            forDate: raw.for_date || raw.forDate,
+            hifzStartSura: raw.hifz_start_sura || raw.hifzStartSura,
+            hifzStartAyah: raw.hifz_start_ayah || raw.hifzStartAyah,
+            hifzEndSura: raw.hifz_end_sura || raw.hifzEndSura,
+            hifzEndAyah: raw.hifz_end_ayah || raw.hifzEndAyah,
+            reviewStartSura: raw.review_start_sura || raw.reviewStartSura,
+            reviewStartAyah: raw.review_start_ayah || raw.reviewStartAyah,
+            reviewEndSura: raw.review_end_sura || raw.reviewEndSura,
+            reviewEndAyah: raw.review_end_ayah || raw.reviewEndAyah,
+            ...raw
+        };
         window._tomorrowPlanCache = plan;
 
         const suras = window.QuranService?.getSuras() || [];
@@ -9753,6 +9877,7 @@ async function deleteTomorrowPlan() {
         showToast('حدث خطأ أثناء الحذف', 'error');
     }
 }
+window.deleteTomorrowPlan = deleteTomorrowPlan;
 
 function ensureRateStudentModal() {
     if (document.getElementById('rate-student-modal')) return;
