@@ -7554,9 +7554,14 @@ const OfflineCache = {
 
 // Cache data after successful fetches
 (function enableOfflineCache() {
+    if (!window.firebaseOps || !window.firebaseOps.getDocs) {
+        window.addEventListener('firebaseReady', enableOfflineCache, { once: true });
+        return;
+    }
     const origGetDocs = window.firebaseOps.getDocs;
+    if (origGetDocs._isCachedWrapped) return;
 
-    window.firebaseOps.getDocs = async function (queryOrCollection) {
+    const wrappedGetDocs = async function (queryOrCollection) {
         const tableName = queryOrCollection._table;
         const cacheKey = `getDocs_${tableName}_${JSON.stringify(queryOrCollection._constraints || [])}`;
 
@@ -7588,6 +7593,8 @@ const OfflineCache = {
             throw e; // No cache available, rethrow
         }
     };
+    wrappedGetDocs._isCachedWrapped = true;
+    window.firebaseOps.getDocs = wrappedGetDocs;
 })();
 
 // =====================================================
