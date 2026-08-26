@@ -665,6 +665,35 @@ BEGIN
 END;
 $$;
 
+-- Trigger: Automatically clean up student from groups on deletion
+CREATE OR REPLACE FUNCTION cleanup_student_from_groups()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Remove student from members array in groups
+    UPDATE groups
+    SET members = array_remove(members, OLD.id)
+    WHERE OLD.id = ANY(members);
+
+    -- Clear leader if the deleted student was the leader
+    UPDATE groups
+    SET leader = NULL
+    WHERE leader = OLD.id;
+
+    -- Clear deputy if the deleted student was the deputy
+    UPDATE groups
+    SET deputy = NULL
+    WHERE deputy = OLD.id;
+
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_cleanup_student_groups ON students;
+CREATE TRIGGER trigger_cleanup_student_groups
+BEFORE DELETE ON students
+FOR EACH ROW
+EXECUTE FUNCTION cleanup_student_from_groups();
+
 
 -- ================================================
 -- RECENT SCHEMA UPDATES (ALTER TABLES)

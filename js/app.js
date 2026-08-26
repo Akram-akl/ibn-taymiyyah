@@ -2709,7 +2709,8 @@ async function performDeleteStudent() {
     if (!studentToDeleteId) return;
     try {
         // Get student name for audit log
-        const student = state.students.find(s => s.id === studentToDeleteId);
+        const student = state.students.find(s => s.id === studentToDeleteId) || 
+                        state.parentStudents.find(s => s.id === studentToDeleteId);
         const studentName = student ? student.name : 'unknown';
 
         // --- Cascade: delete student_plans + plan_daily_records ---
@@ -2732,15 +2733,85 @@ async function performDeleteStudent() {
             await window.firebaseOps.deleteDoc(
                 window.firebaseOps.doc(window.db, 'student_plans', planDoc.id));
         }
-        // ----------------------------------------------------------
 
+        // --- Clean up groups (leader, deputy, members) ---
+        const groupsQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'groups')
+        );
+        const groupsSnap = await window.firebaseOps.getDocs(groupsQ);
+        for (const gDoc of groupsSnap.docs) {
+            const gData = gDoc.data();
+            let needsUpdate = false;
+            const updateData = {};
+
+            if (gData.leader === studentToDeleteId) {
+                updateData.leader = null;
+                needsUpdate = true;
+            }
+            if (gData.deputy === studentToDeleteId) {
+                updateData.deputy = null;
+                needsUpdate = true;
+            }
+            if (gData.members && gData.members.includes(studentToDeleteId)) {
+                updateData.members = gData.members.filter(m => m !== studentToDeleteId);
+                needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+                await window.firebaseOps.updateDoc(
+                    window.firebaseOps.doc(window.db, 'groups', gDoc.id),
+                    updateData
+                );
+            }
+        }
+
+        // --- Clean up transfer requests ---
+        const transQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'transfer_requests'),
+            window.firebaseOps.where('student_id', '==', studentToDeleteId)
+        );
+        const transSnap = await window.firebaseOps.getDocs(transQ);
+        for (const tDoc of transSnap.docs) {
+            await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'transfer_requests', tDoc.id));
+        }
+
+        // --- Clean up tomorrow plans ---
+        const tomorrowQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'tomorrow_plans'),
+            window.firebaseOps.where('student_id', '==', studentToDeleteId)
+        );
+        const tomorrowSnap = await window.firebaseOps.getDocs(tomorrowQ);
+        for (const tomDoc of tomorrowSnap.docs) {
+            await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'tomorrow_plans', tomDoc.id));
+        }
+
+        // --- Clean up form responses ---
+        const responseQ = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, 'form_responses'),
+            window.firebaseOps.where('student_id', '==', studentToDeleteId)
+        );
+        const responseSnap = await window.firebaseOps.getDocs(responseQ);
+        for (const respDoc of responseSnap.docs) {
+            await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'form_responses', respDoc.id));
+        }
+
+        // --- Delete the student record itself (Hard delete from database) ---
         await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, "students", studentToDeleteId));
-        showToast("تم الحذف");
+        
+        // Remove from local parent state if in parent view
+        if (state.isParent) {
+            state.parentStudents = state.parentStudents.filter(s => s.id !== studentToDeleteId);
+        }
+
+        showToast("تم الحذف النهائي والكامل للملف والدرجات والخطط بنجاح");
         closeModal('delete-modal-v2');
 
         // Audit log — critical operation
         logAuditEvent('delete_student', 'student', studentToDeleteId, { studentName });
-    } catch (err) { console.error(err); showToast("خطأ في الحذف", "error"); }
+    } catch (err) { 
+        console.error(err); 
+        showToast("خطأ في الحذف", "error"); 
+    }
 }
 
 // === GROUPS ===
