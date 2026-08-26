@@ -24,7 +24,7 @@ const APP_CONFIG = {
     headerColor: '#064e3b',
 
     // إظهار ملاحظات التجربة (لنسخة أكرم والتجريبية فقط)
-    showDemoHints: false,
+    showDemoHints: true,
 
     // 3. Supabase Database Configuration
     supabaseUrl: 'https://xxcqfqedyymuafqvdtgg.supabase.co',
