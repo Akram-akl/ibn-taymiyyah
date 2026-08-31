@@ -624,8 +624,9 @@ DELETE FROM level_settings WHERE feature_name IN ('auth_passwords', 'master_pass
 INSERT INTO level_settings (level, feature_name, is_enabled, settings)
 VALUES 
     ('ibn_umar', 'auth_passwords', true, '{"teacherPass": "1234"}'::jsonb),
-    ('ijazat', 'auth_passwords', true, '{"teacherPass": "5678"}'::jsonb),
-    ('_global', 'master_password', true, '{"password": "112233"}'::jsonb);
+    ('abu_bakr', 'auth_passwords', true, '{"teacherPass": "5678"}'::jsonb),
+    ('ijazat',   'auth_passwords', true, '{"teacherPass": "3456"}'::jsonb),
+    ('_global',  'master_password', true, '{"password": "112233"}'::jsonb);
 
 -- =====================================================
 -- Create Indexes

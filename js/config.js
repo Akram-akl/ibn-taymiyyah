@@ -36,10 +36,17 @@ const APP_CONFIG = {
             name: 'حلقة عبدالله بن عمر',
             emoji: '<i data-lucide="star" class="w-6 h-6 inline-block text-emerald-500"></i>'
         },
+        'abu_bakr': {
+            name: 'حلقة أبو بكر الصديق',
+            emoji: '<i data-lucide="book-open" class="w-6 h-6 inline-block text-blue-500"></i>',
+            isAdult: true
+        },
         'ijazat': {
             name: 'حلقة إجازات',
             emoji: '<i data-lucide="award" class="w-6 h-6 inline-block text-yellow-500"></i>',
-            isAdult: true
+            isAdult: true,
+            isIjazat: true,
+            description: 'حلقة إجازات القرآن الكريم | القراءات العشر | كود الدخول: 3456'
         }
     }
 };
