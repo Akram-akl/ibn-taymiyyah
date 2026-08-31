@@ -1,8 +1,18 @@
 // --- Constants ---
 const LEVELS = APP_CONFIG.levels;
 
+// Helper: check if current level is an adult/dariseen level
+function isAdultLevel() {
+    return state.currentLevel === 'ijazat' || state.currentLevel === 'abu_bakr';
+}
+
+// Helper: check if current level is specifically the ijazat system
+function isIjazatLevel() {
+    return state.currentLevel === 'ijazat';
+}
+
 function getLabel(key) {
-    const isAdult = state.currentLevel === 'ijazat';
+    const isAdult = isAdultLevel();
     const labels = {
         'student': isAdult ? 'دارس' : 'طالب',
         'students': isAdult ? 'دارسين' : 'طلاب',
@@ -1372,7 +1382,7 @@ function renderSettings() {
              <!-- Teacher Contact Info -->
              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
                  <h3 class="font-bold mb-4 flex items-center gap-2"><i data-lucide="users" class="w-5 h-5 text-purple-600"></i> المعلمون</h3>
-                 <p class="text-xs text-gray-500 mb-3">${state.currentLevel === 'ijazat' ? 'بيانات التواصل للدارسين' : 'هذه البيانات ستظهر لولي الأمر للتواصل'}</p>
+                 <p class="text-xs text-gray-500 mb-3">${isAdultLevel() ? 'بيانات التواصل للدارسين' : 'هذه البيانات ستظهر لولي الأمر للتواصل'}</p>
                  
                  <!-- Teachers List -->
                  <div id="teachers-list" class="space-y-2 mb-4">
@@ -2011,24 +2021,29 @@ function applyTheme() {
 
 function getStudentModalHTML() {
     return `
-    <div id="student-modal" class="fixed inset-0 bg-black/50 z-[100] hidden flex items-center justify-center p-0 sm:p-4 backdrop-blur-sm">
-        <div class="bg-white dark:bg-gray-800 rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6 shadow-2xl h-[90vh] sm:h-auto overflow-y-auto">
-             <h3 id="student-modal-title" class="text-lg font-bold mb-6">${getLabel('add_student')}</h3>
+    <div id="student-modal" class="fixed inset-0 bg-black/60 z-[100] hidden flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm">
+        <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-md shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+             <div class="flex justify-between items-center px-6 py-4 border-b border-gray-100 dark:border-gray-700 shrink-0">
+                 <h3 id="student-modal-title" class="text-base font-bold text-gray-800 dark:text-gray-100">${getLabel('add_student')}</h3>
+                 <button type="button" onclick="closeModal('student-modal')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition">
+                     <i data-lucide="x" class="w-5 h-5"></i>
+                 </button>
+             </div>
 
-             <form id="student-form" onsubmit="handleSaveStudent(event)">
+             <form id="student-form" onsubmit="handleSaveStudent(event)" class="overflow-y-auto custom-scrollbar p-6 space-y-4 flex-1">
                  <input type="hidden" id="student-id">
                  
-                 <div class="mb-4 flex flex-col items-center gap-3">
-                        <div id="student-emoji-preview" class="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-4xl shadow-inner border-2 border-dashed border-gray-300 dark:border-gray-600 overflow-hidden">
+                 <div class="flex flex-col items-center gap-2.5">
+                        <div id="student-emoji-preview" class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-3xl shadow-inner border-2 border-dashed border-gray-300 dark:border-gray-600 overflow-hidden">
                             👤
                         </div>
                         <div class="flex gap-2">
-                             <button type="button" onclick="openImagePicker()" class="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 rounded-xl text-sm font-medium hover:bg-emerald-100 transition">
-                                 <i data-lucide="image" class="w-4 h-4"></i>
+                             <button type="button" onclick="openImagePicker()" class="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold hover:bg-emerald-100 transition">
+                                 <i data-lucide="image" class="w-3.5 h-3.5"></i>
                                  رفع صورة
                              </button>
-                             <button type="button" onclick="openEmojiPicker()" class="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-900/30 text-amber-600 rounded-xl text-sm font-medium hover:bg-amber-100 transition">
-                                 <i data-lucide="smile" class="w-4 h-4"></i>
+                             <button type="button" onclick="openEmojiPicker()" class="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300 rounded-xl text-xs font-bold hover:bg-amber-100 transition">
+                                 <i data-lucide="smile" class="w-3.5 h-3.5"></i>
                                  إيموجي
                              </button>
                         </div>
@@ -2036,60 +2051,104 @@ function getStudentModalHTML() {
                         <input type="hidden" id="student-emoji" value="👤">
                  </div>
 
-                 <div class="space-y-3">
+                 <div class="space-y-3.5">
                      <div>
-                         <label class="block text-sm font-bold mb-1">اسم ${getLabel('student')}</label>
-                         <input type="text" id="student-name" required class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3">
+                         <label class="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">اسم ${getLabel('student')}</label>
+                         <input type="text" id="student-name" required class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 transition">
                      </div>
 
                      <div>
-                         <label class="block text-sm font-bold mb-1">${getLabel('parent_phone')} (واتساب)</label>
-                         <input type="tel" id="student-number" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3" placeholder="مثال: 966500000000">
-                         <p class="text-xs text-gray-400 mt-1">${state.currentLevel === 'ijazat' ? 'يستخدم للتواصل والمتابعة عبر واتساب' : 'يستخدم للتواصل عبر واتساب عند الغياب'}</p>
+                         <label class="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">${getLabel('parent_phone')} (واتساب)</label>
+                         <input type="tel" id="student-number" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 transition" placeholder="مثال: 966500000000">
+                         <p class="text-[10px] text-gray-400 mt-1">${isAdultLevel() ? 'يستخدم للتواصل والمتابعة عبر واتساب' : 'يستخدم للتواصل عبر واتساب عند الغياب'}</p>
                      </div>
                      
-                     <div class="grid grid-cols-2 gap-3 mt-1">
+                     <div class="grid grid-cols-2 gap-2.5">
                          <div>
-                             <label class="block text-sm font-bold mb-1 text-gray-600 dark:text-gray-300">رقم الهوية</label>
-                             <input type="text" id="student-national-id" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3 text-sm">
+                             <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1">رقم الهوية</label>
+                             <input type="text" id="student-national-id" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-xs outline-none focus:border-emerald-500 transition">
                          </div>
-                             <div>
-                                 <label class="block text-sm font-bold mb-1 text-gray-600 dark:text-gray-300">آخر اختبار جمعية</label>
-                                 <select id="student-last-exam" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3 text-sm">
-                                     <option value="لم يختبر">لم يختبر</option>
-                                     <option value="1">1</option>
-                                     <option value="2">2</option>
-                                     <option value="3">3</option>
-                                     <option value="5">5</option>
-                                     <option value="8">8</option>
-                                     <option value="10">10</option>
-                                     <option value="13">13</option>
-                                     <option value="15">15</option>
-                                     <option value="20">20</option>
-                                     <option value="25">25</option>
-                                     <option value="30">30 (خاتم)</option>
-                                 </select>
-                             </div>
+                         <div>
+                             <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1">آخر اختبار جمعية</label>
+                             <select id="student-last-exam" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2 text-xs outline-none focus:border-emerald-500 transition font-bold">
+                                 <option value="لم يختبر">لم يختبر</option>
+                                 <option value="1">1</option>
+                                 <option value="2">2</option>
+                                 <option value="3">3</option>
+                                 <option value="5">5</option>
+                                 <option value="8">8</option>
+                                 <option value="10">10</option>
+                                 <option value="13">13</option>
+                                 <option value="15">15</option>
+                                 <option value="20">20</option>
+                                 <option value="25">25</option>
+                                 <option value="30">30 (خاتم)</option>
+                             </select>
+                         </div>
                      </div>
                      
                      <input type="hidden" id="student-memorization">
                      <input type="hidden" id="student-review">
 
-
-                     
-                     <div class="mb-2">
-                         <label class="block text-sm font-bold mb-1">كلمة المرور</label>
-                         <input type="text" id="student-password-edit" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-xl px-4 py-3" placeholder="كلمة المرور (إلزامي لل${getLabel('students')} الجدد)">
-                         <p id="password-error" class="hidden text-red-500 text-xs mt-1 font-bold">⚠️ كلمة المرور مطلوبة لل${getLabel('student')} الجديد</p>
+                     <!-- Readings section (exclusive to Ijazat level) -->
+                     <div id="student-readings-section" class="${isIjazatLevel() ? '' : 'hidden'} bg-blue-50/60 dark:bg-blue-900/10 p-3 rounded-2xl border border-blue-100 dark:border-blue-800/60 space-y-2">
+                         <div class="flex items-center justify-between">
+                             <label class="block text-xs font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
+                                 <i data-lucide="book-marked" class="w-4 h-4 text-blue-600"></i>
+                                 القراءات والمتون المسندة للدارس:
+                             </label>
+                             <span class="text-[10px] text-blue-600 font-bold bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded-full">حلقة الإجازات</span>
+                         </div>
+                         <div class="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto custom-scrollbar p-1.5 border border-blue-200/60 dark:border-blue-800/40 rounded-xl bg-white dark:bg-gray-800">
+                            <!-- نافع -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="قالون عن نافع" class="w-3.5 h-3.5 rounded text-blue-600">قالون عن نافع</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="ورش عن نافع" class="w-3.5 h-3.5 rounded text-blue-600">ورش عن نافع</label>
+                            <!-- ابن كثير -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="البزي عن ابن كثير" class="w-3.5 h-3.5 rounded text-blue-600">البزي عن ابن كثير</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="قنبل عن ابن كثير" class="w-3.5 h-3.5 rounded text-blue-600">قنبل عن ابن كثير</label>
+                            <!-- أبي عمرو -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="الدوري عن أبي عمرو" class="w-3.5 h-3.5 rounded text-blue-600">الدوري عن أبي عمرو</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="السوسي عن أبي عمرو" class="w-3.5 h-3.5 rounded text-blue-600">السوسي عن أبي عمرو</label>
+                            <!-- ابن عامر -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="هشام عن ابن عامر" class="w-3.5 h-3.5 rounded text-blue-600">هشام عن ابن عامر</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="ابن ذكوان عن ابن عامر" class="w-3.5 h-3.5 rounded text-blue-600">ابن ذكوان عن ابن عامر</label>
+                            <!-- عاصم -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="شعبة عن عاصم" class="w-3.5 h-3.5 rounded text-blue-600">شعبة عن عاصم</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50/60 dark:bg-emerald-900/20 hover:bg-emerald-100 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="حفص عن عاصم" class="w-3.5 h-3.5 rounded text-emerald-600">حفص عن عاصم ⭐</label>
+                            <!-- حمزة -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="خلاد عن حمزة" class="w-3.5 h-3.5 rounded text-blue-600">خلاد عن حمزة</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="خلف عن حمزة" class="w-3.5 h-3.5 rounded text-blue-600">خلف عن حمزة</label>
+                            <!-- الكسائي -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="أبو الحارث عن الكسائي" class="w-3.5 h-3.5 rounded text-blue-600">أبو الحارث عن الكسائي</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="الدوري عن الكسائي" class="w-3.5 h-3.5 rounded text-blue-600">الدوري عن الكسائي</label>
+                            <!-- أبي جعفر -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="ابن وردان عن أبي جعفر" class="w-3.5 h-3.5 rounded text-blue-600">ابن وردان عن أبي جعفر</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="ابن جماز عن أبي جعفر" class="w-3.5 h-3.5 rounded text-blue-600">ابن جماز عن أبي جعفر</label>
+                            <!-- يعقوب -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="رويس عن يعقوب" class="w-3.5 h-3.5 rounded text-blue-600">رويس عن يعقوب</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="روح عن يعقوب" class="w-3.5 h-3.5 rounded text-blue-600">روح عن يعقوب</label>
+                            <!-- خلف العاشر -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="إسحاق عن خلف العاشر" class="w-3.5 h-3.5 rounded text-blue-600">إسحاق عن خلف العاشر</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-gray-700/50 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="إدريس عن خلف العاشر" class="w-3.5 h-3.5 rounded text-blue-600">إدريس عن خلف العاشر</label>
+                            <!-- متون -->
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50/50 dark:bg-purple-900/20 hover:bg-purple-100 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="متن الشاطبية" class="w-3.5 h-3.5 rounded text-purple-600">متن الشاطبية 📜</label>
+                            <label class="flex items-center gap-1.5 p-1 rounded-lg text-[11px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50/50 dark:bg-purple-900/20 hover:bg-purple-100 cursor-pointer transition select-none"><input type="checkbox" name="student_readings" value="متن الدرة المضية" class="w-3.5 h-3.5 rounded text-purple-600">متن الدرة المضية 📜</label>
+                         </div>
                      </div>
                      
-                     <div class="flex gap-3 mt-6">
-                         <button type="button" onclick="closeModal('student-modal')" class="flex-1 py-3 rounded-xl text-gray-600 hover:bg-gray-100 font-bold transition">إلغاء</button>
-                         <button type="submit" id="save-student-btn" class="flex-1 py-3 bg-emerald-700 text-white rounded-xl font-bold hover:bg-emerald-800 transition"><span id="save-student-text">حفظ</span></button>
+                     <div>
+                         <label class="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">كلمة المرور</label>
+                         <input type="text" id="student-password-edit" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 transition" placeholder="كلمة المرور (إلزامي لل${getLabel('students')} الجدد)">
+                         <p id="password-error" class="hidden text-red-500 text-[10px] mt-1 font-bold">⚠️ كلمة المرور مطلوبة لل${getLabel('student')} الجديد</p>
                      </div>
                      
-                     <div id="transfer-student-section" class="hidden mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                         <button type="button" onclick="openTransferModal()" class="w-full py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-xl font-bold transition flex items-center justify-center gap-2">
+                     <div class="flex gap-2.5 pt-2">
+                         <button type="button" onclick="closeModal('student-modal')" class="flex-1 py-2.5 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs font-bold transition">إلغاء</button>
+                         <button type="submit" id="save-student-btn" class="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-md transition"><span id="save-student-text">حفظ</span></button>
+                     </div>
+                     
+                     <div id="transfer-student-section" class="hidden pt-3 border-t border-gray-100 dark:border-gray-700">
+                         <button type="button" onclick="openTransferModal()" class="w-full py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
                              <i data-lucide="arrow-right-left" class="w-4 h-4"></i>
                              طلب نقل ${getLabel('student')} لحلقة أخرى
                          </button>
@@ -2441,7 +2500,7 @@ function getGradingModalsHTML() {
                                                         <i data-lucide="check-circle" class="w-8 h-8"></i>
                                                     </div>
                                                     <h3 class="font-bold text-lg">تم رصد يوم النشاط!</h3>
-                                                    <p class="text-sm text-gray-500">${state.currentLevel === 'ijazat' ? 'تم تسجيل الغياب، يمكنك مراسلة الدارسين مباشرة:' : 'تم تسجيل الغياب، يمكنك مراسلة أولياء الأمور:'}</p>
+                                                    <p class="text-sm text-gray-500">${isAdultLevel() ? 'تم تسجيل الغياب، يمكنك مراسلة الدارسين مباشرة:' : 'تم تسجيل الغياب، يمكنك مراسلة أولياء الأمور:'}</p>
                                                 </div>
                                                 <div id="activity-absent-whatsapp-list" class="space-y-3 mb-6"></div>
                                                 <button onclick="closeModal('activity-absent-modal')" class="w-full py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 rounded-xl font-bold">إغلاق</button>
@@ -2513,7 +2572,19 @@ function openAddStudentModal() {
     $('#save-student-text').textContent = 'حفظ';
     if(document.getElementById('student-national-id')) document.getElementById('student-national-id').value = '';
     if(document.getElementById('student-last-exam')) document.getElementById('student-last-exam').value = '';
-    if(document.getElementById('student-last-exam')) document.getElementById('student-last-exam').value = '';
+    
+    // Clear readings checkboxes
+    document.querySelectorAll('input[name="student_readings"]').forEach(cb => cb.checked = false);
+    
+    // Show readings section only in Ijazat level
+    const readingsSec = document.getElementById('student-readings-section');
+    if (readingsSec) {
+        if (isIjazatLevel()) {
+            readingsSec.classList.remove('hidden');
+        } else {
+            readingsSec.classList.add('hidden');
+        }
+    }
     
     const ts = $('#transfer-student-section');
     if (ts) ts.classList.add('hidden');
@@ -2558,7 +2629,7 @@ function openTransferModal() {
                             <input type="checkbox" id="transfer-delete-data" class="mt-1 w-4 h-4 text-red-600">
                             <div>
                                 <span class="block text-sm font-bold text-red-800 dark:text-red-300">مسح بيانات ال${getLabel('student')} في حلقتي</span>
-                                <span class="block text-xs text-red-600 dark:text-red-400 mt-1">${state.currentLevel === 'ijazat' ? 'إذا قمت بتحديد هذا الخيار، سيتم حذف جميع درجات ومراجعات الدارس المسجلة باسم حلقتك (بشكل نهائي) بمجرد قبول المعلم الآخر للطلب.' : 'إذا قمت بتحديد هذا الخيار، سيتم حذف جميع درجات ومراجعات الطالب المسجلة باسم حلقتك (بشكل نهائي) بمجرد قبول المعلم الآخر للطلب.'} إذا تركته فارغاً سيتم الاحتفاظ بدرجاته كأرشيف لحلقتك.</span>
+                                <span class="block text-xs text-red-600 dark:text-red-400 mt-1">${isAdultLevel() ? 'إذا قمت بتحديد هذا الخيار، سيتم حذف جميع درجات ومراجعات الدارس المسجلة باسم حلقتك (بشكل نهائي) بمجرد قبول المعلم الآخر للطلب.' : 'إذا قمت بتحديد هذا الخيار، سيتم حذف جميع درجات ومراجعات الطالب المسجلة باسم حلقتك (بشكل نهائي) بمجرد قبول المعلم الآخر للطلب.'} إذا تركته فارغاً سيتم الاحتفاظ بدرجاته كأرشيف لحلقتك.</span>
                             </div>
                         </label>
                     </div>
@@ -2662,6 +2733,22 @@ async function openEditStudent(id) {
     if(document.getElementById('student-last-exam')) document.getElementById('student-last-exam').value = student.lastAssociationExam || '';
     $('#student-emoji').value = student.icon || '👤';
     $('#student-password-edit').value = student.password || '';
+    
+    // Populate readings checkboxes
+    const readings = student.readings || [];
+    document.querySelectorAll('input[name="student_readings"]').forEach(cb => {
+        cb.checked = readings.includes(cb.value);
+    });
+
+    // Show readings section only in Ijazat level
+    const readingsSec = document.getElementById('student-readings-section');
+    if (readingsSec) {
+        if (isIjazatLevel()) {
+            readingsSec.classList.remove('hidden');
+        } else {
+            readingsSec.classList.add('hidden');
+        }
+    }
 
     // إعداد حالة القراءة فقط للطالب
     const isTeacher = state.isTeacher;
@@ -3829,6 +3916,104 @@ function filterGradingList(val) {
     refreshGradingStatus();
 }
 
+function setupQuranGradingUI(s) {
+    const quranSec = document.getElementById('rate-quran-section');
+    if (!quranSec) return;
+    quranSec.classList.remove('hidden');
+
+    const reviewBox = document.getElementById('rate-quran-review-box');
+    const hifzBox = document.getElementById('rate-quran-hifz-box');
+    const hifzTitle = hifzBox ? hifzBox.querySelector('h4') : null;
+    const readingsBox = document.getElementById('rate-quran-readings-box');
+
+    if (isIjazatLevel()) {
+        if (reviewBox) reviewBox.classList.add('hidden');
+        
+        const readings = s && s.readings ? s.readings : [];
+        const hasHafs = readings.includes('حفص عن عاصم');
+        
+        if (hasHafs) {
+            if (hifzBox) hifzBox.classList.remove('hidden');
+            if (hifzTitle) hifzTitle.innerHTML = '📝 تسجيل قراءة اليوم';
+        } else {
+            if (hifzBox) hifzBox.classList.add('hidden');
+        }
+        
+        // Build textareas for other readings
+        const otherReadings = readings.filter(r => r !== 'حفص عن عاصم');
+        if (readingsBox) {
+            if (otherReadings.length > 0) {
+                readingsBox.classList.remove('hidden');
+                let html = '';
+                otherReadings.forEach(reading => {
+                    const safeId = 'reading-note-' + reading.replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, '_');
+                    html += `
+                    <div class="bg-blue-50 dark:bg-blue-900/10 p-3.5 rounded-2xl border border-blue-100 dark:border-blue-800 text-right space-y-2 shadow-sm relative">
+                        <h4 class="font-bold text-xs text-blue-700 dark:text-blue-400 flex items-center gap-1">📖 تسجيل ${reading}</h4>
+                        <textarea id="${safeId}-text" class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-xs h-16 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="اكتب ملاحظاتك لـ ${reading} هنا..."></textarea>
+                        
+                        <div class="flex gap-2">
+                            <div class="flex-1">
+                                <select id="${safeId}-grade" class="w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2 text-xs font-bold">
+                                    <option value="">بدون تقييم..</option>
+                                    <option value="ممتاز">⭐ ممتاز</option>
+                                    <option value="جيد جداً">✨ جيد جداً</option>
+                                    <option value="مقبول">👍 مقبول</option>
+                                    <option value="سيء">⚠️ سيء</option>
+                                    <option value="لم يحفظ">❌ لم يحفظ</option>
+                                </select>
+                            </div>
+                            <button type="button" onclick="submitReadingNote('${reading}', '${safeId}')" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 shadow-sm">
+                                <i data-lucide="save" class="w-3.5 h-3.5"></i>حفظ
+                            </button>
+                        </div>
+                    </div>
+                    `;
+                });
+                readingsBox.innerHTML = html;
+                if (window.lucide) window.lucide.createIcons();
+            } else {
+                readingsBox.classList.add('hidden');
+                readingsBox.innerHTML = '';
+            }
+        }
+    } else {
+        if (reviewBox) reviewBox.classList.remove('hidden');
+        if (hifzBox) hifzBox.classList.remove('hidden');
+        if (hifzTitle) hifzTitle.innerHTML = '📝 تسجيل حفظ أو مراجعة صغرى';
+        if (readingsBox) {
+            readingsBox.classList.add('hidden');
+            readingsBox.innerHTML = '';
+        }
+    }
+
+    // Ensure options are populated
+    const startSuraMemorization = document.getElementById('rate-quran-start-sura-memorization');
+    if (startSuraMemorization && startSuraMemorization.options.length <= 1) {
+        const suras = window.QuranService.getSuras();
+        const optionsHtml = suras.map(sur => `<option value="${sur.number}">${sur.name}</option>`).join('');
+        ['memorization', 'review'].forEach(type => {
+            const sSura = document.getElementById(`rate-quran-start-sura-${type}`);
+            const eSura = document.getElementById(`rate-quran-end-sura-${type}`);
+            if(sSura) sSura.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
+            if(eSura) eSura.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
+        });
+    }
+
+    ['memorization', 'review'].forEach(type => {
+        const startS = document.getElementById(`rate-quran-start-sura-${type}`);
+        const endS = document.getElementById(`rate-quran-end-sura-${type}`);
+        if(startS) startS.value = "";
+        if(endS) endS.value = "";
+        const startA = document.getElementById(`rate-quran-start-aya-${type}`);
+        if(startA) { startA.innerHTML = '<option value="">الآية..</option>'; startA.disabled = true; }
+        const endA = document.getElementById(`rate-quran-end-aya-${type}`);
+        if(endA) { endA.innerHTML = '<option value="">الآية..</option>'; endA.disabled = true; }
+        const gradeEl = document.getElementById(`rate-quran-grade-${type}`);
+        if(gradeEl) gradeEl.value = "";
+    });
+}
+
 function openRateStudent(studentId) {
     ensureRateStudentModal();
     currentRateStudentId = studentId;
@@ -3846,7 +4031,7 @@ function openRateStudent(studentId) {
     // Handle Ijazat Note visibility
     const visSelect = document.getElementById('rate-note-visibility');
     if (visSelect) {
-        if (state.currentLevel === 'ijazat') {
+        if (isAdultLevel()) {
             visSelect.value = 'student'; // Always to student
             visSelect.classList.add('hidden'); // Hide it completely
         } else {
@@ -3855,36 +4040,7 @@ function openRateStudent(studentId) {
     }
 
     // Show and initialize quran section
-    const quranSec = document.getElementById('rate-quran-section');
-    if (quranSec) {
-        quranSec.classList.remove('hidden');
-        const startSuraMemorization = document.getElementById('rate-quran-start-sura-memorization');
-        if (startSuraMemorization && startSuraMemorization.options.length <= 1) {
-            const suras = window.QuranService.getSuras();
-            const optionsHtml = suras.map(s => `<option value="${s.number}">${s.name}</option>`).join('');
-            
-            ['memorization', 'review'].forEach(type => {
-                const sSura = document.getElementById(`rate-quran-start-sura-${type}`);
-                const eSura = document.getElementById(`rate-quran-end-sura-${type}`);
-                if(sSura) sSura.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
-                if(eSura) eSura.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
-            });
-        }
-        
-        // Reset selections to default empty before loading existing scores
-        ['memorization', 'review'].forEach(type => {
-            const startS = document.getElementById(`rate-quran-start-sura-${type}`);
-            const endS = document.getElementById(`rate-quran-end-sura-${type}`);
-            if(startS) startS.value = "";
-            if(endS) endS.value = "";
-            const startA = document.getElementById(`rate-quran-start-aya-${type}`);
-            if(startA) { startA.innerHTML = '<option value="">الآية..</option>'; startA.disabled = true; }
-            const endA = document.getElementById(`rate-quran-end-aya-${type}`);
-            if(endA) { endA.innerHTML = '<option value="">الآية..</option>'; endA.disabled = true; }
-            const gradeEl = document.getElementById(`rate-quran-grade-${type}`);
-            if(gradeEl) gradeEl.value = "";
-        });
-    }
+    setupQuranGradingUI(s);
 
     // عرض التاريخ
     const dateVal = document.getElementById('modal-grading-date')?.value || (document.getElementById('grading-date') ? document.getElementById('grading-date').value : mainDate);
@@ -4534,6 +4690,63 @@ window.submitQuranRecord = async (quranType) => {
         console.error("Submission Error:", e);
         showToast("خطأ: " + (e.message || "فشل الاتصال بالخادم"), "error");
     }
+}
+
+window.submitReadingNote = async (readingName, safeId) => {
+    if (!currentRateStudentId || !currentGradingCompId) return;
+
+    const dateInput = document.getElementById('modal-grading-date');
+    const dateVal = dateInput && dateInput.value ? dateInput.value : ($('#grading-date') ? $('#grading-date').value : '');
+    if (!dateVal) {
+        showToast("يرجى اختيار التاريخ", "error");
+        return;
+    }
+
+    const noteText = document.getElementById(`${safeId}-text`).value.trim();
+    const quranGrade = document.getElementById(`${safeId}-grade`).value;
+
+    if (!noteText && !quranGrade) {
+        showToast("يرجى كتابة ملاحظة أو اختيار تقييم", "error");
+        return;
+    }
+
+    const criteriaId = 'READING_' + safeId.toUpperCase();
+    const data = {
+        studentId: currentRateStudentId,
+        competitionId: currentGradingCompId === 'DIRECT_GRADING' ? null : currentGradingCompId,
+        groupId: currentGradingGroupId || null,
+        criteriaId,
+        criteriaName: `تسميع ${readingName}`,
+        points: 0, // No points for these readings
+        type: 'ijazat_reading',
+        note_text: noteText,
+        quranGrade: quranGrade,
+        level: state.currentLevel,
+        date: dateVal,
+        updatedAt: new Date(),
+        timestamp: Date.now()
+    };
+
+    try {
+        const q = window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "scores"),
+            window.firebaseOps.where("studentId", "==", currentRateStudentId),
+            window.firebaseOps.where("date", "==", dateVal),
+            window.firebaseOps.where("criteriaId", "==", criteriaId)
+        );
+        const snap = await window.firebaseOps.getDocs(q);
+        if (!snap.empty) {
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "scores", snap.docs[0].id), data);
+            showToast(`تم تعديل بيانات ${readingName}`, "success");
+        } else {
+            data.createdAt = new Date();
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
+            showToast(`تم تسجيل ${readingName} بنجاح ✨`, "success");
+        }
+    } catch (e) {
+        console.error("Submission Error:", e);
+        showToast("خطأ في الحفظ", "error");
+    }
 };
 
 // Student Edit Security Check
@@ -4670,7 +4883,7 @@ async function submitActivityDay() {
             const waList = $('#activity-absent-whatsapp-list');
             waList.innerHTML = absentStudents.map(s => {
                 const phone = s.studentNumber || '';
-                const msg = state.currentLevel === 'ijazat'
+                const msg = isAdultLevel()
                     ? `السلام عليكم أخي ${s.name}،\nتم تسجيل غيابك عن يوم النشاط في ${comp.name}.`
                     : `نحيطكم علماً بغياب الطالب (${s.name}) عن يوم النشاط المقام اليوم في مسابقة ${comp.name}.`;
                 const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
@@ -4745,6 +4958,9 @@ async function handleSaveStudent(e) {
     // Phone Format Logic (966) using normalizePhone
     studentNumber = normalizePhone(studentNumber);
 
+    // Get selected readings
+    const selectedReadings = Array.from(document.querySelectorAll('input[name="student_readings"]:checked')).map(cb => cb.value);
+
     const data = {
         name: $('#student-name').value,
         studentNumber: studentNumber,
@@ -4754,6 +4970,7 @@ async function handleSaveStudent(e) {
         level: state.currentLevel,  // Level for parent to see
         icon: imageBase64, // Store Base64 Image
         password: $('#student-password-edit').value, // Student Password
+        readings: selectedReadings,
         updatedAt: new Date()
     };
 
@@ -4943,7 +5160,7 @@ function init() {
                 regPanel.classList.remove('hidden');
                 
                 // Update labels dynamically based on level
-                const isAdult = lvl === 'ijazat';
+                const isAdult = lvl === 'ijazat' || lvl === 'abu_bakr';
                 document.getElementById('self-reg-title').textContent = isAdult ? 'تسجيل دارس جديد 📝' : 'تسجيل طالب جديد 📝';
                 document.getElementById('self-reg-name-label').textContent = 'ما اسمك؟ (الاسم الرباعي)';
                 document.getElementById('self-reg-phone-label').textContent = isAdult ? 'رقم جوالك الشخصي' : 'رقم جوال ولي أمرك';
@@ -5354,7 +5571,7 @@ function openAbsenceOptions() {
                 <i data-lucide="user-x" class="w-8 h-8"></i>
             </div>
             <h3 class="font-bold text-lg mb-2">تسجيل غياب</h3>
-            <p class="text-gray-500 text-sm mb-6"> ${state.currentLevel === 'ijazat' ? 'هل تعذر الحضور اليوم بعذر أم بدون؟' : 'هل غاب الطالب بعذر أم بدون عذر؟'}</p>
+            <p class="text-gray-500 text-sm mb-6"> ${isAdultLevel() ? 'هل تعذر الحضور اليوم بعذر أم بدون؟' : 'هل غاب الطالب بعذر أم بدون عذر؟'}</p>
 
             <div class="grid grid-cols-1 gap-3">
                 <button onclick="confirmAbsence('excuse')" class="py-3 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 font-bold transition">
@@ -5393,7 +5610,7 @@ async function confirmAbsence(type) {
     var student = state.students.find(function (s) { return s.id === currentRateStudentId; });
     if (student && student.studentNumber) {
         var phone = student.studentNumber;
-        var msg = state.currentLevel === 'ijazat' 
+        var msg = isAdultLevel() 
             ? "السلام عليكم يا أخي " + student.name + "،\nتم تسجيل غياب لك اليوم (" + label + ").\nنرجو الحرص على الحضور والمتابعة."
             : "السلام عليكم ولي أمر الطالب " + student.name + "،\nتم تسجيل غياب للطالب اليوم (" + label + ").\nنرجو الحرص على الحضور.";
 
@@ -5407,7 +5624,7 @@ async function generateWeeklyReport() {
     if (!student) return;
 
     if (!student.studentNumber) {
-        showToast(state.currentLevel === 'ijazat' ? "لا يوجد رقم جوال للتواصل" : "لا يوجد رقم هاتف لولي الأمر", "error");
+        showToast(isAdultLevel() ? "لا يوجد رقم جوال للتواصل" : "لا يوجد رقم هاتف لولي الأمر", "error");
         return;
     }
 
@@ -5578,7 +5795,7 @@ async function generateWeeklyReport() {
         if (!isDirectGrading) {
             reportText += `✨ *المجموع النهائي: ${totalEarned} / ${totalPossible}*\n`;
         }
-        reportText += `\n${state.currentLevel === 'ijazat' ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
+        reportText += `\n${isAdultLevel() ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
 
         // Send
         const url = `https://wa.me/${student.studentNumber}?text=${encodeURIComponent(reportText)}`;
@@ -5597,6 +5814,11 @@ function getQuranSearchModalHTML() {
             <div class="flex justify-between items-center mb-4 shrink-0">
                 <h3 class="font-bold text-lg flex items-center gap-2 text-emerald-700 dark:text-emerald-400"><i data-lucide="book" class="w-5 h-5"></i> بحث في المصحف</h3>
                 <button onclick="closeModal('quran-search-modal')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x"></i></button>
+            </div>
+
+            <div class="mb-3 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl text-xs text-amber-800 dark:text-amber-300 font-bold flex items-center gap-2 shrink-0">
+                <i data-lucide="info" class="w-4 h-4 shrink-0"></i>
+                تنبيه: المصحف المعروض هنا برواية حفص عن عاصم
             </div>
             
             <div class="flex gap-2 mb-4 shrink-0">
@@ -6629,7 +6851,7 @@ function contactTeacher(studentName, teacherPhone) {
     let messageText = "";
     
     if (state.isParent) {
-        messageText = state.currentLevel === 'ijazat'
+        messageText = isAdultLevel()
             ? `السلام عليكم ورحمة الله وبركاته.. أنا أخوكم الدارس (${studentName})\nكنت أريد أن أستفسر عن بعض الأمور`
             : `السلام عليكم ورحمة الله وبركاته.. أنا ولي أمر الطالب (${studentName})\nكنت أريد أن أستفسر منك عن بعض الأمور`;
     } else {
@@ -6924,7 +7146,7 @@ async function exportStudentsXLSX() {
         const levelName = LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : state.currentLevel;
         
         // Build rows
-        const phoneHeader = state.currentLevel === 'ijazat' ? 'رقم الجوال' : 'جوال ولي الأمر';
+        const phoneHeader = isAdultLevel() ? 'رقم الجوال' : 'جوال ولي الأمر';
         const rows = students.map((s, i) => ({
             '#': i + 1,
             'الاسم': s.name || '',
@@ -8044,7 +8266,7 @@ async function buildDirectGradingWhatsAppQueue(startDate, endDate) {
         }
 
         reportText += `------------------\n`;
-        reportText += `\n${state.currentLevel === 'ijazat' ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
+        reportText += `\n${isAdultLevel() ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
 
         bulkWhatsAppQueue.push({ id: st.id, name: st.name, phone: st.studentNumber, text: reportText, sent: false });
     });
@@ -8428,7 +8650,7 @@ async function generateDirectGradingPDFReport(startDate, endDate) {
         }
 
         reportText += `\n------------------\n`;
-        reportText += `\n${state.currentLevel === 'ijazat' ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
+        reportText += `\n${isAdultLevel() ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
 
         const url = `https://wa.me/?text=${encodeURIComponent(reportText)}`;
         window.location.href = url;
@@ -8606,8 +8828,8 @@ async function generatePDFReport() {
                                 <thead>
                                     <tr style="background: #e5e7eb;">
                                         <th style="padding: 10px; border: 1px solid #d1d5db; width: 40px; text-align: center;">م</th>
-                                        <th style="padding: 10px; border: 1px solid #d1d5db;">${state.currentLevel === 'ijazat' ? 'اسم الدارس' : 'اسم الطالب'}</th>
-                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 140px; text-align: center;">${state.currentLevel === 'ijazat' ? 'رقم الجوال' : 'جوال ولي الأمر'}</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db;">${isAdultLevel() ? 'اسم الدارس' : 'اسم الطالب'}</th>
+                                        <th style="padding: 10px; border: 1px solid #d1d5db; width: 140px; text-align: center;">${isAdultLevel() ? 'رقم الجوال' : 'جوال ولي الأمر'}</th>
                                         <th style="padding: 10px; border: 1px solid #d1d5db; width: 50px; text-align: center; color: #b91c1c;">بدون عذر</th>
                                         <th style="padding: 10px; border: 1px solid #d1d5db; width: 50px; text-align: center; color: #d97706;">بعذر</th>
                                         <th style="padding: 10px; border: 1px solid #d1d5db; width: 60px; text-align: center; color: #047857;">موجب</th>
@@ -9336,7 +9558,7 @@ function openDirectGradingStudent(studentId) {
     // Handle Ijazat Note visibility
     const visSelect = document.getElementById('rate-note-visibility');
     if (visSelect) {
-        if (state.currentLevel === 'ijazat') {
+        if (isAdultLevel()) {
             visSelect.value = 'student'; // Always to student
             visSelect.classList.add('hidden'); // Hide it completely
         } else {
@@ -9346,34 +9568,8 @@ function openDirectGradingStudent(studentId) {
 
     if(document.getElementById('rate-note-text')) document.getElementById('rate-note-text').value = '';
     
-    // Show quran section
-    const quranSec = document.getElementById('rate-quran-section');
-    if (quranSec) {
-        quranSec.classList.remove('hidden');
-        const startSuraMemorization = document.getElementById('rate-quran-start-sura-memorization');
-        if (startSuraMemorization && startSuraMemorization.options.length <= 1) {
-            const suras = window.QuranService.getSuras();
-            const optionsHtml = suras.map(sur => `<option value="${sur.number}">${sur.name}</option>`).join('');
-            ['memorization', 'review'].forEach(type => {
-                const sSura = document.getElementById(`rate-quran-start-sura-${type}`);
-                const eSura = document.getElementById(`rate-quran-end-sura-${type}`);
-                if(sSura) sSura.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
-                if(eSura) eSura.innerHTML = `<option value="">السورة..</option>` + optionsHtml;
-            });
-        }
-        ['memorization', 'review'].forEach(type => {
-            const startS = document.getElementById(`rate-quran-start-sura-${type}`);
-            const endS = document.getElementById(`rate-quran-end-sura-${type}`);
-            if(startS) startS.value = "";
-            if(endS) endS.value = "";
-            const startA = document.getElementById(`rate-quran-start-aya-${type}`);
-            if(startA) { startA.innerHTML = '<option value="">الآية..</option>'; startA.disabled = true; }
-            const endA = document.getElementById(`rate-quran-end-aya-${type}`);
-            if(endA) { endA.innerHTML = '<option value="">الآية..</option>'; endA.disabled = true; }
-            const gradeEl = document.getElementById(`rate-quran-grade-${type}`);
-            if(gradeEl) gradeEl.value = "";
-        });
-    }
+    // Show and initialize quran section
+    setupQuranGradingUI(s);
 
     const grid = $('#criteria-buttons-grid');
     grid.innerHTML = `
@@ -9489,7 +9685,7 @@ async function submitAbsence(label, points) {
         // 2. WhatsApp Notification
         if (student && student.studentNumber) {
             const phone = student.studentNumber;
-            const msg = state.currentLevel === 'ijazat' 
+            const msg = isAdultLevel() 
                 ? `السلام عليكم يا أخي ${student.name}،\nتم تسجيل غياب لك اليوم (${label}).\nنرجو الحرص على الحضور والمتابعة.`
                 : `السلام عليكم ولي أمر الطالب ${student.name}،\nتم تسجيل غياب للطالب اليوم (${label}).\nنرجو الحرص على الحضور.`;
 
@@ -9986,7 +10182,7 @@ function ensureRateStudentModal() {
             <div class="p-6 overflow-y-auto flex-1">
                 <p id="rate-date-display" class="text-xs text-gray-500 text-center mb-2 font-bold"></p>
 
-                <div id="rate-quran-section" class="hidden mb-4 space-y-4">
+                <div id="rate-quran-section" class="hidden mb-4 space-y-3 max-h-[55vh] overflow-y-auto pr-1 custom-scrollbar">
                     <!-- Hifz Box -->
                     <div id="rate-quran-hifz-box" class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right space-y-3 shadow-sm">
                         <div class="flex items-center justify-between">
@@ -10051,7 +10247,12 @@ function ensureRateStudentModal() {
                         </div>
                     </div>
 
-                    <!-- Murajaa Box -->
+                    <!-- Readings Box (Dynamic for Ijazat) -->
+                    <div id="rate-quran-readings-box" class="hidden space-y-3">
+                        <!-- Dynamic content for each reading will be inserted here -->
+                    </div>
+
+                    <!-- Murajaa Box (shown for abu_bakr, hidden for ijazat) -->
                     <div id="rate-quran-review-box" class="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right space-y-3 shadow-sm">
                         <div class="flex items-center justify-between">
                             <h4 class="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">🔄 تسجيل مراجعة أو مراجعة كبرى</h4>
@@ -10060,7 +10261,6 @@ function ensureRateStudentModal() {
                             </button>
                         </div>
 
-                        <!-- الحقول اليدوية المعتادة للمراجعة -->
                         <div id="rate-quran-review-fields" class="space-y-3">
                             <div class="grid grid-cols-2 gap-2">
                                 <div>
@@ -10114,7 +10314,8 @@ function ensureRateStudentModal() {
                             </div>
                         </div>
                     </div>
-                </div>                     
+
+                </div>
                 <div id="rate-quran-plan-display" class="hidden mb-3 text-sm text-center bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 p-2 rounded-lg font-bold text-emerald-800 dark:text-emerald-400"></div>
 
                 <div class="mb-4 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
@@ -10128,9 +10329,9 @@ function ensureRateStudentModal() {
                     <textarea id="rate-note-text" rows="2" class="w-full bg-white dark:bg-gray-700 border border-yellow-200 rounded-lg px-2 py-2 text-xs" placeholder="اكتب الملاحظة هنا..."></textarea>
                     <div class="space-y-2">
                         <select id="rate-note-visibility" class="w-full bg-white dark:bg-gray-700 border border-yellow-200 rounded-lg px-2 py-2 text-xs font-bold text-gray-600">
-                            <option value="both">${state.currentLevel === 'ijazat' ? 'للجميع' : 'للطالب وولي الأمر'}</option>
-                            <option value="student">${state.currentLevel === 'ijazat' ? 'خاص بي فقط' : 'للطالب فقط'}</option>
-                            <option value="parent">${state.currentLevel === 'ijazat' ? 'للآخرين فقط' : 'لولي الأمر فقط'}</option>
+                            <option value="both">${isAdultLevel() ? 'للجميع' : 'للطالب وولي الأمر'}</option>
+                            <option value="student">${isAdultLevel() ? 'خاص بي فقط' : 'للطالب فقط'}</option>
+                            <option value="parent">${isAdultLevel() ? 'للآخرين فقط' : 'لولي الأمر فقط'}</option>
                         </select>
                         <button onclick="submitNote()" class="w-full py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
                             <i data-lucide="send" class="w-4 h-4"></i> إرسال الملاحظة
@@ -10222,7 +10423,7 @@ function openCollectiveNoteModal() {
     // Auto-hide visibility options for ijazat adult circles
     const visibilityContainer = $('#collective-note-visibility-container');
     if (visibilityContainer) {
-        if (state.currentLevel === 'ijazat') {
+        if (isIjazatLevel()) {
             visibilityContainer.style.display = 'none';
             $('#collective-note-visibility').value = 'student'; // Force student only
         } else {
@@ -10326,8 +10527,8 @@ async function submitCollectiveNote() {
     lucide.createIcons();
 
     let criteriaName = "ملاحظة المعلم (جماعية)";
-    if(visibility === 'student') criteriaName += state.currentLevel === 'ijazat' ? " (مباشرة)" : ` (لـ${getLabel('student')} فقط)`;
-    else if(visibility === 'parent') criteriaName += state.currentLevel === 'ijazat' ? " (للآخرين فقط)" : ` (لـ${getLabel('parent')} فقط)`;
+    if(visibility === 'student') criteriaName += isAdultLevel() ? " (مباشرة)" : ` (لـ${getLabel('student')} فقط)`;
+    else if(visibility === 'parent') criteriaName += isAdultLevel() ? " (للآخرين فقط)" : ` (لـ${getLabel('parent')} فقط)`;
 
     try {
         const batch = window.firebaseOps.writeBatch(window.db);
@@ -11593,12 +11794,20 @@ async function loadPlanTrackingForStudent(studentId, dateStr) {
     try {
         const entries = await getStudentPlanEntriesForDate(studentId, dateStr);
 
+        const st = state.students.find(x => x.id === studentId);
+        const hasHafs = st && st.readings ? st.readings.includes('حفص عن عاصم') : true;
         const hBox = document.getElementById('rate-quran-hifz-box');
         const rBox = document.getElementById('rate-quran-review-box');
         if (quranSec) {
             quranSec.classList.remove('hidden');
-            if (hBox) hBox.classList.remove('hidden');
-            if (rBox) rBox.classList.remove('hidden');
+            if (hBox) {
+                if (isIjazatLevel() && !hasHafs) hBox.classList.add('hidden');
+                else hBox.classList.remove('hidden');
+            }
+            if (rBox) {
+                if (isIjazatLevel()) rBox.classList.add('hidden');
+                else rBox.classList.remove('hidden');
+            }
         }
 
         if (entries.length === 0) {
@@ -11653,10 +11862,18 @@ async function loadPlanTrackingForStudent(studentId, dateStr) {
         planBlock.classList.add('hidden');
         if (quranSec) {
             quranSec.classList.remove('hidden');
+            const st = state.students.find(x => x.id === studentId);
+            const hasHafs = st && st.readings ? st.readings.includes('حفص عن عاصم') : true;
             const hBox = document.getElementById('rate-quran-hifz-box');
             const rBox = document.getElementById('rate-quran-review-box');
-            if (hBox) hBox.classList.remove('hidden');
-            if (rBox) rBox.classList.remove('hidden');
+            if (hBox) {
+                if (isIjazatLevel() && !hasHafs) hBox.classList.add('hidden');
+                else hBox.classList.remove('hidden');
+            }
+            if (rBox) {
+                if (isIjazatLevel()) rBox.classList.add('hidden');
+                else rBox.classList.remove('hidden');
+            }
         }
     }
 }

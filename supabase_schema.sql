@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS students (
     level TEXT NOT NULL,
     icon TEXT,
     password TEXT,
+    readings JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -25,6 +26,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='last_association_exam') THEN
         ALTER TABLE students ADD COLUMN last_association_exam TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='readings') THEN
+        ALTER TABLE students ADD COLUMN readings JSONB DEFAULT '[]'::jsonb;
     END IF;
 END $$;
 
