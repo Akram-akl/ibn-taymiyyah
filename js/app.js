@@ -4348,6 +4348,14 @@ function renderCriteriaButtons(existingScores) {
                     <i data-lucide="file-text" class="w-4 h-4"></i>
                     <span>تقرير أسبوعي</span>
                 </button>
+                <button onclick="recordLate()" class="bg-yellow-50 text-yellow-700 border border-yellow-200 py-3 rounded-xl font-bold hover:bg-yellow-100 transition flex items-center justify-center gap-2">
+                    <i data-lucide="clock" class="w-4 h-4"></i>
+                    <span>تسجيل تأخير</span>
+                </button>
+                <button onclick="recordNoUniform()" class="bg-blue-50 text-blue-700 border border-blue-200 py-3 rounded-xl font-bold hover:bg-blue-100 transition flex items-center justify-center gap-2">
+                    <i data-lucide="shirt" class="w-4 h-4"></i>
+                    <span>عدم إحضار الزي</span>
+                </button>
             </div>
             ${absUndoBtn}
         </div>
@@ -5619,6 +5627,38 @@ async function confirmAbsence(type) {
             : "السلام عليكم ولي أمر الطالب " + student.name + "،\nتم تسجيل غياب للطالب اليوم (" + label + ").\nنرجو الحرص على الحضور.";
 
         var url = "https://wa.me/" + phone + "?text=" + encodeURIComponent(msg);
+        window.location.href = url;
+    }
+}
+
+async function recordLate() {
+    const label = 'تأخير';
+    await submitScore('LATE_RECORD', 0, label, 'info');
+    showToast('تم تسجيل التأخير', 'success');
+
+    const student = state.students.find(s => s.id === currentRateStudentId);
+    if (student && student.studentNumber) {
+        const phone = student.studentNumber;
+        const msg = isAdultLevel()
+            ? `السلام عليكم يا أخي ${student.name}،\nتم تسجيل تأخيرك عن الحلقة اليوم.\nنرجو الحرص على الالتزام بالوقت.`
+            : `السلام عليكم ولي أمر الطالب ${student.name}،\nتم تسجيل تأخير الطالب عن الحلقة اليوم.\nنرجو الحرص على الانضباط.`;
+        const url = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(msg);
+        window.location.href = url;
+    }
+}
+
+async function recordNoUniform() {
+    const label = 'عدم إحضار الزي';
+    await submitScore('NO_UNIFORM_RECORD', 0, label, 'info');
+    showToast('تم تسجيل عدم إحضار الزي', 'success');
+
+    const student = state.students.find(s => s.id === currentRateStudentId);
+    if (student && student.studentNumber) {
+        const phone = student.studentNumber;
+        const msg = isAdultLevel()
+            ? `السلام عليكم يا أخي ${student.name}،\nتنبيه: لم يتم إحضار الزي المطلوب اليوم.\nنرجو الالتزام بالزي في الجلسات القادمة.`
+            : `السلام عليكم ولي أمر الطالب ${student.name}،\nتنبيه: لم يحضر الطالب الزي المطلوب اليوم.\nنرجو الالتزام بالزي في الجلسات القادمة.`;
+        const url = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(msg);
         window.location.href = url;
     }
 }
@@ -9585,6 +9625,14 @@ function openDirectGradingStudent(studentId) {
             <button onclick="generateWeeklyReport()" class="bg-emerald-50 text-emerald-700 border border-emerald-200 py-3 rounded-xl font-bold hover:bg-emerald-100 transition flex items-center justify-center gap-2">
                 <i data-lucide="file-text" class="w-4 h-4"></i>
                 <span>تقرير أسبوعي</span>
+            </button>
+            <button onclick="recordLate()" class="bg-yellow-50 text-yellow-700 border border-yellow-200 py-3 rounded-xl font-bold hover:bg-yellow-100 transition flex items-center justify-center gap-2">
+                <i data-lucide="clock" class="w-4 h-4"></i>
+                <span>تسجيل تأخير</span>
+            </button>
+            <button onclick="recordNoUniform()" class="bg-blue-50 text-blue-700 border border-blue-200 py-3 rounded-xl font-bold hover:bg-blue-100 transition flex items-center justify-center gap-2">
+                <i data-lucide="shirt" class="w-4 h-4"></i>
+                <span>عدم إحضار الزي</span>
             </button>
             <button id="absence-undo-btn" class="hidden col-span-2"></button>
             <button onclick="openTransferStudent('${studentId}')" class="col-span-2 bg-purple-50 text-purple-700 border border-purple-200 py-3 rounded-xl font-bold hover:bg-purple-100 transition flex items-center justify-center gap-2">
