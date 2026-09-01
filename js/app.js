@@ -431,6 +431,30 @@ function normalizePhone(phone) {
     return cleaned;
 }
 
+function openWhatsApp(phone, text) {
+    const encodedText = encodeURIComponent(text || '');
+    let url = '';
+    if (phone) {
+        const cleanPhone = normalizePhone(phone);
+        url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`;
+    } else {
+        url = `https://api.whatsapp.com/send?text=${encodedText}`;
+    }
+
+    try {
+        const link = document.createElement('a');
+        link.href = url;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+            if (link && link.parentNode) link.parentNode.removeChild(link);
+        }, 500);
+    } catch (e) {
+        window.location.href = url;
+    }
+}
+
 // Helper: returns true if the value is a displayable image (base64 OR external URL)
 function isImgSrc(src) {
     if (!src) return false;
@@ -3233,8 +3257,7 @@ async function generateGroupWeeklyReport(groupId) {
         reportText += `\nشاكرين جهودكم 🌹`;
 
         // 5. Open WhatsApp (Generic)
-        const url = `https://wa.me/?text=${encodeURIComponent(reportText)}`;
-        window.location.href = url;
+        openWhatsApp(null, reportText);
 
     } catch (e) {
         console.error(e);
@@ -5716,13 +5739,11 @@ async function confirmAbsence(type) {
     // Notify Parent via WhatsApp
     var student = state.students.find(function (s) { return s.id === currentRateStudentId; });
     if (student && student.studentNumber) {
-        var phone = student.studentNumber;
         var msg = isAdultLevel() 
             ? "السلام عليكم يا أخي " + student.name + "،\nتم تسجيل غياب لك اليوم (" + label + ").\nنرجو الحرص على الحضور والمتابعة."
             : "السلام عليكم ولي أمر الطالب " + student.name + "،\nتم تسجيل غياب للطالب اليوم (" + label + ").\nنرجو الحرص على الحضور.";
 
-        var url = "https://wa.me/" + phone + "?text=" + encodeURIComponent(msg);
-        window.location.href = url;
+        openWhatsApp(student.studentNumber, msg);
     }
 }
 
@@ -5733,12 +5754,10 @@ async function recordLate() {
 
     const student = state.students.find(s => s.id === currentRateStudentId);
     if (student && student.studentNumber) {
-        const phone = student.studentNumber;
         const msg = isAdultLevel()
             ? `السلام عليكم يا أخي ${student.name}،\nتم تسجيل تأخيرك عن الحلقة اليوم.\nنرجو الحرص على الالتزام بالوقت.`
             : `السلام عليكم ولي أمر الطالب ${student.name}،\nتم تسجيل تأخير الطالب عن الحلقة اليوم.\nنرجو الحرص على الانضباط.`;
-        const url = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(msg);
-        window.location.href = url;
+        openWhatsApp(student.studentNumber, msg);
     }
 }
 
@@ -5749,12 +5768,10 @@ async function recordNoUniform() {
 
     const student = state.students.find(s => s.id === currentRateStudentId);
     if (student && student.studentNumber) {
-        const phone = student.studentNumber;
         const msg = isAdultLevel()
             ? `السلام عليكم يا أخي ${student.name}،\nتنبيه: لم يتم إحضار الزي المطلوب اليوم.\nنرجو الالتزام بالزي في الجلسات القادمة.`
             : `السلام عليكم ولي أمر الطالب ${student.name}،\nتنبيه: لم يحضر الطالب الزي المطلوب اليوم.\nنرجو الالتزام بالزي في الجلسات القادمة.`;
-        const url = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(msg);
-        window.location.href = url;
+        openWhatsApp(student.studentNumber, msg);
     }
 }
 
@@ -5773,6 +5790,11 @@ async function generateWeeklyReport() {
 
     // 1. Calculate Date Range (based on active days)
     const dateStrings = generateReportDatesForPreviousPeriod();
+    // أضف اليوم الحالي دائماً لضمان ظهور سجلات اليوم
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (!dateStrings.includes(todayStr)) {
+        dateStrings.push(todayStr);
+    }
     if (!dateStrings || dateStrings.length === 0) {
         showToast("لا توجد أيام مفعلة في الجدول", "error");
         return;
@@ -5934,11 +5956,39 @@ async function generateWeeklyReport() {
         if (!isDirectGrading) {
             reportText += `✨ *المجموع النهائي: ${totalEarned} / ${totalPossible}*\n`;
         }
+
+        // إضافة التأخير وعدم إحضار الزي إن وُجدا
+        const lateRecords = scores.filter(s => s.criteriaId === 'LATE_RECORD');
+        const noUniformRecords = scores.filter(s => s.criteriaId === 'NO_UNIFORM_RECORD');
+        if (lateRecords.length > 0) {
+            reportText += `⏰ حالات التأخير: ${lateRecords.length} مرة\n`;
+        }
+        if (noUniformRecords.length > 0) {
+            reportText += `👕 عدم إحضار الزي: ${noUniformRecords.length} مرة\n`;
+        }
+
+        // إضافة ملخص الروايات (لحلقة الإجازات)
+        const readingScores = scores.filter(s => s.criteriaId && s.criteriaId.startsWith('READING_'));
+        if (readingScores.length > 0) {
+            // تجميع التقييمات لكل رواية
+            const readingMap = {};
+            readingScores.forEach(s => {
+                const name = s.criteriaName || s.criteriaId;
+                if (!readingMap[name]) readingMap[name] = {};
+                const grade = s.quranGrade || 'بدون تقييم';
+                readingMap[name][grade] = (readingMap[name][grade] || 0) + 1;
+            });
+            reportText += `\n📖 ملخص الروايات:\n`;
+            for (const [reading, grades] of Object.entries(readingMap)) {
+                const gradeStr = Object.entries(grades).map(([g, c]) => `${c} ${g}`).join('، ');
+                reportText += `  • ${reading}: ${gradeStr}\n`;
+            }
+        }
+
         reportText += `\n${isAdultLevel() ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
 
         // Send
-        const url = `https://wa.me/${student.studentNumber}?text=${encodeURIComponent(reportText)}`;
-        window.location.href = url;
+        openWhatsApp(student.studentNumber, reportText);
 
     } catch (e) {
         console.error(e);
@@ -7020,8 +7070,7 @@ function contactTeacher(studentName, teacherPhone) {
         messageText = `السلام عليكم ورحمة الله وبركاته`;
     }
 
-    const message = encodeURIComponent(messageText);
-    window.location.href = `https://wa.me/${teacherPhone}?text=${message}`;
+    openWhatsApp(teacherPhone, messageText);
 }
 
 function openTeacherSelectionModal() {
@@ -8814,8 +8863,7 @@ async function generateDirectGradingPDFReport(startDate, endDate) {
         reportText += `\n------------------\n`;
         reportText += `\n${isAdultLevel() ? 'شاكرين جهودكم 🌹' : 'شاكرين تعاونكم 🌹'}`;
 
-        const url = `https://wa.me/?text=${encodeURIComponent(reportText)}`;
-        window.location.href = url;
+        openWhatsApp(null, reportText);
     } catch (e) {
         console.error(e);
         showToast("خطأ في إعداد التقرير", "error");
@@ -9854,13 +9902,11 @@ async function submitAbsence(label, points) {
         
         // 2. WhatsApp Notification
         if (student && student.studentNumber) {
-            const phone = student.studentNumber;
             const msg = isAdultLevel() 
                 ? `السلام عليكم يا أخي ${student.name}،\nتم تسجيل غياب لك اليوم (${label}).\nنرجو الحرص على الحضور والمتابعة.`
                 : `السلام عليكم ولي أمر الطالب ${student.name}،\nتم تسجيل غياب للطالب اليوم (${label}).\nنرجو الحرص على الحضور.`;
 
-            const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
-            window.location.href = url;
+            openWhatsApp(student.studentNumber, msg);
         }
 
         showToast("تم تسجيل الغياب بنجاح");
