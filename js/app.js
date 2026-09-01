@@ -3626,10 +3626,12 @@ async function refreshCriteriaButtons(studentId, compId, date) {
     if (!studentId || !compId || !date) return;
     const existingScores = await loadExistingScoresForDate(studentId, compId, date);
     renderCriteriaButtons(existingScores);
-    // تحديث حالة زر الغياب وزر القرآن والملاحظة
+    // تحديث حالة زر الغياب وزر القرآن والملاحظة والتأخير والزي
     updateAbsenceUndoButton(existingScores);
     updateQuranUndoButtons(existingScores);
     updateNoteUndoButton(existingScores);
+    updateLateUndoButton(existingScores);
+    updateNoUniformUndoButton(existingScores);
 }
 
 /**
@@ -3643,6 +3645,30 @@ function updateAbsenceUndoButton(existingScores) {
         absenceUndoEl.setAttribute('data-score-id', absenceRecord.id);
     } else if (absenceUndoEl) {
         absenceUndoEl.classList.add('hidden');
+    }
+}
+
+function updateLateUndoButton(existingScores) {
+    const el = document.getElementById('late-undo-btn');
+    const record = existingScores['LATE_RECORD'];
+    if (record && el) {
+        el.classList.remove('hidden');
+        el.setAttribute('data-score-id', record.id);
+        el.onclick = () => undoScoreById(record.id, el, '↩ إلغاء التأخير');
+    } else if (el) {
+        el.classList.add('hidden');
+    }
+}
+
+function updateNoUniformUndoButton(existingScores) {
+    const el = document.getElementById('no-uniform-undo-btn');
+    const record = existingScores['NO_UNIFORM_RECORD'];
+    if (record && el) {
+        el.classList.remove('hidden');
+        el.setAttribute('data-score-id', record.id);
+        el.onclick = () => undoScoreById(record.id, el, '↩ إلغاء عدم الزي');
+    } else if (el) {
+        el.classList.add('hidden');
     }
 }
 
@@ -3678,9 +3704,45 @@ function updateQuranUndoButtons(existingScores) {
  */
 async function updateNoteUndoButton(existingScores) {
     const noteUndoEl = document.getElementById('note-undo-btn');
-    // الملاحظات لا تُستبدل (تُضاف جديدة دائماً) — نبحث عن آخر واحدة في اليوم
+    if (!noteUndoEl) return;
+
+    // إذا مررنا null فنتجاهل الكاش ونعيد تحميل حقيقي
+    if (existingScores === null) {
+        const date = document.getElementById('modal-grading-date')?.value;
+        if (!date || !currentRateStudentId) return;
+        try {
+            const q = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, 'scores'),
+                window.firebaseOps.where('studentId', '==', currentRateStudentId),
+                window.firebaseOps.where('date', '==', date),
+                window.firebaseOps.where('criteriaId', '==', 'TEACHER_NOTE')
+            );
+            const snap = await window.firebaseOps.getDocs(q);
+            if (!snap.empty) {
+                const lastNote = snap.docs[snap.docs.length - 1];
+                noteUndoEl.classList.remove('hidden');
+                noteUndoEl.setAttribute('data-score-id', lastNote.id);
+            } else {
+                noteUndoEl.classList.add('hidden');
+            }
+        } catch(e) { /* تجاهل */ }
+        return;
+    }
+
+    // إذا مررنا existingScores نفحص فيه أولاً
+    if (existingScores && existingScores['TEACHER_NOTE']) {
+        const rec = existingScores['TEACHER_NOTE'];
+        noteUndoEl.classList.remove('hidden');
+        noteUndoEl.setAttribute('data-score-id', rec.id);
+        return;
+    }
+
+    // إذا لم يكن في existingScores فابحث مباشرة
     const date = document.getElementById('modal-grading-date')?.value;
-    if (!date || !currentRateStudentId || !noteUndoEl) return;
+    if (!date || !currentRateStudentId) {
+        noteUndoEl.classList.add('hidden');
+        return;
+    }
     try {
         const q = window.firebaseOps.query(
             window.firebaseOps.collection(window.db, 'scores'),
@@ -3690,7 +3752,6 @@ async function updateNoteUndoButton(existingScores) {
         );
         const snap = await window.firebaseOps.getDocs(q);
         if (!snap.empty) {
-            // آخر ملاحظة
             const lastNote = snap.docs[snap.docs.length - 1];
             noteUndoEl.classList.remove('hidden');
             noteUndoEl.setAttribute('data-score-id', lastNote.id);
@@ -3971,8 +4032,12 @@ function setupQuranGradingUI(s) {
                                 <i data-lucide="save" class="w-3.5 h-3.5"></i>حفظ
                             </button>
                         </div>
+                        <button id="${safeId}-undo" class="hidden w-full py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition flex items-center justify-center gap-1.5 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400">
+                            <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء تسجيل ${reading}
+                        </button>
                     </div>
                     `;
+
                 });
                 readingsBox.innerHTML = html;
                 if (window.lucide) window.lucide.createIcons();
@@ -4337,6 +4402,24 @@ function renderCriteriaButtons(existingScores) {
            </button>`
         : `<button id="absence-undo-btn" class="hidden"></button>`;
 
+    const lateExisting = existingScores['LATE_RECORD'];
+    const lateUndoBtn = lateExisting
+        ? `<button id="late-undo-btn" data-score-id="${lateExisting.id}"
+               onclick="undoScoreById('${lateExisting.id}', this, '↩ إلغاء التأخير')"
+               class="w-full py-2 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-xl text-xs font-bold hover:bg-yellow-100 transition flex items-center justify-center gap-1.5 dark:bg-yellow-900/20 dark:border-yellow-800 dark:text-yellow-400">
+               <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء التأخير المسجّل
+           </button>`
+        : `<button id="late-undo-btn" class="hidden"></button>`;
+
+    const uniformExisting = existingScores['NO_UNIFORM_RECORD'];
+    const uniformUndoBtn = uniformExisting
+        ? `<button id="no-uniform-undo-btn" data-score-id="${uniformExisting.id}"
+               onclick="undoScoreById('${uniformExisting.id}', this, '↩ إلغاء عدم الزي')"
+               class="w-full py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold hover:bg-blue-100 transition flex items-center justify-center gap-1.5 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400">
+               <i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء تسجيل عدم الزي
+           </button>`
+        : `<button id="no-uniform-undo-btn" class="hidden"></button>`;
+
     grid.innerHTML = criteriaHtml + `
         <div class="col-span-1 mt-4 space-y-2 w-full">
             <div class="grid grid-cols-2 gap-3">
@@ -4358,6 +4441,8 @@ function renderCriteriaButtons(existingScores) {
                 </button>
             </div>
             ${absUndoBtn}
+            ${lateUndoBtn}
+            ${uniformUndoBtn}
         </div>
         ${currentGradingCompId !== 'DIRECT_GRADING' ? `
         <div class="col-span-1 mt-1 w-full flex gap-2">
@@ -4517,8 +4602,8 @@ async function submitNote() {
         await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
         showToast("تم إرسال الملاحظة بنجاح", "success");
         $('#rate-note-text').value = '';
-        // تحديث زر التراجع
-        updateNoteUndoButton({});
+        // تحديث زر التراجع بعد الحفظ (إعادة تحميل حقيقي)
+        updateNoteUndoButton(null);
     } catch (e) {
         console.error(e);
         showToast("خطأ في الإرسال", "error");
@@ -4747,13 +4832,23 @@ window.submitReadingNote = async (readingName, safeId) => {
             window.firebaseOps.where("criteriaId", "==", criteriaId)
         );
         const snap = await window.firebaseOps.getDocs(q);
+        let scoreId = null;
         if (!snap.empty) {
-            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "scores", snap.docs[0].id), data);
+            scoreId = snap.docs[0].id;
+            await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "scores", scoreId), data);
             showToast(`تم تعديل بيانات ${readingName}`, "success");
         } else {
             data.createdAt = new Date();
-            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
+            const ref = await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "scores"), data);
+            scoreId = ref.id;
             showToast(`تم تسجيل ${readingName} بنجاح ✨`, "success");
+        }
+        // إظهار زر التراجع
+        const undoBtn = document.getElementById(`${safeId}-undo`);
+        if (undoBtn && scoreId) {
+            undoBtn.classList.remove('hidden');
+            undoBtn.onclick = () => undoScoreById(scoreId, undoBtn, `↩ إلغاء ${readingName}`);
+            if (window.lucide) window.lucide.createIcons();
         }
     } catch (e) {
         console.error("Submission Error:", e);
@@ -6540,7 +6635,9 @@ window.renderStudentCalendar = (year, month) => {
         scoresByDate[s.date].points += (parseFloat(s.points) || 0);
         scoresByDate[s.date].criteria.push(s.criteriaName || (s.criteriaId === 'ABSENCE_RECORD' ? 'غياب' : 'أخرى'));
         
-        if (s.criteriaId === 'TEACHER_NOTE' && s.noteText) {
+        if (s.criteriaId === 'TEACHER_NOTE' && (s.noteText || s.note_text)) {
+            // توحيد camelCase و snake_case
+            if (!s.noteText && s.note_text) s.noteText = s.note_text;
             scoresByDate[s.date].notes.push(s);
         }
         if (s.quranType) {
@@ -6817,6 +6914,11 @@ window.showDayDetails = (dateStr) => {
             const isAbsence = s.criteriaId === 'ABSENCE_RECORD';
             const isQuran = s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW';
             const isNote = s.criteriaId === 'TEACHER_NOTE';
+            const isReading = s.criteriaId && s.criteriaId.startsWith('READING_');
+            const isLate = s.criteriaId === 'LATE_RECORD';
+            const isNoUniform = s.criteriaId === 'NO_UNIFORM_RECORD';
+            // توحيد حقل الملاحظة
+            const noteContent = s.noteText || s.note_text || '';
 
             let badge = '';
             if (isQuran) {
@@ -6825,6 +6927,12 @@ window.showDayDetails = (dateStr) => {
                 badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-red-100 text-red-700">غياب ❌</span>`;
             } else if (isNote) {
                 badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-yellow-100 text-yellow-800">💬 ملاحظة</span>`;
+            } else if (isReading) {
+                badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-blue-100 text-blue-800">📖 رواية</span>`;
+            } else if (isLate) {
+                badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-yellow-100 text-yellow-700">⏰ تأخير</span>`;
+            } else if (isNoUniform) {
+                badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-blue-100 text-blue-700">👕 بدون زي</span>`;
             } else if (s.points === 0) {
                 badge = `<span class="text-xs font-bold px-2 py-1 rounded-lg bg-gray-100 text-gray-800">✓ تم الرصد</span>`;
             } else {
@@ -6842,9 +6950,19 @@ window.showDayDetails = (dateStr) => {
                     <span class="font-bold text-sm text-gray-800 dark:text-gray-100">${s.criteriaName || (isAbsence ? 'غياب' : 'تقييم')}</span>
                     ${badge}
                 </div>
-                ${isNote && s.noteText ? `
+                ${(isNote || isReading) && noteContent ? `
                 <div class="mt-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
-                    ${s.noteText}
+                    ${noteContent}
+                </div>
+                ` : ''}
+                ${isReading && s.quranGrade ? `
+                <div class="mt-1">
+                    <span class="text-xs font-bold px-2 py-1 rounded-lg inline-block ${
+                        s.quranGrade === 'ممتاز' ? 'bg-green-100 text-green-700' :
+                        s.quranGrade === 'جيد جداً' ? 'bg-emerald-100 text-emerald-700' :
+                        s.quranGrade === 'مقبول' ? 'bg-yellow-100 text-yellow-700' :
+                        s.quranGrade === 'سيء' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'
+                    }">🏅 ${s.quranGrade}</span>
                 </div>
                 ` : ''}
                 ${s.quranSection ? `
