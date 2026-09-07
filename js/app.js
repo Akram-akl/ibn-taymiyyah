@@ -1286,9 +1286,9 @@ function renderStudents() {
             <!-- Search Bar -->
             ${(state.isAdmin || state.currentLevel === 'admin') ? `
             <div class="flex gap-2 mb-3 overflow-x-auto custom-scrollbar pb-1">
-                <button onclick="state.adminStudentHalqaFilter=''; window._studentAffairsVisibleCount=5; updateStudentsListUI(filterStudents(document.getElementById('student-search-input') ? document.getElementById('student-search-input').value : '', true)); document.querySelectorAll('.halqa-filter-btn').forEach(b => {b.classList.remove('bg-purple-600','text-white'); b.classList.add('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300')}); this.classList.remove('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300'); this.classList.add('bg-purple-600','text-white')" class="halqa-filter-btn whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition bg-purple-600 text-white shadow-sm border border-transparent">الكل</button>
+                <button onclick="state.adminStudentHalqaFilter=''; updateStudentsListUI(filterStudents(document.getElementById('student-search-input') ? document.getElementById('student-search-input').value : '', true)); document.querySelectorAll('.halqa-filter-btn').forEach(b => {b.classList.remove('bg-purple-600','text-white'); b.classList.add('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300')}); this.classList.remove('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300'); this.classList.add('bg-purple-600','text-white')" class="halqa-filter-btn whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition bg-purple-600 text-white shadow-sm border border-transparent">الكل</button>
                 ${Object.keys(LEVELS).filter(k => k !== 'admin' && !LEVELS[k].hidden).map(k => `
-                    <button onclick="state.adminStudentHalqaFilter='${k}'; window._studentAffairsVisibleCount=5; updateStudentsListUI(filterStudents(document.getElementById('student-search-input') ? document.getElementById('student-search-input').value : '', true)); document.querySelectorAll('.halqa-filter-btn').forEach(b => {b.classList.remove('bg-purple-600','text-white'); b.classList.add('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300')}); this.classList.remove('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300'); this.classList.add('bg-purple-600','text-white')" class="halqa-filter-btn whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 shadow-sm border border-transparent hover:border-purple-300">${LEVELS[k].name}</button>
+                    <button onclick="state.adminStudentHalqaFilter='${k}'; updateStudentsListUI(filterStudents(document.getElementById('student-search-input') ? document.getElementById('student-search-input').value : '', true)); document.querySelectorAll('.halqa-filter-btn').forEach(b => {b.classList.remove('bg-purple-600','text-white'); b.classList.add('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300')}); this.classList.remove('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300'); this.classList.add('bg-purple-600','text-white')" class="halqa-filter-btn whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 shadow-sm border border-transparent hover:border-purple-300">${LEVELS[k].name}</button>
                 `).join('')}
             </div>` : ''}
             <div class="relative mb-2">
@@ -1473,7 +1473,6 @@ function updateStudentsListUI(filteredList) {
     const list = $('#students-list');
     if (!list) return;
 
-    window._lastFilteredAffairsStudents = filteredList;
     const baseList = filteredList || (state.adminStudentHalqaFilter ? state.students.filter(s => s.level === state.adminStudentHalqaFilter) : state.students);
 
     if (!baseList || baseList.length === 0) {
@@ -1488,34 +1487,7 @@ function updateStudentsListUI(filteredList) {
         return;
     }
 
-    // Helper to calculate absences for each student for sorting
-    function getStudentAbsenceCount(stId, stLevel) {
-        if (state.adminData && state.adminData.levelStats && state.adminData.levelStats[stLevel]?.studentAbsenceMap?.[stId]) {
-            return state.adminData.levelStats[stLevel].studentAbsenceMap[stId].total || 0;
-        }
-        if (state.adminData && state.adminData.allScores) {
-            return state.adminData.allScores.filter(s => s.studentId === stId && s.criteriaId === 'ABSENCE_RECORD').length;
-        }
-        if (state.scores) {
-            return state.scores.filter(s => s.studentId === stId && s.criteriaId === 'ABSENCE_RECORD').length;
-        }
-        return 0;
-    }
-
-    // Sort descending by total absences (most absent first)
-    const sortedStudents = [...baseList].map(st => ({
-        ...st,
-        _absenceCount: getStudentAbsenceCount(st.id, st.level)
-    })).sort((a, b) => b._absenceCount - a._absenceCount);
-
-    if (window._studentAffairsVisibleCount === undefined || window._studentAffairsVisibleCount === null) {
-        window._studentAffairsVisibleCount = 5;
-    }
-
-    const visibleStudents = sortedStudents.slice(0, window._studentAffairsVisibleCount);
-    const hasMore = sortedStudents.length > window._studentAffairsVisibleCount;
-
-    const rowsHtml = visibleStudents.map(student => {
+    const rowsHtml = baseList.map(student => {
         const isImg = isImgSrc(student.icon);
         const iconHtml = isImg
             ? `<img src="${student.icon}" class="w-full h-full object-cover">`
@@ -1549,23 +1521,9 @@ function updateStudentsListUI(filteredList) {
         </div>`;
     }).join('');
 
-    const moreBtnHtml = hasMore ? `
-        <div class="p-3 text-center bg-gray-50 dark:bg-gray-700/30 border-t border-gray-100 dark:border-gray-700">
-            <button onclick="window.loadMoreAffairsStudents()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition inline-flex items-center justify-center gap-1.5 mx-auto">
-                <i data-lucide="chevron-down" class="w-4 h-4"></i>
-                <span>عرض المزيد (${sortedStudents.length - window._studentAffairsVisibleCount} متبقي)</span>
-            </button>
-        </div>
-    ` : '';
-
-    list.innerHTML = rowsHtml + moreBtnHtml;
+    list.innerHTML = rowsHtml;
     lucide.createIcons();
 }
-
-window.loadMoreAffairsStudents = function() {
-    window._studentAffairsVisibleCount = (window._studentAffairsVisibleCount || 5) + 5;
-    updateStudentsListUI(window._lastFilteredAffairsStudents);
-};
 
 // نقل الطالب لمرحلة أخرى - فتح نافذة الاختيار
 function openTransferStudent(studentId) {
@@ -6739,6 +6697,10 @@ async function renderParentDashboard() {
 }
 
 async function openStudentReport(studentId) {
+    if (!studentId || studentId === 'undefined' || studentId === 'null') {
+        showToast("معرف الطالب غير صالح", "error");
+        return;
+    }
     const container = $('#view-container');
     container.innerHTML = '<div class="flex justify-center p-8"><i data-lucide="loader-2" class="animate-spin w-8 h-8 text-amber-600"></i></div>';
     lucide.createIcons();
@@ -6747,7 +6709,9 @@ async function openStudentReport(studentId) {
     if (state.isParent) {
         student = state.parentStudents.find(s => s.id === studentId);
     } else {
-        student = window._currentStudentRecord || (state.students && state.students.find(s => s.id === studentId));
+        student = (window._currentStudentRecord && window._currentStudentRecord.id === studentId)
+            ? window._currentStudentRecord
+            : (state.students && state.students.find(s => s.id === studentId));
         if(!student && window._tempLevelStudents) {
             student = window._tempLevelStudents.find(s => s.id === studentId);
         }
@@ -7843,7 +7807,6 @@ async function deleteGroup(groupId) {
 // FEATURE #7: Student Search/Filter
 // =====================================================
 function filterStudents(query, returnOnly = false) {
-    window._studentAffairsVisibleCount = 5;
     let filtered = state.students;
     if (state.adminStudentHalqaFilter) {
         filtered = filtered.filter(s => s.level === state.adminStudentHalqaFilter);
@@ -14385,6 +14348,7 @@ async function fetchAdminDashboardData(forceRefresh = false) {
                 const weeklyAbsenceRate = (stExcused + stUnexcused) / numWeeks;
 
                 studentAbsenceMap[st.id] = {
+                    id: st.id,
                     name: st.name,
                     phone: st.parentPhone || st.studentNumber || '',
                     level: lk,
@@ -14592,7 +14556,13 @@ async function renderAdminDashboard() {
     for (const lk of levelKeys) {
         const ls = levelStats[lk];
         for (const stId in ls.studentAbsenceMap) {
-            allStudentRows.push({ ...ls.studentAbsenceMap[stId], levelKey: lk, levelName: ls.name });
+            const row = ls.studentAbsenceMap[stId];
+            allStudentRows.push({
+                id: row.id || stId,
+                ...row,
+                levelKey: lk,
+                levelName: ls.name
+            });
         }
     }
 
@@ -14616,7 +14586,15 @@ async function renderAdminDashboard() {
         `<option value="${k}" ${state.adminLevelFilter === k ? 'selected' : ''}>${levelStats[k].name}</option>`
     ).join('');
 
-    const studentsTableHtml = filteredStudents.map(st => {
+    // Pagination for Admin Affairs table
+    if (!state.adminAffairsLimit) {
+        state.adminAffairsLimit = 10;
+    }
+    const visibleStudents = filteredStudents.slice(0, state.adminAffairsLimit);
+    const hasMoreAffairs = filteredStudents.length > state.adminAffairsLimit;
+    const remainingAffairsCount = filteredStudents.length - state.adminAffairsLimit;
+
+    const studentsTableHtml = visibleStudents.map(st => {
         const alertClass = st.isAlert ? 'bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500' : '';
         return `
         <tr class="${alertClass}">
@@ -14766,10 +14744,18 @@ async function renderAdminDashboard() {
                             <th class="px-2 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 text-center">تواصل</th>
                         </tr>
                     </thead>
-                    <tbody>${studentsTableHtml}</tbody>
+                    <tbody>${studentsTableHtml || '<tr><td colspan="7" class="text-center text-gray-400 py-4 text-xs">لا يوجد طلاب مطابقون للبحث</td></tr>'}</tbody>
                 </table>
             </div>
-            <p class="text-[10px] text-gray-400 mt-2 text-center">إجمالي: ${filteredStudents.length} ${filteredStudents.some(s => s.isAlert) ? `| ⚠️ ${filteredStudents.filter(s => s.isAlert).length} طالب يحتاج متابعة` : ''}</p>
+            ${hasMoreAffairs ? `
+            <div class="p-3 text-center bg-gray-50 dark:bg-gray-700/30 border-t border-gray-100 dark:border-gray-700 mt-2 rounded-xl">
+                <button onclick="window.loadMoreAdminAffairs()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md transition inline-flex items-center justify-center gap-1.5 mx-auto">
+                    <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                    <span>عرض المزيد (${remainingAffairsCount} متبقي)</span>
+                </button>
+            </div>
+            ` : ''}
+            <p class="text-[10px] text-gray-400 mt-2 text-center">إجمالي: ${filteredStudents.length} ${filteredStudents.length > visibleStudents.length ? `(المعروض: ${visibleStudents.length})` : ''} ${filteredStudents.some(s => s.isAlert) ? `| ⚠️ ${filteredStudents.filter(s => s.isAlert).length} طالب يحتاج متابعة` : ''}</p>
         </div>
 
         <!-- Export & Reports -->
@@ -14800,9 +14786,14 @@ async function renderAdminDashboard() {
 
 // --- Filter students (re-render table only) ---
 function filterAdminStudents() {
-    // Full re-render (lightweight since data is cached)
+    state.adminAffairsLimit = 10;
     renderAdminDashboard();
 }
+
+window.loadMoreAdminAffairs = function() {
+    state.adminAffairsLimit = (state.adminAffairsLimit || 10) + 10;
+    renderAdminDashboard();
+};
 
 // --- Charts ---
 function initAdminCharts(levelStats, levelKeys) {
