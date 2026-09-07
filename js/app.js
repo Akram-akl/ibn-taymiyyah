@@ -200,7 +200,7 @@ function loadAuth() {
 
     // Admin / Supervisor login
     if (savedLevel === 'admin' || (savedIsAdmin && savedRole === 'teacher')) {
-        state.currentLevel = 'admin';
+        state.currentLevel = (savedLevel && (savedLevel === 'admin' || LEVELS[savedLevel])) ? savedLevel : 'admin';
         state.isTeacher = true;
         state.isAdmin = true;
         return true;
@@ -626,39 +626,52 @@ function updateUIMode(skipRefresh = false) {
         if (nav) nav.classList.remove('hidden');
     }
 
-    const levelName = (state.isAdmin || state.currentLevel === 'admin') 
+    const isGeneralAdmin = (state.currentLevel === 'admin');
+    const levelName = isGeneralAdmin 
         ? '🏢 الإدارة العامة' 
         : (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '...');
 
     if (badge) {
-        badge.textContent = levelName;
+        badge.textContent = (state.isAdmin && !isGeneralAdmin)
+            ? `👑 المشرف: ${levelName}`
+            : levelName;
         badge.classList.remove('hidden');
     }
 
-    if (state.isAdmin || state.currentLevel === 'admin') {
+    if (isGeneralAdmin) {
         label.textContent = `المشرف العام 👑`;
         label.className = "text-xs text-purple-300 font-bold";
         btn.innerHTML = '<i data-lucide="log-out" class="w-5 h-5"></i>';
         btn.onclick = logout;
+        btn.title = "تسجيل الخروج";
         btn.className = "p-2 bg-purple-900/80 rounded-full hover:bg-purple-700 transition text-white border border-purple-500/50";
+    } else if (state.isAdmin && !isGeneralAdmin) {
+        label.textContent = `المشرف (${levelName})`;
+        label.className = "text-xs text-purple-300 font-bold";
+        btn.innerHTML = '<i data-lucide="shield" class="w-5 h-5"></i>';
+        btn.onclick = switchToGeneralAdmin;
+        btn.title = "العودة للإدارة العامة";
+        btn.className = "p-2 bg-purple-800/80 rounded-full hover:bg-purple-600 transition text-white border border-purple-500/50";
     } else if (state.isTeacher) {
         label.textContent = `${levelName} - معلم`;
         label.className = "text-xs text-yellow-300 font-bold";
         btn.innerHTML = '<i data-lucide="log-out" class="w-5 h-5"></i>';
         btn.onclick = logout; // Bind logout
+        btn.title = "تسجيل الخروج";
         btn.className = "p-2 bg-red-800/80 rounded-full hover:bg-red-600 transition text-white border border-red-500/50";
     } else {
         label.textContent = `${levelName} - ${getLabel('student')}`;
         label.className = "text-xs text-emerald-300 mt-0.5";
         btn.innerHTML = '<i data-lucide="log-out" class="w-5 h-5"></i>'; // Also logout for student to switch level
         btn.onclick = logout;
+        btn.title = "تسجيل الخروج";
         btn.className = "p-2 bg-emerald-800/80 rounded-full hover:bg-emerald-700 transition text-white border border-emerald-600/50";
     }
 
-    // Toggle nav-admin visibility
+    // Toggle nav-admin visibility (always visible to admin)
     const adminNavBtn = document.getElementById('nav-admin');
     if (adminNavBtn) {
-        if (state.isAdmin || state.currentLevel === 'admin') {
+        if (state.isAdmin || isGeneralAdmin) {
             adminNavBtn.classList.remove('hidden');
             adminNavBtn.style.display = 'flex';
         } else {
@@ -670,7 +683,7 @@ function updateUIMode(skipRefresh = false) {
     // Toggle nav-direct-grading visibility (visible to admin or teachers if enabled)
     const dgNav = document.getElementById('nav-direct-grading');
     if (dgNav) {
-        if (state.isAdmin || state.currentLevel === 'admin' || (state.isTeacher && state.enableDirectGrading)) {
+        if (state.isAdmin || isGeneralAdmin || (state.isTeacher && state.enableDirectGrading)) {
             dgNav.classList.remove('hidden');
             dgNav.style.display = 'flex';
         } else {
@@ -682,7 +695,7 @@ function updateUIMode(skipRefresh = false) {
     // Toggle nav-plans visibility (visible to admin or teachers)
     const plansNav = document.getElementById('nav-plans');
     if (plansNav) {
-        if (state.isAdmin || state.currentLevel === 'admin' || state.isTeacher) {
+        if (state.isAdmin || isGeneralAdmin || state.isTeacher) {
             plansNav.classList.remove('hidden');
             plansNav.style.display = 'flex';
         } else {
@@ -783,7 +796,7 @@ const router = {
 function renderHome() {
     const container = $('#view-container');
 
-    const _isAdminView = (state.isAdmin || state.currentLevel === 'admin');
+    const _isAdminView = (state.currentLevel === 'admin');
     const _isStudentView = (!state.isTeacher && !state.isParent && !_isAdminView);
 
     // If supervisor, show dedicated executive welcome view (avoid leaderboard conflict)
@@ -846,8 +859,28 @@ function renderHome() {
 
     const _hideLeaderboard = state.disableLeaderboard || (state.hideScoresFromStudent && _isStudentView);
 
+    // Supervisor Halqa Banner when viewing a specific halqa
+    const supervisorHalqaBanner = (state.isAdmin && state.currentLevel !== 'admin') ? `
+        <div class="bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 rounded-3xl p-4 text-white shadow-lg flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-xl shrink-0">
+                    👑
+                </div>
+                <div>
+                    <h3 class="font-bold text-sm">أنت تتصفح ${(LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')} بصلاحية المشرف العام</h3>
+                    <p class="text-[11px] text-purple-200">كامل أدوات المعلم وأزرار الرصد وإدارة المسابقات والطلاب مفعلة</p>
+                </div>
+            </div>
+            <button onclick="switchToGeneralAdmin()" class="px-3.5 py-2 bg-white text-purple-800 rounded-xl text-xs font-bold shadow hover:bg-purple-50 active:scale-95 transition flex items-center gap-1.5 shrink-0">
+                <i data-lucide="shield" class="w-4 h-4"></i>
+                <span>العودة للإدارة العامة</span>
+            </button>
+        </div>
+    ` : '';
+
     container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
+            ${supervisorHalqaBanner}
             ${!_hideLeaderboard ? `
             <div class="bg-gradient-to-br from-emerald-600 to-emerald-600 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
                 <div class="absolute -right-10 -top-10 bg-white/10 w-40 h-40 rounded-full blur-2xl"></div>
@@ -1115,12 +1148,12 @@ let adminCompFilter = 'all';
 
 function renderCompetitions() {
     const container = $('#view-container');
-    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
-    const levelTitle = isSupervisor ? 'الإدارة العامة' : (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '');
+    const isGeneralAdmin = (state.currentLevel === 'admin');
+    const levelTitle = isGeneralAdmin ? 'الإدارة العامة' : (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '');
     
-    // Halqa filter bar for supervisor
+    // Halqa filter bar for supervisor ONLY in General Admin mode
     let halqaFilterHTML = '';
-    if (isSupervisor) {
+    if (isGeneralAdmin) {
         halqaFilterHTML = `
             <div class="flex items-center gap-1.5 overflow-x-auto pb-1 mb-3 scrollbar-none">
                 <button onclick="setAdminCompFilter('all')" class="px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition ${adminCompFilter === 'all' ? 'bg-purple-600 text-white shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'}">
@@ -1135,11 +1168,28 @@ function renderCompetitions() {
         `;
     }
 
+    const supervisorHalqaBanner = (state.isAdmin && !isGeneralAdmin) ? `
+        <div class="bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 rounded-2xl p-3.5 text-white shadow-md flex items-center justify-between gap-3 mb-2 flex-wrap">
+            <div class="flex items-center gap-2.5">
+                <span class="text-xl">👑</span>
+                <div>
+                    <div class="font-bold text-xs">مسابقات ${(LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')} بصلاحية المشرف</div>
+                    <div class="text-[10px] text-purple-200">يمكنك إنشاء وتعديل وإدارة مسابقات هذه الحلقة بحرية</div>
+                </div>
+            </div>
+            <button onclick="switchToGeneralAdmin()" class="px-3 py-1.5 bg-white text-purple-800 rounded-xl text-xs font-bold shadow hover:bg-purple-50 transition flex items-center gap-1 shrink-0">
+                <i data-lucide="shield" class="w-3.5 h-3.5"></i>
+                <span>العودة للإدارة</span>
+            </button>
+        </div>
+    ` : '';
+
     container.innerHTML = `
         <div class="space-y-4 animate-fade-in">
+            ${supervisorHalqaBanner}
             <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
                 <h2 class="text-xl font-bold">المسابقات - ${levelTitle}</h2>
-                ${(state.isTeacher || isSupervisor) ? `
+                ${(state.isTeacher || state.isAdmin || isGeneralAdmin) ? `
                 <button onclick="openAddCompetitionModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:bg-emerald-800 transition flex items-center gap-2">
                     <i data-lucide="plus" class="w-4 h-4"></i>
                     جديد
@@ -1174,10 +1224,14 @@ function updateCompetitionsListUI() {
     const list = $('#competitions-list');
     if (!list) return;
 
-    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    const isGeneralAdmin = (state.currentLevel === 'admin');
     let displayedComps = state.competitions || [];
-    if (isSupervisor && adminCompFilter !== 'all') {
-        displayedComps = displayedComps.filter(c => c.level === adminCompFilter);
+    if (isGeneralAdmin) {
+        if (adminCompFilter !== 'all') {
+            displayedComps = displayedComps.filter(c => c.level === adminCompFilter);
+        }
+    } else {
+        displayedComps = displayedComps.filter(c => c.level === state.currentLevel);
     }
 
     if (displayedComps.length === 0) {
@@ -1187,7 +1241,7 @@ function updateCompetitionsListUI() {
                     <i data-lucide="trophy" class="w-8 h-8 text-gray-400"></i>
                 </div>
                 <h3 class="text-gray-900 dark:text-white font-bold">لا توجد مسابقات حالياً</h3>
-                <p class="text-gray-500 text-sm mt-1">${isSupervisor ? 'لا توجد مسابقات لهذه الحلقة' : 'المسابقات التي يتم إنشاؤها ستظهر هنا'}</p>
+                <p class="text-gray-500 text-sm mt-1">${isGeneralAdmin ? 'لا توجد مسابقات لهذه الحلقة' : 'المسابقات التي يتم إنشاؤها ستظهر هنا'}</p>
             </div>
         `;
     } else {
@@ -1261,10 +1315,29 @@ function renderStudents() {
         return;
     }
 
+    const isGeneralAdmin = (state.currentLevel === 'admin');
+
+    const supervisorHalqaBanner = (state.isAdmin && !isGeneralAdmin) ? `
+        <div class="bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 rounded-2xl p-3.5 text-white shadow-md flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <div class="flex items-center gap-2.5">
+                <span class="text-xl">👑</span>
+                <div>
+                    <div class="font-bold text-xs">إدارة طلاب ${(LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')} بصلاحية المشرف العام</div>
+                    <div class="text-[10px] text-purple-200">إضافة وتعديل الطلاب وإدارة إعدادات وجدولة الحلقة بالكامل</div>
+                </div>
+            </div>
+            <button onclick="switchToGeneralAdmin()" class="px-3 py-1.5 bg-white text-purple-800 rounded-xl text-xs font-bold shadow hover:bg-purple-50 transition flex items-center gap-1 shrink-0">
+                <i data-lucide="shield" class="w-3.5 h-3.5"></i>
+                <span>العودة للإدارة</span>
+            </button>
+        </div>
+    ` : '';
+
     container.innerHTML = `
         <div class="space-y-4 animate-fade-in">
+            ${supervisorHalqaBanner}
             <div class="flex justify-between items-center mb-2 gap-2">
-                <h2 class="text-xl font-bold">ال${getLabel('students')} - ${(state.isAdmin || state.currentLevel === 'admin') ? 'جميع الحلقات' : (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')}</h2>
+                <h2 class="text-xl font-bold">ال${getLabel('students')} - ${isGeneralAdmin ? 'جميع الحلقات' : (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')}</h2>
 
                 ${state.isTeacher ? `
                 <div class="flex gap-2 shrink-0">
@@ -1284,7 +1357,7 @@ function renderStudents() {
             <div id="transfer-requests-container" class="space-y-2 mb-4"></div>
 
             <!-- Search Bar -->
-            ${(state.isAdmin || state.currentLevel === 'admin') ? `
+            ${isGeneralAdmin ? `
             <div class="flex gap-2 mb-3 overflow-x-auto custom-scrollbar pb-1">
                 <button onclick="state.adminStudentHalqaFilter=''; updateStudentsListUI(filterStudents(document.getElementById('student-search-input') ? document.getElementById('student-search-input').value : '', true)); document.querySelectorAll('.halqa-filter-btn').forEach(b => {b.classList.remove('bg-purple-600','text-white'); b.classList.add('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300')}); this.classList.remove('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300'); this.classList.add('bg-purple-600','text-white')" class="halqa-filter-btn whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition bg-purple-600 text-white shadow-sm border border-transparent">الكل</button>
                 ${Object.keys(LEVELS).filter(k => k !== 'admin' && !LEVELS[k].hidden).map(k => `
@@ -1323,8 +1396,7 @@ function renderStudents() {
         studentsUnsubscribe = null;
     }
 
-    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
-    const q = isSupervisor
+    const q = isGeneralAdmin
         ? window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"))
         : window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "students"),
@@ -1699,7 +1771,7 @@ function renderSettings() {
              </div>
              ` : ''}
 
-              ${(state.isTeacher && !state.isAdmin && state.currentLevel !== 'admin') ? `
+              ${(state.isTeacher && state.currentLevel !== 'admin') ? `
               <!-- Week Days Scheduling per Level -->
               <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border mt-4">
                   <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="calendar-days" class="w-5 h-5 text-emerald-600"></i> جدولة أيام الأسبوع</h3>
@@ -5811,8 +5883,9 @@ function startGlobalDataSync() {
 
     // 1. Competitions Sync
     if (competitionsUnsubscribe) competitionsUnsubscribe();
-    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
-    const qComp = isSupervisor
+    const isGeneralAdmin = (state.currentLevel === 'admin');
+    const isSupervisor = (state.isAdmin || isGeneralAdmin);
+    const qComp = isGeneralAdmin
         ? window.firebaseOps.query(window.firebaseOps.collection(window.db, "competitions"))
         : window.firebaseOps.query(
             window.firebaseOps.collection(window.db, "competitions"),
@@ -10177,7 +10250,8 @@ window.manualBackup = async function() {
 function renderDirectGrading() {
     ensureGlobalModals();
     const container = $('#view-container');
-    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    const isGeneralAdmin = (state.currentLevel === 'admin');
+    const isSupervisor = (state.isAdmin || isGeneralAdmin);
     
     if (!state.enableDirectGrading && !isSupervisor) {
         container.innerHTML = `
@@ -10191,10 +10265,10 @@ function renderDirectGrading() {
         return;
     }
 
-    const activeLevel = isSupervisor ? (state.adminDirectGradingLevel || 'abu_bakr') : state.currentLevel;
+    const activeLevel = isGeneralAdmin ? (state.adminDirectGradingLevel || 'abu_bakr') : state.currentLevel;
     state.adminDirectGradingLevel = activeLevel;
 
-    const supervisorHalqaSelector = isSupervisor ? `
+    const supervisorHalqaSelector = isGeneralAdmin ? `
         <div class="mb-4 bg-purple-50 dark:bg-purple-950/30 p-3 rounded-2xl border border-purple-100 dark:border-purple-800 flex items-center justify-between gap-3 flex-wrap">
             <div class="flex items-center gap-2">
                 <i data-lucide="shield" class="w-5 h-5 text-purple-600"></i>
@@ -10208,8 +10282,25 @@ function renderDirectGrading() {
         </div>
     ` : '';
 
+    const supervisorHalqaBanner = (state.isAdmin && !isGeneralAdmin) ? `
+        <div class="mb-4 bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 rounded-2xl p-3.5 text-white shadow-md flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2.5">
+                <span class="text-xl">👑</span>
+                <div>
+                    <div class="font-bold text-xs">رصد درجات ${(LEVELS[activeLevel] ? LEVELS[activeLevel].name : '')} بصلاحية المشرف العام</div>
+                    <div class="text-[10px] text-purple-200">الرصد المباشر وأيام النشاط والملاحظات الجماعية مفعلة للحلقة</div>
+                </div>
+            </div>
+            <button onclick="switchToGeneralAdmin()" class="px-3 py-1.5 bg-white text-purple-800 rounded-xl text-xs font-bold shadow hover:bg-purple-50 transition flex items-center gap-1 shrink-0">
+                <i data-lucide="shield" class="w-3.5 h-3.5"></i>
+                <span>العودة للإدارة</span>
+            </button>
+        </div>
+    ` : '';
+
     container.innerHTML = `
         <div class="space-y-4 animate-fade-in">
+            ${supervisorHalqaBanner}
             ${supervisorHalqaSelector}
             <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
                 <h2 class="text-xl font-bold">الرصد المباشر - ${(LEVELS[activeLevel] ? LEVELS[activeLevel].name : '')}</h2>
@@ -14416,12 +14507,28 @@ function switchAdminToHalqa(levelKey) {
     if (!LEVELS[levelKey]) return;
     state.currentLevel = levelKey;
     state.isTeacher = true;
+    state.isAdmin = true;
     saveAuth();
     updateUIMode(true);
     startGlobalDataSync();
-    router.navigate('home');
+    history.pushState({ view: 'home' }, '', '#home');
+    router.render('home');
     showToast(`تم الانتقال إلى ${LEVELS[levelKey].name} كمشرف 👑`);
 }
+window.switchAdminToHalqa = switchAdminToHalqa;
+
+function switchToGeneralAdmin() {
+    state.currentLevel = 'admin';
+    state.isTeacher = true;
+    state.isAdmin = true;
+    saveAuth();
+    updateUIMode(true);
+    startGlobalDataSync();
+    history.pushState({ view: 'admin' }, '', '#admin');
+    router.render('admin');
+    showToast('تمت العودة إلى لوحة الإدارة العامة 🏢');
+}
+window.switchToGeneralAdmin = switchToGeneralAdmin;
 
 // --- Main Render ---
 let _isAdminRendering = false;
