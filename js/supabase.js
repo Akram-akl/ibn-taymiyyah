@@ -21,13 +21,23 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Utility: Convert camelCase to snake_case (RECURSIVE)
 function toSnakeCase(obj) {
     if (obj === null || obj === undefined) return obj;
+    if (obj instanceof Date) return obj.toISOString();
     if (typeof obj !== 'object') return obj;
     if (Array.isArray(obj)) return obj.map(item => toSnakeCase(item));
     const result = {};
     for (const key in obj) {
         if (obj.hasOwnProperty(key)) {
             const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
-            result[snakeKey] = toSnakeCase(obj[key]);
+            let val = toSnakeCase(obj[key]);
+            if ((snakeKey.endsWith('_id') || snakeKey === 'id') && (val === '' || (typeof val === 'string' && val.trim() === ''))) {
+                val = null;
+            }
+            if ((snakeKey === 'group_id' || snakeKey === 'competition_id') && val) {
+                if (typeof val === 'string' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)) {
+                    val = null;
+                }
+            }
+            result[snakeKey] = val;
         }
     }
     return result;
@@ -306,7 +316,29 @@ function writeBatch(db) {
             operations.push({ type: 'update', ref: docRef, data: data });
         },
         commit: async () => {
-            // Execute all batch operations in parallel for better performance
+            if (operations.length === 0) return;
+
+            // Check if all operations are 'set' on the same table for batch bulk insert
+            const allSetSameTable = operations.every(op => op.type === 'set' && op.ref && op.ref._table && op.ref._table === operations[0].ref._table);
+            if (allSetSameTable) {
+                const tableName = operations[0].ref._table;
+                const rows = operations.map(op => {
+                    const row = toSnakeCase(op.data);
+                    delete row.id;
+                    const now = new Date().toISOString();
+                    if (!row.created_at) row.created_at = now;
+                    if (!row.updated_at) row.updated_at = now;
+                    return row;
+                });
+                const { error } = await supabaseClient.from(tableName).insert(rows);
+                if (error) {
+                    console.error('Batch bulk insert error:', error);
+                    throw error;
+                }
+                return;
+            }
+
+            // Fallback: Execute batch operations
             const promises = operations.map(op => {
                 if (op.type === 'delete') {
                     return deleteDoc(op.ref);

@@ -7,7 +7,8 @@ function isAdultLevel() {
 }
 
 // Helper: check if current level is specifically the ijazat system
-function isIjazatLevel() {
+function isIjazatLevel(lvl = null) {
+    if (lvl) return lvl === 'ijazat';
     return state.currentLevel === 'ijazat';
 }
 
@@ -32,6 +33,7 @@ function getLabel(key) {
 // --- State Management ---
 const state = {
     isTeacher: false,
+    isAdmin: false,           // NEW: Supervisor / Master Admin role
     isParent: false,          // NEW: Parent role
     parentPhone: null,        // NEW: Parent's phone for lookup
     parentStudents: [],       // NEW: Students found for parent
@@ -49,6 +51,12 @@ const state = {
     transferRequests: [], // طلبات النقل الخاصة بهذه الحلقة
     enableDirectGrading: true, // تفعيل لوحة المصدرين (الرصد المباشر)
     disableLeaderboard: false, // الغاء تفعيل لوحة المتصدرين نهائيا
+    adminDateRange: 'this_week', // 'today', 'this_week', 'this_month', 'last_30_days', 'custom'
+    adminCustomStart: '',
+    adminCustomEnd: '',
+    adminLevelFilter: 'all',
+    adminStudentSearch: '',
+    adminData: null
 };
 
 // --- Supabase Realtime Listeners ---
@@ -181,11 +189,20 @@ function loadAuth() {
     const savedRole = localStorage.getItem('auth_role');
     const savedParentPhone = localStorage.getItem('auth_parent_phone');
     const savedStudentId = localStorage.getItem('auth_student_id');
+    const savedIsAdmin = localStorage.getItem('auth_is_admin') === 'true';
 
     // Parent login
     if (savedRole === 'parent' && savedParentPhone) {
         state.isParent = true;
         state.parentPhone = savedParentPhone;
+        return true;
+    }
+
+    // Admin / Supervisor login
+    if (savedLevel === 'admin' || (savedIsAdmin && savedRole === 'teacher')) {
+        state.currentLevel = 'admin';
+        state.isTeacher = true;
+        state.isAdmin = true;
         return true;
     }
 
@@ -211,6 +228,11 @@ function saveAuth() {
     } else if (state.currentLevel) {
         localStorage.setItem('auth_level', state.currentLevel);
         localStorage.setItem('auth_role', state.isTeacher ? 'teacher' : 'student');
+        if (state.isAdmin || state.currentLevel === 'admin') {
+            localStorage.setItem('auth_is_admin', 'true');
+        } else {
+            localStorage.removeItem('auth_is_admin');
+        }
         if (!state.isTeacher && window._currentLoggedInStudentId) {
             localStorage.setItem('auth_student_id', window._currentLoggedInStudentId);
         }
@@ -230,6 +252,7 @@ function logout() {
     if (formResponsesUnsubscribe) { formResponsesUnsubscribe(); formResponsesUnsubscribe = null; }
 
     state.isTeacher = false;
+    state.isAdmin = false;
     state.isParent = false;
     state.parentPhone = null;
     state.parentStudents = [];
@@ -241,11 +264,15 @@ function logout() {
     state.formResponses = [];
     state.activeWeekDays = ['sun', 'mon', 'tue', 'wed', 'thu']; // default
     state.hideScoresFromStudent = false;
+    state.disableLeaderboard = false;
+    state.enableDirectGrading = true;
     state.transferRequests = [];
+    state.adminData = null;
 
     localStorage.removeItem('auth_level');
     localStorage.removeItem('auth_role');
     localStorage.removeItem('auth_parent_phone');
+    localStorage.removeItem('auth_is_admin');
 
     // Show Auth Modal
     showAuthModal();
@@ -366,6 +393,16 @@ async function performTeacherLogin() {
             p_password: password
         });
 
+        // Special case: "admin" option selected
+        if (selectedLevel === 'admin') {
+            if (isMaster) {
+                finishTeacherLogin('admin');
+            } else {
+                showToast("كلمة المرور غير صحيحة للإدارة العامة (يلزم الكود الماستر)", "error");
+            }
+            return;
+        }
+
         if (isMaster) {
             if (selectedLevel) {
                 finishTeacherLogin(selectedLevel);
@@ -374,7 +411,19 @@ async function performTeacherLogin() {
                 $('#teacher-password-section').classList.add('hidden');
                 $('#teacher-level-selection').classList.remove('hidden');
                 const container = $('#teacher-level-grid');
-                container.innerHTML = Object.entries(LEVELS)
+                const adminCardHtml = `
+                     <button onclick="finishTeacherLogin('admin')" class="col-span-2 p-4 bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 text-white rounded-2xl shadow-xl border-2 border-purple-400 hover:brightness-110 transition text-right flex items-center justify-between group">
+                        <div class="flex items-center gap-3">
+                            <div class="text-3xl bg-white/20 p-2.5 rounded-xl">🏢</div>
+                            <div>
+                                <div class="text-base font-black">الإدارة العامة والمشرف</div>
+                                <div class="text-xs text-purple-200">متابعة كافة الحلقات، الإحصائيات، والتقارير</div>
+                            </div>
+                        </div>
+                        <i data-lucide="chevron-left" class="w-6 h-6 text-purple-200 group-hover:-translate-x-1 transition"></i>
+                     </button>
+                `;
+                container.innerHTML = adminCardHtml + Object.entries(LEVELS)
                     .filter(([key, config]) => !config.hidden)
                     .map(([key, config]) => `
                      <button onclick="finishTeacherLogin('${key}')" class="p-4 bg-emerald-50 dark:bg-gray-700 rounded-xl border border-emerald-100 dark:border-gray-600 hover:border-emerald-600 transition text-center">
@@ -382,6 +431,7 @@ async function performTeacherLogin() {
                         <div class="text-sm font-bold text-gray-800 dark:text-gray-100">${config.name}</div>
                      </button>
                 `).join('');
+                if (window.lucide) lucide.createIcons();
             }
             return;
         }
@@ -413,6 +463,7 @@ async function performTeacherLogin() {
 function finishTeacherLogin(levelKey) {
     state.currentLevel = levelKey;
     state.isTeacher = true;
+    state.isAdmin = (levelKey === 'admin');
     completeLogin();
 }
 
@@ -529,21 +580,26 @@ function completeLogin() {
     // Update UI headers
     updateUIMode();
 
-    // Start Global Sync
-    startGlobalDataSync();
+    // Start Global Sync (for individual Halqat and Admin)
+    if (state.currentLevel) {
+        startGlobalDataSync();
+    }
 
     // Load Data
-    const startView = state.isParent ? 'parent' : (state.isTeacher ? 'home' : 'students');
+    const startView = state.isParent ? 'parent' : ((state.isAdmin || state.currentLevel === 'admin') ? 'admin' : (state.isTeacher ? 'home' : 'students'));
     router.navigate(startView);
 
-    showToast(`مرحباً بك في ${LEVELS[state.currentLevel].name}`);
+    const welcomeName = (state.isAdmin || state.currentLevel === 'admin') 
+        ? 'لوحة الإدارة العامة والمشرف' 
+        : (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : 'التطبيق');
+    showToast(`مرحباً بك في ${welcomeName}`);
 
     // Explicitly show content
     $('#loading').classList.add('hidden');
     $('#view-container').classList.remove('hidden');
 
     // Auto backup — runs silently in background after teacher login
-    if (state.isTeacher) {
+    if (state.isTeacher && state.currentLevel !== 'admin') {
         setTimeout(() => checkAndRunAutoBackup(), 3000);
     }
 
@@ -553,7 +609,7 @@ function completeLogin() {
     }
 }
 
-function updateUIMode() {
+function updateUIMode(skipRefresh = false) {
     const btn = $('#mode-btn'); // This is now logout button or status
     const label = $('#current-mode-label');
     const badge = $('#level-badge');
@@ -570,14 +626,22 @@ function updateUIMode() {
         if (nav) nav.classList.remove('hidden');
     }
 
-    const levelName = (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '...');
+    const levelName = (state.isAdmin || state.currentLevel === 'admin') 
+        ? '🏢 الإدارة العامة' 
+        : (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '...');
 
     if (badge) {
         badge.textContent = levelName;
         badge.classList.remove('hidden');
     }
 
-    if (state.isTeacher) {
+    if (state.isAdmin || state.currentLevel === 'admin') {
+        label.textContent = `المشرف العام 👑`;
+        label.className = "text-xs text-purple-300 font-bold";
+        btn.innerHTML = '<i data-lucide="log-out" class="w-5 h-5"></i>';
+        btn.onclick = logout;
+        btn.className = "p-2 bg-purple-900/80 rounded-full hover:bg-purple-700 transition text-white border border-purple-500/50";
+    } else if (state.isTeacher) {
         label.textContent = `${levelName} - معلم`;
         label.className = "text-xs text-yellow-300 font-bold";
         btn.innerHTML = '<i data-lucide="log-out" class="w-5 h-5"></i>';
@@ -591,18 +655,55 @@ function updateUIMode() {
         btn.className = "p-2 bg-emerald-800/80 rounded-full hover:bg-emerald-700 transition text-white border border-emerald-600/50";
     }
 
-    // Toggle Home Nav button visibility for students based on disableLeaderboard
+    // Toggle nav-admin visibility
+    const adminNavBtn = document.getElementById('nav-admin');
+    if (adminNavBtn) {
+        if (state.isAdmin || state.currentLevel === 'admin') {
+            adminNavBtn.classList.remove('hidden');
+            adminNavBtn.style.display = 'flex';
+        } else {
+            adminNavBtn.classList.add('hidden');
+            adminNavBtn.style.display = 'none';
+        }
+    }
+
+    // Toggle nav-direct-grading visibility (visible to admin or teachers if enabled)
+    const dgNav = document.getElementById('nav-direct-grading');
+    if (dgNav) {
+        if (state.isAdmin || state.currentLevel === 'admin' || (state.isTeacher && state.enableDirectGrading)) {
+            dgNav.classList.remove('hidden');
+            dgNav.style.display = 'flex';
+        } else {
+            dgNav.classList.add('hidden');
+            dgNav.style.display = 'none';
+        }
+    }
+
+    // Toggle nav-plans visibility (visible to admin or teachers)
+    const plansNav = document.getElementById('nav-plans');
+    if (plansNav) {
+        if (state.isAdmin || state.currentLevel === 'admin' || state.isTeacher) {
+            plansNav.classList.remove('hidden');
+            plansNav.style.display = 'flex';
+        } else {
+            plansNav.classList.add('hidden');
+            plansNav.style.display = 'none';
+        }
+    }
+
+    // Toggle Home Nav button visibility for students based on disableLeaderboard or hideScoresFromStudent
     const homeNavBtn = document.querySelector('.nav-item[data-target="home"]');
     if (homeNavBtn) {
-        if (!state.isTeacher && state.disableLeaderboard) {
+        if (!state.isTeacher && !state.isParent && (state.disableLeaderboard || state.hideScoresFromStudent)) {
             homeNavBtn.style.display = 'none';
         } else {
             homeNavBtn.style.display = 'flex';
         }
     }
 
-
-    refreshAllData();
+    if (!skipRefresh) {
+        refreshAllData();
+    }
 }
 
 function refreshAllData() {
@@ -624,7 +725,8 @@ const router = {
         forms: renderForms,
         form_builder: renderFormBuilder,
         form_responses: renderFormResponses,
-        form_viewer: renderFormViewer
+        form_viewer: renderFormViewer,
+        admin: renderAdminDashboard
     },
     cleanup() {
         // Unsubscribe from all active VIEW-SPECIFIC listeners to prevent memory leaks/lag
@@ -650,10 +752,14 @@ const router = {
         $$('.nav-item').forEach(el => {
             const isActive = el.dataset.target === view;
             if (isActive) {
-                el.classList.add('text-emerald-700', 'dark:text-emerald-400');
+                if (view === 'admin') {
+                    el.classList.add('text-purple-600', 'dark:text-purple-400');
+                } else {
+                    el.classList.add('text-emerald-700', 'dark:text-emerald-400');
+                }
                 el.classList.remove('text-gray-400');
             } else {
-                el.classList.remove('text-emerald-700', 'dark:text-emerald-400');
+                el.classList.remove('text-emerald-700', 'dark:text-emerald-400', 'text-purple-600', 'dark:text-purple-400');
                 el.classList.add('text-gray-400');
             }
         });
@@ -677,12 +783,72 @@ const router = {
 function renderHome() {
     const container = $('#view-container');
 
-    const _isStudentView = (!state.isTeacher && !state.isParent);
-    const _hideAggregated = state.disableLeaderboard || (state.hideScoresFromStudent && _isStudentView);
+    const _isAdminView = (state.isAdmin || state.currentLevel === 'admin');
+    const _isStudentView = (!state.isTeacher && !state.isParent && !_isAdminView);
+
+    // If supervisor, show dedicated executive welcome view (avoid leaderboard conflict)
+    if (_isAdminView) {
+        container.innerHTML = `
+        <div class="space-y-6 animate-fade-in">
+            <!-- Supervisor Executive Welcome Banner -->
+            <div class="bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden text-center">
+                <div class="absolute -right-10 -top-10 bg-white/10 w-40 h-40 rounded-full blur-2xl"></div>
+                <div class="absolute -left-10 -bottom-10 bg-black/10 w-40 h-40 rounded-full blur-2xl"></div>
+                <div class="relative z-10">
+                    <span class="text-3xl mb-2 inline-block">👑</span>
+                    <h2 class="text-2xl font-black mb-1">لوحة الإشراف والإدارة العامة</h2>
+                    <p class="text-purple-200 text-xs mb-5 max-w-sm mx-auto">مرحباً بك المشرف العام — متابعة حية وشاملة لكافة حلقات المجمع ومعلميه وطلابه</p>
+                    <div class="flex flex-wrap justify-center gap-3">
+                        <button onclick="router.navigate('admin')" class="px-5 py-2.5 bg-white text-purple-800 rounded-xl font-bold text-xs shadow-lg hover:bg-purple-50 active:scale-95 transition flex items-center gap-2">
+                            <i data-lucide="shield" class="w-4 h-4"></i>
+                            فتح لوحة الإدارة الشاملة
+                        </button>
+                        <button onclick="router.navigate('students')" class="px-4 py-2.5 bg-purple-600/60 hover:bg-purple-500 text-white rounded-xl font-bold text-xs border border-purple-400/40 transition flex items-center gap-2">
+                            <i data-lucide="users" class="w-4 h-4"></i>
+                            شؤون كل الطلاب
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Navigation Shortcuts -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <button onclick="router.navigate('admin')" class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-purple-500 hover:shadow-md transition">
+                    <div class="bg-purple-100 dark:bg-purple-900/40 p-2.5 rounded-xl text-purple-700 dark:text-purple-300">
+                        <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+                    </div>
+                    <span class="font-bold text-xs">إحصائيات الإدارة</span>
+                </button>
+                <button onclick="router.navigate('students')" class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-purple-500 hover:shadow-md transition">
+                    <div class="bg-emerald-100 dark:bg-emerald-900/40 p-2.5 rounded-xl text-emerald-700 dark:text-emerald-300">
+                        <i data-lucide="users" class="w-5 h-5"></i>
+                    </div>
+                    <span class="font-bold text-xs">شؤون الطلاب</span>
+                </button>
+                <button onclick="router.navigate('plans')" class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-purple-500 hover:shadow-md transition">
+                    <div class="bg-blue-100 dark:bg-blue-900/40 p-2.5 rounded-xl text-blue-700 dark:text-blue-300">
+                        <i data-lucide="book-marked" class="w-5 h-5"></i>
+                    </div>
+                    <span class="font-bold text-xs">الخطط الميدانية</span>
+                </button>
+                <button onclick="openQuranSearchModal()" class="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center gap-2 hover:border-purple-500 hover:shadow-md transition">
+                    <div class="bg-amber-100 dark:bg-amber-900/40 p-2.5 rounded-xl text-amber-700 dark:text-amber-300">
+                        <i data-lucide="book" class="w-5 h-5"></i>
+                    </div>
+                    <span class="font-bold text-xs">بحث المصحف</span>
+                </button>
+            </div>
+        </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+
+    const _hideLeaderboard = state.disableLeaderboard || (state.hideScoresFromStudent && _isStudentView);
 
     container.innerHTML = `
         <div class="space-y-6 animate-fade-in">
-            ${!_hideAggregated ? `
+            ${!_hideLeaderboard ? `
             <div class="bg-gradient-to-br from-emerald-600 to-emerald-600 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
                 <div class="absolute -right-10 -top-10 bg-white/10 w-40 h-40 rounded-full blur-2xl"></div>
                 <div class="absolute -left-10 -bottom-10 bg-black/10 w-40 h-40 rounded-full blur-2xl"></div>
@@ -697,14 +863,7 @@ function renderHome() {
                     </div>
                 </div>
             </div>
-            ` : (state.disableLeaderboard ? '' : `
-            <div class="bg-gradient-to-br from-emerald-600 to-emerald-600 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden text-center">
-                <div class="absolute -right-10 -top-10 bg-white/10 w-40 h-40 rounded-full blur-2xl"></div>
-                <i data-lucide="eye-off" class="w-10 h-10 mx-auto mb-2 opacity-70"></i>
-                <h2 class="text-xl font-bold mb-1">${(LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')}</h2>
-                <p class="text-emerald-200 text-sm">تم حجب الدرجات الإجمالية من قبل المعلم</p>
-            </div>
-            `)}
+            ` : ''}
 
             ${state.isTeacher ? `
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -740,7 +899,7 @@ function renderHome() {
             <div id="student-forms-container"></div>
             ` : ''}
 
-            ${!_hideAggregated ? `
+            ${!_hideLeaderboard ? `
             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="font-bold text-gray-800 dark:text-gray-100">المجموعات المتميزة</h3>
@@ -952,19 +1111,42 @@ function updateTopGroupsUI(groups) {
     `}).join('');
 }
 
+let adminCompFilter = 'all';
+
 function renderCompetitions() {
     const container = $('#view-container');
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    const levelTitle = isSupervisor ? 'الإدارة العامة' : (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '');
+    
+    // Halqa filter bar for supervisor
+    let halqaFilterHTML = '';
+    if (isSupervisor) {
+        halqaFilterHTML = `
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-1 mb-3 scrollbar-none">
+                <button onclick="setAdminCompFilter('all')" class="px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition ${adminCompFilter === 'all' ? 'bg-purple-600 text-white shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'}">
+                    الكل
+                </button>
+                ${Object.entries(LEVELS).filter(([k,v]) => !v.hidden && k !== 'admin').map(([k,v]) => `
+                    <button onclick="setAdminCompFilter('${k}')" class="px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition ${adminCompFilter === k ? 'bg-purple-600 text-white shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'}">
+                        ${v.name}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    }
+
     container.innerHTML = `
         <div class="space-y-4 animate-fade-in">
-            <div class="flex justify-between items-center mb-2">
-                <h2 class="text-xl font-bold">المسابقات - ${(LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')}</h2>
-                ${state.isTeacher ? `
+            <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
+                <h2 class="text-xl font-bold">المسابقات - ${levelTitle}</h2>
+                ${(state.isTeacher || isSupervisor) ? `
                 <button onclick="openAddCompetitionModal()" class="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:bg-emerald-800 transition flex items-center gap-2">
                     <i data-lucide="plus" class="w-4 h-4"></i>
                     جديد
                 </button>
                 ` : ''}
             </div>
+            ${halqaFilterHTML}
             
             <div id="competitions-list" class="space-y-4 min-h-[100px] relative">
                 <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 py-12 text-center border-2 border-dashed border-gray-200 dark:border-gray-700">
@@ -972,7 +1154,6 @@ function renderCompetitions() {
                     <p class="text-gray-500 text-sm">جاري التحميل...</p>
                 </div>
             </div>
-        </div>
         </div>
     `;
 
@@ -984,33 +1165,49 @@ function renderCompetitions() {
     lucide.createIcons();
 }
 
+window.setAdminCompFilter = function(filter) {
+    adminCompFilter = filter;
+    renderCompetitions();
+};
+
 function updateCompetitionsListUI() {
     const list = $('#competitions-list');
     if (!list) return;
 
-    if (state.competitions.length === 0) {
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    let displayedComps = state.competitions || [];
+    if (isSupervisor && adminCompFilter !== 'all') {
+        displayedComps = displayedComps.filter(c => c.level === adminCompFilter);
+    }
+
+    if (displayedComps.length === 0) {
         list.innerHTML = `
             <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 py-12 text-center border-2 border-dashed border-gray-200 dark:border-gray-700">
                 <div class="inline-block p-4 bg-gray-100 dark:bg-gray-700 rounded-full mb-4">
                     <i data-lucide="trophy" class="w-8 h-8 text-gray-400"></i>
                 </div>
                 <h3 class="text-gray-900 dark:text-white font-bold">لا توجد مسابقات حالياً</h3>
-                <p class="text-gray-500 text-sm mt-1">المسابقات التي يتم إنشاؤها ستظهر هنا</p>
+                <p class="text-gray-500 text-sm mt-1">${isSupervisor ? 'لا توجد مسابقات لهذه الحلقة' : 'المسابقات التي يتم إنشاؤها ستظهر هنا'}</p>
             </div>
         `;
     } else {
-        list.innerHTML = state.competitions.map(comp => `
+        list.innerHTML = displayedComps.map(comp => {
+            const halqaName = comp.level ? (LEVELS[comp.level] ? LEVELS[comp.level].name : comp.level) : 'عام';
+            return `
             <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 hover:shadow-md transition border border-transparent hover:border-emerald-100 dark:hover:border-emerald-900">
                 <div class="flex items-center gap-4 mb-3">
-                    <div class="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl flex items-center justify-center text-2xl">
+                    <div class="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl flex items-center justify-center text-2xl shrink-0">
                         ${comp.icon || '🏆'}
                     </div>
-                    <div>
-                        <h3 class="font-bold text-gray-900 dark:text-white">${comp.name}</h3>
-                        <p class="text-xs text-gray-500">${comp.level ? (LEVELS[comp.level] ? LEVELS[comp.level].name : 'عام') : 'عام'}</p>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h3 class="font-bold text-gray-900 dark:text-white">${comp.name}</h3>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">${halqaName}</span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-0.5">${comp.criteria?.length || 0} معايير رصد</p>
                     </div>
-                ${state.isTeacher ? `
-                <div class="mr-auto flex gap-1">
+                ${(state.isTeacher || isSupervisor) ? `
+                <div class="mr-auto flex gap-1 shrink-0">
                     <button onclick="toggleCompetitionActive('${comp.id}')" class="p-2 rounded-lg transition ${comp.active ? 'text-yellow-500 bg-yellow-50' : 'text-gray-300 hover:text-yellow-500 hover:bg-yellow-50'}" title="${comp.active ? 'نشطة (تظهر للطلاب)' : 'تفعيل للعرض'}">
                         <i data-lucide="star" class="w-4 h-4 ${comp.active ? 'fill-yellow-500' : ''}"></i>
                     </button>
@@ -1028,19 +1225,20 @@ function updateCompetitionsListUI() {
                 </div>
                 
                 <div class="grid grid-cols-2 gap-2 mt-4">
-                    ${state.isTeacher ? `
+                    ${(state.isTeacher || isSupervisor) ? `
                     <button onclick="openGradingSession('${comp.id}')" class="bg-emerald-700 text-white py-2 rounded-xl text-sm font-bold hover:bg-emerald-800 transition flex items-center justify-center gap-2">
                         <i data-lucide="star" class="w-4 h-4"></i>
                         رصد درجات
                     </button>
                     ` : ''}
-                     <button onclick="openManageGroups('${comp.id}', '${comp.name}')" class="${state.isTeacher ? '' : 'col-span-2'} bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-2 rounded-xl text-sm font-bold hover:bg-gray-200 transition flex items-center justify-center gap-2">
+                     <button onclick="openManageGroups('${comp.id}', '${comp.name}')" class="${(state.isTeacher || isSupervisor) ? '' : 'col-span-2'} bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-2 rounded-xl text-sm font-bold hover:bg-gray-200 transition flex items-center justify-center gap-2">
                         <i data-lucide="users" class="w-4 h-4"></i>
                         المجموعات
                     </button>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
     }
     lucide.createIcons();
 }
@@ -1066,7 +1264,7 @@ function renderStudents() {
     container.innerHTML = `
         <div class="space-y-4 animate-fade-in">
             <div class="flex justify-between items-center mb-2 gap-2">
-                <h2 class="text-xl font-bold">ال${getLabel('students')} - ${(LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')}</h2>
+                <h2 class="text-xl font-bold">ال${getLabel('students')} - ${(state.isAdmin || state.currentLevel === 'admin') ? 'جميع الحلقات' : (LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')}</h2>
 
                 ${state.isTeacher ? `
                 <div class="flex gap-2 shrink-0">
@@ -1086,6 +1284,13 @@ function renderStudents() {
             <div id="transfer-requests-container" class="space-y-2 mb-4"></div>
 
             <!-- Search Bar -->
+            ${(state.isAdmin || state.currentLevel === 'admin') ? `
+            <div class="flex gap-2 mb-3 overflow-x-auto custom-scrollbar pb-1">
+                <button onclick="state.adminStudentHalqaFilter=''; window._studentAffairsVisibleCount=5; updateStudentsListUI(filterStudents(document.getElementById('student-search-input') ? document.getElementById('student-search-input').value : '', true)); document.querySelectorAll('.halqa-filter-btn').forEach(b => {b.classList.remove('bg-purple-600','text-white'); b.classList.add('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300')}); this.classList.remove('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300'); this.classList.add('bg-purple-600','text-white')" class="halqa-filter-btn whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition bg-purple-600 text-white shadow-sm border border-transparent">الكل</button>
+                ${Object.keys(LEVELS).filter(k => k !== 'admin' && !LEVELS[k].hidden).map(k => `
+                    <button onclick="state.adminStudentHalqaFilter='${k}'; window._studentAffairsVisibleCount=5; updateStudentsListUI(filterStudents(document.getElementById('student-search-input') ? document.getElementById('student-search-input').value : '', true)); document.querySelectorAll('.halqa-filter-btn').forEach(b => {b.classList.remove('bg-purple-600','text-white'); b.classList.add('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300')}); this.classList.remove('bg-gray-100','text-gray-600','dark:bg-gray-700','dark:text-gray-300'); this.classList.add('bg-purple-600','text-white')" class="halqa-filter-btn whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 shadow-sm border border-transparent hover:border-purple-300">${LEVELS[k].name}</button>
+                `).join('')}
+            </div>` : ''}
             <div class="relative mb-2">
                 <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2"></i>
                 <input type="text" id="student-search-input" oninput="filterStudents(this.value)" 
@@ -1118,11 +1323,13 @@ function renderStudents() {
         studentsUnsubscribe = null;
     }
 
-    const q = window.firebaseOps.query(
-        window.firebaseOps.collection(window.db, "students"),
-        window.firebaseOps.where("level", "==", state.currentLevel)
-        // orderBy removed to avoid Index Error
-    );
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    const q = isSupervisor
+        ? window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"))
+        : window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "students"),
+            window.firebaseOps.where("level", "==", state.currentLevel)
+        );
 
     studentsUnsubscribe = window.firebaseOps.onSnapshot(q, (snapshot) => {
         const students = [];
@@ -1262,52 +1469,103 @@ async function dismissRejectedRequest(requestId) {
     }
 }
 
-function updateStudentsListUI() {
+function updateStudentsListUI(filteredList) {
     const list = $('#students-list');
     if (!list) return;
 
-    if (state.students.length === 0) {
+    window._lastFilteredAffairsStudents = filteredList;
+    const baseList = filteredList || (state.adminStudentHalqaFilter ? state.students.filter(s => s.level === state.adminStudentHalqaFilter) : state.students);
+
+    if (!baseList || baseList.length === 0) {
         list.innerHTML = `
             <div class="flex flex-col items-center justify-center py-12 text-gray-400">
-                <i data-lucide="users" class="w-12 h-12 mb-3 opacity-20"></i>
-                <p class="text-sm font-medium">لا يوجد ${getLabel('students')} حتى الآن</p>
-                ${state.isTeacher ? `<p class="text-xs mt-1">اضغط على "جديد" لإضافة ${getLabel('students')}</p>` : ''}
+                <i data-lucide="${filteredList ? 'search-x' : 'users'}" class="w-12 h-12 mb-3 opacity-20"></i>
+                <p class="text-sm font-medium">${filteredList ? 'لا توجد نتائج مطابقة للبحث' : ('لا يوجد ' + getLabel('students') + ' حتى الآن')}</p>
+                ${(state.isTeacher && !filteredList) ? `<p class="text-xs mt-1">اضغط على "جديد" لإضافة ${getLabel('students')}</p>` : ''}
             </div>
         `;
-    } else {
-        list.innerHTML = state.students.map(student => {
-            const isImg = isImgSrc(student.icon);
-            const iconHtml = isImg
-                ? `<img src="${student.icon}" class="w-full h-full object-cover">`
-                : (student.icon || '👤');
+        lucide.createIcons();
+        return;
+    }
 
-            return `
-            <div class="p-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition group border-b border-gray-100 dark:border-gray-700 last:border-0">
-                <div onclick="openStudentReport('${student.id}')" class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xl shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden cursor-pointer shrink-0">
-                    ${iconHtml}
-                </div>
-                <div class="flex-1 min-w-0" onclick="openStudentReport('${student.id}')" style="cursor:pointer">
+    // Helper to calculate absences for each student for sorting
+    function getStudentAbsenceCount(stId, stLevel) {
+        if (state.adminData && state.adminData.levelStats && state.adminData.levelStats[stLevel]?.studentAbsenceMap?.[stId]) {
+            return state.adminData.levelStats[stLevel].studentAbsenceMap[stId].total || 0;
+        }
+        if (state.adminData && state.adminData.allScores) {
+            return state.adminData.allScores.filter(s => s.studentId === stId && s.criteriaId === 'ABSENCE_RECORD').length;
+        }
+        if (state.scores) {
+            return state.scores.filter(s => s.studentId === stId && s.criteriaId === 'ABSENCE_RECORD').length;
+        }
+        return 0;
+    }
+
+    // Sort descending by total absences (most absent first)
+    const sortedStudents = [...baseList].map(st => ({
+        ...st,
+        _absenceCount: getStudentAbsenceCount(st.id, st.level)
+    })).sort((a, b) => b._absenceCount - a._absenceCount);
+
+    if (window._studentAffairsVisibleCount === undefined || window._studentAffairsVisibleCount === null) {
+        window._studentAffairsVisibleCount = 5;
+    }
+
+    const visibleStudents = sortedStudents.slice(0, window._studentAffairsVisibleCount);
+    const hasMore = sortedStudents.length > window._studentAffairsVisibleCount;
+
+    const rowsHtml = visibleStudents.map(student => {
+        const isImg = isImgSrc(student.icon);
+        const iconHtml = isImg
+            ? `<img src="${student.icon}" class="w-full h-full object-cover">`
+            : (student.icon || '👤');
+
+        return `
+        <div class="p-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition group border-b border-gray-100 dark:border-gray-700 last:border-0">
+            <div onclick="openStudentReport('${student.id}')" class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xl shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden cursor-pointer shrink-0">
+                ${iconHtml}
+            </div>
+            <div class="flex-1 min-w-0" onclick="openStudentReport('${student.id}')" style="cursor:pointer">
+                <div class="flex items-center gap-1.5 flex-wrap">
                     <h4 class="font-bold text-gray-800 dark:text-gray-100 truncate">${student.name}</h4>
-                    <div class="flex flex-wrap gap-1 text-xs text-gray-500 mt-0.5">
-                        ${(state.isTeacher && student.studentNumber) ? `<span class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px] text-gray-500 tracking-wider">${student.studentNumber}</span>` : ''}
-                        ${student.password ? '<span class="text-green-500">🔐</span>' : '<span class="text-orange-400">⚠️ بدون كلمة مرور</span>'}
-                    </div>
+                    ${(state.isAdmin || state.currentLevel === 'admin') && student.level && LEVELS[student.level] ? `<span class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-bold px-1.5 py-0.5 rounded text-[10px]">${LEVELS[student.level].name}</span>` : ''}
                 </div>
-                <div class="flex gap-1 shrink-0">
-                    <button onclick="event.stopPropagation(); openEditStudent('${student.id}')" class="p-2 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition" title="تعديل">
-                        <i data-lucide="edit-2" class="w-4 h-4"></i>
-                    </button>
-                    ${state.isTeacher ? `
-                    <button onclick="event.stopPropagation(); confirmDeleteStudent('${student.id}')" class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="حذف">
-                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                    </button>
-                    ` : ''}
+                <div class="flex flex-wrap gap-1 text-xs text-gray-500 mt-0.5">
+                    ${(state.isTeacher && student.studentNumber) ? `<span class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px] text-gray-500 tracking-wider">${student.studentNumber}</span>` : ''}
+                    ${student.password ? '<span class="text-green-500">🔐</span>' : '<span class="text-orange-400">⚠️ بدون كلمة مرور</span>'}
                 </div>
             </div>
-        `}).join('');
-        lucide.createIcons();
-    }
+            <div class="flex gap-1 shrink-0">
+                <button onclick="event.stopPropagation(); openEditStudent('${student.id}')" class="p-2 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition" title="تعديل">
+                    <i data-lucide="edit-2" class="w-4 h-4"></i>
+                </button>
+                ${state.isTeacher ? `
+                <button onclick="event.stopPropagation(); confirmDeleteStudent('${student.id}')" class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="حذف">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+                ` : ''}
+            </div>
+        </div>`;
+    }).join('');
+
+    const moreBtnHtml = hasMore ? `
+        <div class="p-3 text-center bg-gray-50 dark:bg-gray-700/30 border-t border-gray-100 dark:border-gray-700">
+            <button onclick="window.loadMoreAffairsStudents()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition inline-flex items-center justify-center gap-1.5 mx-auto">
+                <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                <span>عرض المزيد (${sortedStudents.length - window._studentAffairsVisibleCount} متبقي)</span>
+            </button>
+        </div>
+    ` : '';
+
+    list.innerHTML = rowsHtml + moreBtnHtml;
+    lucide.createIcons();
 }
+
+window.loadMoreAffairsStudents = function() {
+    window._studentAffairsVisibleCount = (window._studentAffairsVisibleCount || 5) + 5;
+    updateStudentsListUI(window._lastFilteredAffairsStudents);
+};
 
 // نقل الطالب لمرحلة أخرى - فتح نافذة الاختيار
 function openTransferStudent(studentId) {
@@ -1483,79 +1741,79 @@ function renderSettings() {
              </div>
              ` : ''}
 
-             ${state.isTeacher ? `
-             <!-- Week Days Scheduling per Level -->
-             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
-                 <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="calendar-days" class="w-5 h-5 text-emerald-600"></i> جدولة أيام الأسبوع</h3>
-                 <p class="text-xs text-gray-500 mb-4">اختر الأيام التي ينعقد فيها النشاط لهذه المرحلة</p>
-                 <div id="week-days-selector" class="grid grid-cols-7 gap-2 mb-4">
-                     <button type="button" onclick="toggleWeekDay('sun')" id="day-sun" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">أحد</button>
-                     <button type="button" onclick="toggleWeekDay('mon')" id="day-mon" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">اثنين</button>
-                     <button type="button" onclick="toggleWeekDay('tue')" id="day-tue" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">ثلاثاء</button>
-                     <button type="button" onclick="toggleWeekDay('wed')" id="day-wed" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">أربعاء</button>
-                     <button type="button" onclick="toggleWeekDay('thu')" id="day-thu" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">خميس</button>
-                     <button type="button" onclick="toggleWeekDay('fri')" id="day-fri" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">جمعة</button>
-                     <button type="button" onclick="toggleWeekDay('sat')" id="day-sat" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">سبت</button>
-                 </div>
-                 <button onclick="saveWeekDays()" class="w-full py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition flex items-center justify-center gap-2">
-                     <i data-lucide="save" class="w-4 h-4"></i> حفظ الجدولة
-                 </button>
-             </div>
+              ${(state.isTeacher && !state.isAdmin && state.currentLevel !== 'admin') ? `
+              <!-- Week Days Scheduling per Level -->
+              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border mt-4">
+                  <h3 class="font-bold mb-3 flex items-center gap-2"><i data-lucide="calendar-days" class="w-5 h-5 text-emerald-600"></i> جدولة أيام الأسبوع</h3>
+                  <p class="text-xs text-gray-500 mb-4">اختر الأيام التي ينعقد فيها النشاط لهذه المرحلة</p>
+                  <div id="week-days-selector" class="grid grid-cols-7 gap-2 mb-4">
+                      <button type="button" onclick="toggleWeekDay('sun')" id="day-sun" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">أحد</button>
+                      <button type="button" onclick="toggleWeekDay('mon')" id="day-mon" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">اثنين</button>
+                      <button type="button" onclick="toggleWeekDay('tue')" id="day-tue" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">ثلاثاء</button>
+                      <button type="button" onclick="toggleWeekDay('wed')" id="day-wed" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">أربعاء</button>
+                      <button type="button" onclick="toggleWeekDay('thu')" id="day-thu" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">خميس</button>
+                      <button type="button" onclick="toggleWeekDay('fri')" id="day-fri" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">جمعة</button>
+                      <button type="button" onclick="toggleWeekDay('sat')" id="day-sat" class="py-2 rounded-xl text-xs font-bold border-2 text-center transition">سبت</button>
+                  </div>
+                  <button onclick="saveWeekDays()" class="w-full py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition flex items-center justify-center gap-2">
+                      <i data-lucide="save" class="w-4 h-4"></i> حفظ الجدولة
+                  </button>
+              </div>
 
-             <!-- Hide Scores from Students -->
-             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
-                 <div class="flex items-center justify-between">
-                     <div class="flex items-center gap-3">
-                         <div class="bg-red-100 dark:bg-red-900/30 p-2 rounded-lg">
-                             <i data-lucide="eye-off" class="w-5 h-5 text-red-600 dark:text-red-400"></i>
-                         </div>
-                         <div>
-                             <span class="font-medium">حجب الدرجات الإجمالية</span>
-                             <p class="text-[10px] text-gray-500">إخفاء لوحة المتصدرين والترتيب والمجموعات المتميزة عن الطالب</p>
-                         </div>
-                     </div>
-                     <button id="hide-scores-toggle" onclick="toggleHideScoresFromStudent()" class="w-12 h-7 ${state.hideScoresFromStudent ? 'bg-red-600' : 'bg-gray-200 dark:bg-gray-600'} rounded-full relative transition-colors duration-300">
-                         <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.hideScoresFromStudent ? 'right-1' : 'left-1'} transition-all duration-300 shadow-sm"></div>
-                     </button>
-                 </div>
-             </div>
+              <!-- Hide Scores from Students -->
+              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border mt-4">
+                  <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3">
+                          <div class="bg-red-100 dark:bg-red-900/30 p-2 rounded-lg">
+                              <i data-lucide="eye-off" class="w-5 h-5 text-red-600 dark:text-red-400"></i>
+                          </div>
+                          <div>
+                              <span class="font-medium">حجب الدرجات الإجمالية</span>
+                              <p class="text-[10px] text-gray-500">إخفاء لوحة المتصدرين والترتيب والمجموعات المتميزة عن الطالب</p>
+                          </div>
+                      </div>
+                      <button id="hide-scores-toggle" onclick="toggleHideScoresFromStudent()" class="w-12 h-7 ${state.hideScoresFromStudent ? 'bg-red-600' : 'bg-gray-200 dark:bg-gray-600'} rounded-full relative transition-colors duration-300">
+                          <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.hideScoresFromStudent ? 'right-1' : 'left-1'} transition-all duration-300 shadow-sm"></div>
+                      </button>
+                  </div>
+              </div>
 
-             <!-- Disable Leaderboard -->
-             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border mt-4">
-                 <div class="flex items-center justify-between">
-                     <div class="flex items-center gap-3">
-                         <div class="bg-orange-100 dark:bg-orange-900/30 p-2 rounded-lg">
-                             <i data-lucide="trophy" class="w-5 h-5 text-orange-600 dark:text-orange-400"></i>
-                         </div>
-                         <div>
-                             <span class="font-medium">إلغاء تفعيل لوحة المتصدرين</span>
-                             <p class="text-[10px] text-gray-500">إخفاء لوحة المتصدرين من الشاشة الرئيسية نهائياً</p>
-                         </div>
-                     </div>
-                     <button id="disable-leaderboard-toggle" onclick="toggleDisableLeaderboard()" class="w-12 h-7 ${state.disableLeaderboard ? 'bg-orange-600' : 'bg-gray-200 dark:bg-gray-600'} rounded-full relative transition-colors duration-300">
-                         <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.disableLeaderboard ? 'left-6' : 'left-1'} transition-transform duration-300 shadow-sm"></div>
-                     </button>
-                 </div>
-             </div>
+              <!-- Disable Leaderboard -->
+              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border mt-4">
+                  <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3">
+                          <div class="bg-orange-100 dark:bg-orange-900/30 p-2 rounded-lg">
+                              <i data-lucide="trophy" class="w-5 h-5 text-orange-600 dark:text-orange-400"></i>
+                          </div>
+                          <div>
+                              <span class="font-medium">إلغاء تفعيل لوحة المتصدرين</span>
+                              <p class="text-[10px] text-gray-500">إخفاء لوحة المتصدرين من الشاشة الرئيسية نهائياً</p>
+                          </div>
+                      </div>
+                      <button id="disable-leaderboard-toggle" onclick="toggleDisableLeaderboard()" class="w-12 h-7 ${state.disableLeaderboard ? 'bg-orange-600' : 'bg-gray-200 dark:bg-gray-600'} rounded-full relative transition-colors duration-300">
+                          <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.disableLeaderboard ? 'left-6' : 'left-1'} transition-transform duration-300 shadow-sm"></div>
+                      </button>
+                  </div>
+              </div>
 
-             <!-- Enable Direct Grading Board -->
-             <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border mt-4">
-                 <div class="flex items-center justify-between">
-                     <div class="flex items-center gap-3">
-                         <div class="bg-emerald-100 dark:bg-emerald-900/30 p-2 rounded-lg">
-                             <i data-lucide="activity" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i>
-                         </div>
-                         <div>
-                             <span class="font-medium">تفعيل الرصد المباشر</span>
-                             <p class="text-[10px] text-gray-500">إتاحة الرصد المباشر (غياب، حفظ، مراجعة، ملاحظات، نقل) للحلقة</p>
-                         </div>
-                     </div>
-                     <button id="direct-grading-toggle" onclick="toggleEnableDirectGrading()" class="w-12 h-7 ${state.enableDirectGrading ? 'bg-emerald-600' : 'bg-gray-200 dark:bg-gray-600'} rounded-full relative transition-colors duration-300">
-                         <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.enableDirectGrading ? 'left-1' : 'right-1'} transition-all duration-300 shadow-sm"></div>
-                     </button>
-                 </div>
-             </div>
-             ` : ''}
+              <!-- Enable Direct Grading Board -->
+              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border mt-4">
+                  <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3">
+                          <div class="bg-emerald-100 dark:bg-emerald-900/30 p-2 rounded-lg">
+                              <i data-lucide="activity" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i>
+                          </div>
+                          <div>
+                              <span class="font-medium">تفعيل الرصد المباشر</span>
+                              <p class="text-[10px] text-gray-500">إتاحة الرصد المباشر (غياب، حفظ، مراجعة، ملاحظات، نقل) للحلقة</p>
+                          </div>
+                      </div>
+                      <button id="direct-grading-toggle" onclick="toggleEnableDirectGrading()" class="w-12 h-7 ${state.enableDirectGrading ? 'bg-emerald-600' : 'bg-gray-200 dark:bg-gray-600'} rounded-full relative transition-colors duration-300">
+                          <div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.enableDirectGrading ? 'left-1' : 'right-1'} transition-all duration-300 shadow-sm"></div>
+                      </button>
+                  </div>
+              </div>
+              ` : ''}
 
              <!-- Bug Report / Suggestion -->
              <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border">
@@ -2023,6 +2281,24 @@ async function toggleEnableDirectGrading() {
 }
 
 
+function updateSettingsTogglesUI() {
+    const hideBtn = document.getElementById('hide-scores-toggle');
+    if (hideBtn) {
+        hideBtn.className = `w-12 h-7 ${state.hideScoresFromStudent ? 'bg-red-600' : 'bg-gray-200 dark:bg-gray-600'} rounded-full relative transition-colors duration-300`;
+        hideBtn.innerHTML = `<div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.hideScoresFromStudent ? 'right-1' : 'left-1'} transition-all duration-300 shadow-sm"></div>`;
+    }
+    const ldbBtn = document.getElementById('disable-leaderboard-toggle');
+    if (ldbBtn) {
+        ldbBtn.className = `w-12 h-7 ${state.disableLeaderboard ? 'bg-orange-600' : 'bg-gray-200 dark:bg-gray-600'} rounded-full relative transition-colors duration-300`;
+        ldbBtn.innerHTML = `<div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.disableLeaderboard ? 'left-6' : 'left-1'} transition-transform duration-300 shadow-sm"></div>`;
+    }
+    const dgBtn = document.getElementById('direct-grading-toggle');
+    if (dgBtn) {
+        dgBtn.className = `w-12 h-7 ${state.enableDirectGrading ? 'bg-emerald-600' : 'bg-gray-200 dark:bg-gray-600'} rounded-full relative transition-colors duration-300`;
+        dgBtn.innerHTML = `<div class="w-5 h-5 bg-white rounded-full absolute top-1 ${state.enableDirectGrading ? 'left-1' : 'right-1'} transition-all duration-300 shadow-sm"></div>`;
+    }
+}
+
 function toggleTheme() {
     state.darkMode = !state.darkMode;
     applyTheme();
@@ -2081,6 +2357,12 @@ function getStudentModalHTML() {
                          <input type="text" id="student-name" required class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 transition">
                      </div>
 
+                     <div id="student-level-selection" class="hidden">
+                         <label class="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">الحلقة <span class="text-red-500">*</span></label>
+                         <select id="student-level-input" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-purple-500 transition font-bold text-gray-800 dark:text-gray-100">
+                         </select>
+                     </div>
+
                      <div>
                          <label class="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">${getLabel('parent_phone')} (واتساب)</label>
                          <input type="tel" id="student-number" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 transition" placeholder="مثال: 966500000000">
@@ -2115,7 +2397,7 @@ function getStudentModalHTML() {
                      <input type="hidden" id="student-review">
 
                      <!-- Readings section (exclusive to Ijazat level) -->
-                     <div id="student-readings-section" class="${isIjazatLevel() ? '' : 'hidden'} bg-blue-50/60 dark:bg-blue-900/10 p-3 rounded-2xl border border-blue-100 dark:border-blue-800/60 space-y-2">
+                     <div id="student-readings-section" class="hidden bg-blue-50/60 dark:bg-blue-900/10 p-3 rounded-2xl border border-blue-100 dark:border-blue-800/60 space-y-2">
                          <div class="flex items-center justify-between">
                              <label class="block text-xs font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
                                  <i data-lucide="book-marked" class="w-4 h-4 text-blue-600"></i>
@@ -2293,6 +2575,12 @@ function getCompetitionModalsHTML() {
                                     </div>
                                     <form id="competition-form" onsubmit="handleSaveCompetition(event)">
                                         <input type="hidden" id="competition-id">
+                                            <div id="comp-level-container" class="mb-4 hidden">
+                                                <label class="block text-xs font-bold mb-1 text-purple-700 dark:text-purple-300">الحلقة المستهدفة</label>
+                                                <select id="competition-level-select" class="w-full bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-xl px-3 py-2.5 text-sm font-bold text-purple-900 dark:text-purple-200">
+                                                    ${Object.entries(LEVELS).filter(([k,v]) => !v.hidden && k !== 'admin').map(([k,v]) => `<option value="${k}">${v.name}</option>`).join('')}
+                                                </select>
+                                            </div>
                                             <div class="flex gap-4 mb-4">
                                                 <div class="relative group cursor-pointer shrink-0" onclick="toggleEmojiPicker('competition-emoji-btn')">
                                                     <div id="competition-emoji-preview" class="w-16 h-16 bg-emerald-50 dark:bg-gray-700 rounded-xl border-2 border-dashed border-emerald-300 flex items-center justify-center text-3xl">🏆</div>
@@ -2512,7 +2800,11 @@ function getGradingModalsHTML() {
                                         <div id="activity-check-modal" class="fixed inset-0 bg-black/60 z-[120] hidden flex items-center justify-center p-4 backdrop-blur-sm">
                                             <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col max-h-[85vh]">
                                                 <h3 class="font-bold text-lg mb-2">تسجيل يوم نشاط 🏃</h3>
-                                                <p class="text-xs text-gray-500 mb-4">حدد الطلاب الغائبين ليتم استثناؤهم من النقاط:</p>
+                                                <p class="text-xs text-gray-500 mb-3">حدد تاريخ النشاط والطلاب الغائبين:</p>
+                                                <div class="mb-3">
+                                                    <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1">تاريخ النشاط:</label>
+                                                    <input type="date" id="activity-day-date" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm font-bold text-center">
+                                                </div>
                                                 <div id="activity-students-list" class="flex-1 overflow-y-auto mb-4 border rounded-xl divide-y dark:divide-gray-700"></div>
                                                 <div class="flex gap-2">
                                                     <button onclick="closeModal('activity-check-modal')" class="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 font-medium">إلغاء</button>
@@ -2607,7 +2899,7 @@ function openAddStudentModal() {
     // Show readings section only in Ijazat level
     const readingsSec = document.getElementById('student-readings-section');
     if (readingsSec) {
-        if (isIjazatLevel()) {
+        if (isIjazatLevel(state.currentLevel)) {
             readingsSec.classList.remove('hidden');
         } else {
             readingsSec.classList.add('hidden');
@@ -2616,6 +2908,32 @@ function openAddStudentModal() {
     
     const ts = $('#transfer-student-section');
     if (ts) ts.classList.add('hidden');
+
+    const levelContainer = document.getElementById('student-level-selection');
+    const levelInput = document.getElementById('student-level-input');
+    if (levelContainer && levelInput) {
+        if (state.isAdmin || state.currentLevel === 'admin') {
+            levelContainer.classList.remove('hidden');
+            let opts = '<option value="">-- اختر الحلقة المراد إضافة الطالب إليها --</option>';
+            for (const [key, value] of Object.entries(LEVELS)) {
+                if (key !== 'admin' && !value.hidden) {
+                    opts += `<option value="${key}">${value.name}</option>`;
+                }
+            }
+            levelInput.innerHTML = opts;
+            levelInput.value = '';
+            levelInput.onchange = (e) => {
+                const rs = document.getElementById('student-readings-section');
+                if (rs) {
+                    if (isIjazatLevel(e.target.value)) rs.classList.remove('hidden');
+                    else rs.classList.add('hidden');
+                }
+            };
+        } else {
+            levelContainer.classList.add('hidden');
+            levelInput.onchange = null;
+        }
+    }
     
     toggleModal('student-modal', true);
 }
@@ -2771,7 +3089,7 @@ async function openEditStudent(id) {
     // Show readings section only in Ijazat level
     const readingsSec = document.getElementById('student-readings-section');
     if (readingsSec) {
-        if (isIjazatLevel()) {
+        if (isIjazatLevel(student.level || state.currentLevel)) {
             readingsSec.classList.remove('hidden');
         } else {
             readingsSec.classList.add('hidden');
@@ -2805,6 +3123,32 @@ async function openEditStudent(id) {
             ts.classList.remove('hidden');
         } else {
             ts.classList.add('hidden');
+        }
+    }
+
+    const levelContainer = document.getElementById('student-level-selection');
+    const levelInput = document.getElementById('student-level-input');
+    if (levelContainer && levelInput) {
+        if (state.isAdmin || state.currentLevel === 'admin') {
+            levelContainer.classList.remove('hidden');
+            let opts = '';
+            for (const [key, value] of Object.entries(LEVELS)) {
+                if (key !== 'admin' && !value.hidden) {
+                    opts += `<option value="${key}" ${student.level === key ? 'selected' : ''}>${value.name}</option>`;
+                }
+            }
+            levelInput.innerHTML = opts;
+            levelInput.value = student.level || '';
+            levelInput.onchange = (e) => {
+                const rs = document.getElementById('student-readings-section');
+                if (rs) {
+                    if (isIjazatLevel(e.target.value)) rs.classList.remove('hidden');
+                    else rs.classList.add('hidden');
+                }
+            };
+        } else {
+            levelContainer.classList.add('hidden');
+            levelInput.onchange = null;
         }
     }
 
@@ -3564,35 +3908,48 @@ async function undoScoreById(scoreId, btnEl, restoreLabel) {
  * إلغاء يوم نشاط كامل: يحذف سجل activity_days + كل الدرجات المرتبطة به
  */
 async function undoActivityDay(compId, date) {
-    const btn = document.getElementById('undo-activity-btn');
+    const isDirect = (compId === 'DIRECT_GRADING' || state.currentView === 'direct_grading' || !compId);
+    const btn = document.getElementById(isDirect ? 'direct-undo-activity-btn' : 'undo-activity-btn') || document.getElementById('undo-activity-btn');
+    const targetLevel = (state.isAdmin || state.currentLevel === 'admin') ? (state.adminDirectGradingLevel || 'abu_bakr') : state.currentLevel;
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin mx-1"></i> جاري الإلغاء...';
         lucide.createIcons();
     }
     try {
-        // 1. حذف سجل activity_days
-        const adQ = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, 'activity_days'),
-            window.firebaseOps.where('competitionId', '==', compId),
-            window.firebaseOps.where('date', '==', date)
-        );
-        const adSnap = await window.firebaseOps.getDocs(adQ);
-        for (const d of adSnap.docs) {
-            await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'activity_days', d.id));
+        // 1. حذف سجل activity_days (للمسابقات فقط حيث يوجد competitionId)
+        if (!isDirect && compId) {
+            const adQ = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, 'activity_days'),
+                window.firebaseOps.where('competitionId', '==', compId),
+                window.firebaseOps.where('date', '==', date)
+            );
+            const adSnap = await window.firebaseOps.getDocs(adQ);
+            for (const d of adSnap.docs) {
+                await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'activity_days', d.id));
+            }
         }
 
         // 2. حذف درجات الحضور والغياب المرتبطة بيوم النشاط
-        const scQ = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, 'scores'),
-            window.firebaseOps.where('competitionId', '==', compId),
-            window.firebaseOps.where('date', '==', date)
-        );
+        let scQ;
+        if (isDirect) {
+            scQ = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, 'scores'),
+                window.firebaseOps.where('level', '==', targetLevel),
+                window.firebaseOps.where('date', '==', date)
+            );
+        } else {
+            scQ = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, 'scores'),
+                window.firebaseOps.where('competitionId', '==', compId),
+                window.firebaseOps.where('date', '==', date)
+            );
+        }
         const scSnap = await window.firebaseOps.getDocs(scQ);
         for (const d of scSnap.docs) {
             const data = d.data();
             if (data.criteriaId === 'ACTIVITY_DAY' || data.type === 'activity' ||
-                (data.criteriaId === 'ABSENCE_RECORD' && data.type === 'absence')) {
+                (data.criteriaId === 'ABSENCE_RECORD' && (data.type === 'absence' || (data.criteriaName || '').includes('نشاط')))) {
                 await window.firebaseOps.deleteDoc(window.firebaseOps.doc(window.db, 'scores', d.id));
             }
         }
@@ -3615,22 +3972,38 @@ async function undoActivityDay(compId, date) {
  * يتحقق هل يوجد نشاط مسجل للتاريخ المختار ويعرض/يخفي زر الإلغاء
  */
 async function refreshActivityDayButton(date) {
-    const wrapper = document.getElementById('activity-day-btn-wrapper');
-    if (!wrapper || !currentGradingCompId || !date) return;
+    const isDirect = (state.currentView === 'direct_grading' || currentGradingCompId === 'DIRECT_GRADING');
+    const undoBtn = document.getElementById(isDirect ? 'direct-undo-activity-btn' : 'undo-activity-btn');
+    const targetLevel = (state.isAdmin || state.currentLevel === 'admin') ? (state.adminDirectGradingLevel || 'abu_bakr') : state.currentLevel;
+    if (!undoBtn || !date) return;
     try {
-        const q = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, 'activity_days'),
-            window.firebaseOps.where('competitionId', '==', currentGradingCompId),
-            window.firebaseOps.where('date', '==', date)
-        );
-        const snap = await window.firebaseOps.getDocs(q);
-        const undoBtn = document.getElementById('undo-activity-btn');
-        if (!snap.empty) {
+        let hasActivity = false;
+        if (isDirect) {
+            // في الرصد المباشر: نتحقق من جدول scores حيث تسجل درجات النشاط مع معرف المرحلة
+            const q = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, 'scores'),
+                window.firebaseOps.where('criteriaId', '==', 'ACTIVITY_DAY'),
+                window.firebaseOps.where('level', '==', targetLevel),
+                window.firebaseOps.where('date', '==', date)
+            );
+            const snap = await window.firebaseOps.getDocs(q);
+            hasActivity = !snap.empty;
+        } else {
+            if (!currentGradingCompId) return;
+            const q = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, 'activity_days'),
+                window.firebaseOps.where('competitionId', '==', currentGradingCompId),
+                window.firebaseOps.where('date', '==', date)
+            );
+            const snap = await window.firebaseOps.getDocs(q);
+            hasActivity = !snap.empty;
+        }
+        if (hasActivity) {
             // يوجد نشاط → أظهر زر الإلغاء
             if (undoBtn) {
                 undoBtn.classList.remove('hidden');
                 undoBtn.disabled = false;
-                undoBtn.innerHTML = '<i data-lucide="rotate-ccw" class="w-3 h-3"></i> إلغاء النشاط';
+                undoBtn.innerHTML = '<i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> إلغاء النشاط';
                 lucide.createIcons();
             }
         } else {
@@ -4882,37 +5255,82 @@ window.submitReadingNote = async (readingName, safeId) => {
 // Student Edit Security Check
 let currentActivityGroupId = null;
 
-async function openActivityCheckModal(groupId) {
+async function openActivityCheckModal(groupId = 'ALL') {
+    if (!groupId) groupId = 'ALL';
     currentActivityGroupId = groupId;
     
+    // Ensure all global and grading modals exist in DOM
+    ensureGlobalModals();
+    if (!document.getElementById('activity-check-modal')) {
+        document.body.insertAdjacentHTML('beforeend', getGradingModalsHTML());
+        if (window.lucide) lucide.createIcons();
+    }
+    
+    // Set date input in modal
+    const actDateInput = $('#activity-day-date');
+    if (actDateInput) {
+        actDateInput.value = $('#grading-date')?.value || new Date().toLocaleDateString('en-CA');
+    }
+
+    const isDirect = (state.currentView === 'direct_grading' || currentGradingCompId === 'DIRECT_GRADING' || !currentGradingCompId);
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    const targetLevel = isSupervisor ? (state.adminDirectGradingLevel || 'abu_bakr') : state.currentLevel;
     let membersIds = [];
     if (groupId === 'ALL') {
-        const compGroups = state.groups.filter(g => g.competitionId === currentGradingCompId);
-        compGroups.forEach(g => {
-            if(g.members) membersIds = membersIds.concat(g.members);
-        });
+        if (isDirect) {
+            let halqaStudents = (state.students || []).filter(s => s.level === targetLevel);
+            if (halqaStudents.length === 0 && state.adminData && state.adminData.allStudents) {
+                halqaStudents = state.adminData.allStudents.filter(s => s.level === targetLevel);
+            }
+            if (halqaStudents.length === 0) {
+                try {
+                    const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"), window.firebaseOps.where("level", "==", targetLevel));
+                    const snap = await window.firebaseOps.getDocs(q);
+                    snap.forEach(d => { var x = d.data(); x.id = d.id; halqaStudents.push(x); });
+                } catch(e) { console.error(e); }
+            }
+            membersIds = halqaStudents.map(s => s.id);
+        } else {
+            const compGroups = state.groups.filter(g => g.competitionId === currentGradingCompId);
+            compGroups.forEach(g => {
+                if(g.members) membersIds = membersIds.concat(g.members);
+            });
+            if (membersIds.length === 0) {
+                membersIds = (state.students || []).map(s => s.id);
+            }
+        }
     } else {
         const group = state.groups.find(g => g.id === groupId);
         if (!group) return;
         membersIds = group.members || [];
     }
 
-    const list = $('#activity-students-list');
-    list.innerHTML = `<div class="p-4 text-center"><i data-lucide="loader-2" class="animate-spin w-5 h-5 mx-auto"></i></div>`;
-    lucide.createIcons();
+    const list = document.getElementById('activity-students-list');
+    if (!list) {
+        console.error("activity-students-list element not found");
+        return;
+    }
+    list.innerHTML = `<div class="p-4 text-center"><i data-lucide="loader-2" class="animate-spin w-5 h-5 mx-auto text-purple-600"></i></div>`;
+    if (window.lucide) lucide.createIcons();
 
-    let members = state.students.filter(s => membersIds.includes(s.id));
-    if (members.length === 0 && membersIds.length > 0) {
-        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"), window.firebaseOps.where("level", "==", state.currentLevel));
-        const snap = await window.firebaseOps.getDocs(q);
-        const all = []; snap.forEach(d => { var x = d.data(); x.id = d.id; all.push(x); });
-        state.students = all;
-        members = all.filter(s => membersIds.includes(s.id));
+    let members = (state.students || []).filter(s => membersIds.includes(s.id));
+    if (members.length < membersIds.length && state.adminData && state.adminData.allStudents) {
+        members = state.adminData.allStudents.filter(s => membersIds.includes(s.id));
+    }
+    if (members.length < membersIds.length) {
+        try {
+            const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"), window.firebaseOps.where("level", "==", targetLevel));
+            const snap = await window.firebaseOps.getDocs(q);
+            const all = []; snap.forEach(d => { var x = d.data(); x.id = d.id; all.push(x); });
+            members = all.filter(s => membersIds.includes(s.id));
+        } catch(e) { console.error(e); }
     }
 
     if (members.length === 0) {
-        list.innerHTML = `<p class="text-center text-gray-500 py-4">لا يوجد ${getLabel('students')} لتقييمهم</p>`;
+        list.innerHTML = `<p class="text-center text-gray-500 py-4 font-bold">لا يوجد ${getLabel('students')} لتقييمهم في هذه الحلقة</p>`;
     } else {
+        // Sort alphabetically
+        members.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         list.innerHTML = members.map(s => `
             <label class="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition">
                 <span class="font-bold text-sm">${s.name}</span>
@@ -4925,28 +5343,45 @@ async function openActivityCheckModal(groupId) {
 }
 
 async function submitActivityDay() {
-    const comp = state.competitions.find(c => c.id === currentGradingCompId);
-    const dateVal = $('#grading-date').value;
+    const isDirect = (state.currentView === 'direct_grading' || currentGradingCompId === 'DIRECT_GRADING' || !currentGradingCompId);
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    const targetLevel = isSupervisor ? (state.adminDirectGradingLevel || 'abu_bakr') : state.currentLevel;
+    const comp = isDirect ? null : state.competitions.find(c => c.id === currentGradingCompId);
+    const dateVal = $('#activity-day-date')?.value || $('#grading-date')?.value || new Date().toLocaleDateString('en-CA');
 
-    if (!comp || !dateVal) {
+    if (!dateVal) {
         showToast("خطأ في البيانات أو التاريخ", "error");
+        return;
+    }
+    if (!isDirect && !comp) {
+        showToast("خطأ في المسابقة", "error");
         return;
     }
 
     let membersIds = [];
     if (currentActivityGroupId === 'ALL') {
-        const compGroups = state.groups.filter(g => g.competitionId === comp.id);
-        compGroups.forEach(g => {
-            if(g.members) membersIds = membersIds.concat(g.members);
-        });
+        if (isDirect) {
+            membersIds = (state.students || []).filter(s => s.level === targetLevel).map(s => s.id);
+            if (membersIds.length === 0 && state.adminData && state.adminData.allStudents) {
+                membersIds = state.adminData.allStudents.filter(s => s.level === targetLevel).map(s => s.id);
+            }
+            if (membersIds.length === 0) membersIds = (state.students || []).map(s => s.id);
+        } else {
+            const compGroups = state.groups.filter(g => g.competitionId === comp.id);
+            compGroups.forEach(g => {
+                if(g.members) membersIds = membersIds.concat(g.members);
+            });
+            if (membersIds.length === 0) membersIds = (state.students || []).map(s => s.id);
+        }
     } else {
         const group = state.groups.find(g => g.id === currentActivityGroupId);
         if (!group) return;
         membersIds = group.members || [];
     }
+    membersIds = membersIds.filter(sid => sid && typeof sid === 'string' && sid.trim() !== '');
 
-    const activityPoints = comp.activityPoints || 0;
-    const rawActivityAbsentPoints = comp.activityAbsentPoints || 0;
+    const activityPoints = isDirect ? 0 : (comp ? (comp.activityPoints || 0) : 0);
+    const rawActivityAbsentPoints = isDirect ? 0 : (comp ? (comp.activityAbsentPoints || 0) : 0);
     const activityAbsentPoints = rawActivityAbsentPoints > 0 ? -rawActivityAbsentPoints : rawActivityAbsentPoints;
     const absents = Array.from($$('.activity-absent-checkbox:checked')).map(cb => cb.value);
 
@@ -4958,44 +5393,74 @@ async function submitActivityDay() {
     }
 
     try {
-        // 0. Check if Activity Day already exists for this date and competition
-        const duplicateCheckQ = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, "activity_days"),
-            window.firebaseOps.where("competitionId", "==", comp.id),
-            window.firebaseOps.where("date", "==", dateVal)
-        );
-        const duplicateCheckSnap = await window.firebaseOps.getDocs(duplicateCheckQ);
-        if (!duplicateCheckSnap.empty) {
-            showToast("تم تسجيل نشاط لهذا اليوم مسبقاً في هذه المسابقة", "error");
+        // 0. Check if Activity Day already exists for this date and competition / level
+        let isDuplicate = false;
+        if (isDirect) {
+            const duplicateCheckQ = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "scores"),
+                window.firebaseOps.where("criteriaId", "==", "ACTIVITY_DAY"),
+                window.firebaseOps.where("level", "==", targetLevel),
+                window.firebaseOps.where("date", "==", dateVal)
+            );
+            const duplicateCheckSnap = await window.firebaseOps.getDocs(duplicateCheckQ);
+            isDuplicate = !duplicateCheckSnap.empty;
+        } else {
+            const duplicateCheckQ = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "activity_days"),
+                window.firebaseOps.where("competitionId", "==", comp.id),
+                window.firebaseOps.where("date", "==", dateVal)
+            );
+            const duplicateCheckSnap = await window.firebaseOps.getDocs(duplicateCheckQ);
+            isDuplicate = !duplicateCheckSnap.empty;
+        }
+        if (isDuplicate) {
+            showToast("تم تسجيل نشاط لهذا اليوم مسبقاً", "error");
             return;
         }
 
-        // 1. Log the Activity Day
-        await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "activity_days"), {
-            competitionId: comp.id,
-            date: dateVal,
-            points: activityPoints
-        });
+        // 1. Log the Activity Day in activity_days for competitions only
+        if (!isDirect && comp) {
+            await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "activity_days"), {
+                competitionId: comp.id,
+                date: dateVal,
+                points: activityPoints
+            });
+        }
 
-        // 2. Save Scores using Sequential Batch for stability
+        // 2. Save Scores using Sequential Batch for stability (0 points for direct grading)
         const batch = window.firebaseOps.writeBatch(window.db);
 
         membersIds.forEach(sid => {
             const isAbsent = absents.includes(sid);
-            const groupId = currentActivityGroupId === 'ALL' ? (state.groups.find(g => g.members && g.members.includes(sid))?.id || '') : currentActivityGroupId;
+            let gId = null;
+            if (!isDirect) {
+                if (currentActivityGroupId && currentActivityGroupId !== 'ALL') {
+                    gId = currentActivityGroupId;
+                } else {
+                    gId = state.groups.find(g => g.members && g.members.includes(sid))?.id || null;
+                }
+            } else {
+                gId = state.groups.find(g => g.members && g.members.includes(sid))?.id || null;
+            }
+            if (!gId || typeof gId !== 'string' || gId.trim() === '' || gId === 'ALL') {
+                gId = null;
+            }
+
+            const compId = (!isDirect && comp && comp.id) ? comp.id : null;
+
             const scoreData = {
                 studentId: sid,
-                competitionId: comp.id,
-                groupId: groupId,
+                competitionId: compId,
+                groupId: gId,
                 criteriaId: isAbsent ? 'ABSENCE_RECORD' : 'ACTIVITY_DAY',
                 criteriaName: isAbsent ? 'غياب يوم نشاط' : 'حضور يوم نشاط',
-                points: isAbsent ? activityAbsentPoints : activityPoints,
+                points: isDirect ? 0 : (isAbsent ? activityAbsentPoints : activityPoints),
                 type: isAbsent ? 'absence' : 'activity',
-                level: state.currentLevel,
+                level: targetLevel,
                 date: dateVal,
-                updatedAt: new Date(),
+                updatedAt: new Date().toISOString(),
                 timestamp: Date.now(),
-                createdAt: new Date()
+                createdAt: new Date().toISOString()
             };
 
             // Note: writeBatch.set in our wrapper always does addDoc
@@ -5005,17 +5470,20 @@ async function submitActivityDay() {
         await batch.commit();
 
         closeModal('activity-check-modal');
-        showToast("تم رصد درجات النشاط بنجاح", "success");
+        showToast("تم رصد يوم النشاط بنجاح", "success");
+        await refreshActivityDayButton(dateVal);
 
         // 3. Show WhatsApp list for absentees
-        const absentStudents = state.students.filter(s => absents.includes(s.id));
+        const absentStudents = (state.students || []).filter(s => absents.includes(s.id));
         if (absentStudents.length > 0) {
             const waList = $('#activity-absent-whatsapp-list');
-            waList.innerHTML = absentStudents.map(s => {
-                const phone = s.studentNumber || '';
+            if (waList) {
+                const eventName = isDirect ? (LEVELS[targetLevel] ? LEVELS[targetLevel].name : 'الحلقة') : comp.name;
+                waList.innerHTML = absentStudents.map(s => {
+                const phone = s.studentNumber || s.parentPhone || '';
                 const msg = isAdultLevel()
-                    ? `السلام عليكم أخي ${s.name}،\nتم تسجيل غيابك عن يوم النشاط في ${comp.name}.`
-                    : `نحيطكم علماً بغياب الطالب (${s.name}) عن يوم النشاط المقام اليوم في مسابقة ${comp.name}.`;
+                    ? `السلام عليكم أخي ${s.name}،\nتم تسجيل غيابك عن يوم النشاط في ${eventName}.`
+                    : `نحيطكم علماً بغياب الطالب (${s.name}) عن يوم النشاط المقام اليوم في ${eventName}.`;
                 const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
 
                 return `
@@ -5029,10 +5497,10 @@ async function submitActivityDay() {
                         ` : '<span class="text-[10px] text-gray-400">لا يوجد رقم</span>'}
                     </div>
                 `;
-            }).join('');
-
-            toggleModal('activity-absent-modal', true);
-            lucide.createIcons();
+                }).join('');
+                toggleModal('activity-absent-modal', true);
+                lucide.createIcons();
+            }
         }
 
     } catch (e) {
@@ -5042,7 +5510,8 @@ async function submitActivityDay() {
     } finally {
         if (confirmBtn) {
             confirmBtn.disabled = false;
-            confirmBtn.textContent = 'تأكيد الرصد';
+            confirmBtn.innerHTML = 'تأكيد الرصد';
+            lucide.createIcons();
         }
     }
 }
@@ -5091,16 +5560,28 @@ async function handleSaveStudent(e) {
     // Get selected readings
     const selectedReadings = Array.from(document.querySelectorAll('input[name="student_readings"]:checked')).map(cb => cb.value);
 
+    let studentLevel = state.currentLevel;
+    if (state.isAdmin || state.currentLevel === 'admin') {
+        const lvlInput = document.getElementById('student-level-input');
+        if (lvlInput && lvlInput.value && lvlInput.value !== 'admin') {
+            studentLevel = lvlInput.value;
+        } else {
+            showToast("يرجى اختيار الحلقة المراد تسجيل الطالب بها", "error");
+            btn.disabled = false;
+            return;
+        }
+    }
+
     const data = {
         name: $('#student-name').value,
         studentNumber: studentNumber,
         nationalId: $('#student-national-id') ? $('#student-national-id').value.trim() : '',
         lastAssociationExam: $('#student-last-exam') ? $('#student-last-exam').value : '',
         parentPhone: studentNumber, // Same as studentNumber for parent lookup
-        level: state.currentLevel,  // Level for parent to see
+        level: studentLevel,  // Level for parent to see
         icon: imageBase64, // Store Base64 Image
         password: $('#student-password-edit').value, // Student Password
-        readings: selectedReadings,
+        readings: (studentLevel === 'ijazat') ? selectedReadings : [],
         updatedAt: new Date()
     };
 
@@ -5152,11 +5633,13 @@ async function handleSaveStudent(e) {
         if (id) {
             await window.firebaseOps.updateDoc(window.firebaseOps.doc(window.db, "students", id), data);
             showToast("تم التحديث");
+            state.adminData = null;
         } else {
             data.createdAt = new Date();
-            data.level = state.currentLevel;
+            data.level = studentLevel;
             const docRef = await window.firebaseOps.addDoc(window.firebaseOps.collection(window.db, "students"), data);
             showToast("تم الإضافة");
+            state.adminData = null;
 
             // Optimistic Update: Add to local state immediately
             data.id = docRef.id;
@@ -5181,6 +5664,20 @@ function openAddCompetitionModal() {
     const titleEl = document.querySelector('#competition-modal h3');
     if (titleEl) titleEl.textContent = 'إضافة مسابقة جديدة';
 
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    const levelContainer = document.getElementById('comp-level-container');
+    if (levelContainer) {
+        if (isSupervisor) {
+            levelContainer.classList.remove('hidden');
+            const levelSelect = document.getElementById('competition-level-select');
+            if (levelSelect && adminCompFilter && adminCompFilter !== 'all') {
+                levelSelect.value = adminCompFilter;
+            }
+        } else {
+            levelContainer.classList.add('hidden');
+        }
+    }
+
     $('#competition-form').reset();
     $('#criteria-list').innerHTML = '';
     addCriteriaItem(); // Add one default
@@ -5188,7 +5685,7 @@ function openAddCompetitionModal() {
 }
 
 async function openEditCompetition(id) {
-    if (!state.isTeacher) return;
+    if (!state.isTeacher && !state.isAdmin && state.currentLevel !== 'admin') return;
 
     try {
         const docSnap = await window.firebaseOps.getDoc(window.firebaseOps.doc(window.db, "competitions", id));
@@ -5205,6 +5702,20 @@ async function openEditCompetition(id) {
         $('#comp-absent-no-excuse').value = data.absentNoExcuse || 4;
         $('#comp-activity-points').value = data.activityPoints || 0;
         $('#comp-activity-absent-points').value = data.activityAbsentPoints || 0;
+
+        const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+        const levelContainer = document.getElementById('comp-level-container');
+        if (levelContainer) {
+            if (isSupervisor) {
+                levelContainer.classList.remove('hidden');
+                const levelSelect = document.getElementById('competition-level-select');
+                if (levelSelect && data.level) {
+                    levelSelect.value = data.level;
+                }
+            } else {
+                levelContainer.classList.add('hidden');
+            }
+        }
 
         const titleEl = document.querySelector('#competition-modal h3');
         if (titleEl) titleEl.textContent = 'تعديل المسابقة';
@@ -5252,6 +5763,11 @@ function populateLevelSelects() {
     
     if (teacherSelect && APP_CONFIG && APP_CONFIG.levels) {
         teacherSelect.innerHTML = '<option value="" disabled selected>-- اختر الحلقة --</option>';
+        // Always prepend admin option first
+        const adminOpt = document.createElement('option');
+        adminOpt.value = 'admin';
+        adminOpt.textContent = '🏢 الإدارة العامة (المشرف)';
+        teacherSelect.appendChild(adminOpt);
         for (const [key, levelData] of Object.entries(APP_CONFIG.levels)) {
             if (levelData.hidden) continue;
             const option = document.createElement('option');
@@ -5309,17 +5825,19 @@ function init() {
         $('#view-container').classList.remove('hidden'); // CRITICAL: Show view container
         updateUIMode();
 
-        // Start Global Sync
-        startGlobalDataSync();
+        // Start Global Sync (only for halqat, not admin)
+        if (state.currentLevel && state.currentLevel !== 'admin') {
+            startGlobalDataSync();
+        }
 
         // Navigate based on role
-        const startView = state.isParent ? 'parent' : (state.isTeacher ? 'home' : 'students');
+        const startView = state.isParent ? 'parent' : ((state.isAdmin || state.currentLevel === 'admin') ? 'admin' : (state.isTeacher ? 'home' : 'students'));
         // Replace initial state so Android Back button exits app from start screen
         history.replaceState({ view: startView }, '', `#${startView}`);
         router.render(startView);
 
-        // ✅ Auto-backup: check 3 seconds after teacher login
-        if (state.isTeacher) {
+        // ✅ Auto-backup: check 3 seconds after teacher login (skip for admin)
+        if (state.isTeacher && state.currentLevel !== 'admin') {
             setTimeout(checkAndCreateWeeklyBackup, 3000);
         }
     } else {
@@ -5335,10 +5853,13 @@ function startGlobalDataSync() {
 
     // 1. Competitions Sync
     if (competitionsUnsubscribe) competitionsUnsubscribe();
-    const qComp = window.firebaseOps.query(
-        window.firebaseOps.collection(window.db, "competitions"),
-        window.firebaseOps.where("level", "==", state.currentLevel)
-    );
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    const qComp = isSupervisor
+        ? window.firebaseOps.query(window.firebaseOps.collection(window.db, "competitions"))
+        : window.firebaseOps.query(
+            window.firebaseOps.collection(window.db, "competitions"),
+            window.firebaseOps.where("level", "==", state.currentLevel)
+        );
     competitionsUnsubscribe = window.firebaseOps.onSnapshot(qComp, function (snapshot) {
         const comps = [];
         snapshot.forEach(function (doc) {
@@ -5404,12 +5925,12 @@ function startGlobalDataSync() {
         // Update Bottom Nav for Direct Grading
         const dgNav = document.getElementById('nav-direct-grading');
         if (dgNav) {
-            dgNav.style.display = (state.isTeacher && state.enableDirectGrading) ? 'flex' : 'none';
+            dgNav.style.display = (isSupervisor || (state.isTeacher && state.enableDirectGrading)) ? 'flex' : 'none';
         }
-        // Show Plans nav for teachers
+        // Show Plans nav for teachers and supervisor
         const plansNav = document.getElementById('nav-plans');
         if (plansNav) {
-            plansNav.style.display = state.isTeacher ? 'flex' : 'none';
+            plansNav.style.display = (isSupervisor || state.isTeacher) ? 'flex' : 'none';
         }
     });
 
@@ -5597,6 +6118,11 @@ async function handleSaveCompetition(e) {
             return; // Finally will run to reset button
         }
 
+        const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+        const compLevel = isSupervisor
+            ? (document.getElementById('competition-level-select')?.value || 'abu_bakr')
+            : state.currentLevel;
+
         const data = {
             name,
             icon,
@@ -5605,7 +6131,7 @@ async function handleSaveCompetition(e) {
             absentNoExcuse,
             activityPoints,
             activityAbsentPoints,
-            level: state.currentLevel,
+            level: compLevel,
             updatedAt: new Date()
         };
 
@@ -6103,8 +6629,11 @@ function ensureGlobalModals() {
     if (!document.getElementById('student-modal')) {
         const modalsHTML = getStudentModalHTML() + getCompetitionModalsHTML() + getQuranSearchModalHTML();
         document.body.insertAdjacentHTML('beforeend', modalsHTML);
+    }
+    if (!document.getElementById('activity-check-modal')) {
         document.body.insertAdjacentHTML('beforeend', getGradingModalsHTML());
     }
+    if (window.lucide) lucide.createIcons();
 }
 
 // Delete Competition Function
@@ -6218,9 +6747,23 @@ async function openStudentReport(studentId) {
     if (state.isParent) {
         student = state.parentStudents.find(s => s.id === studentId);
     } else {
-        student = window._currentStudentRecord || state.students.find(s => s.id === studentId);
+        student = window._currentStudentRecord || (state.students && state.students.find(s => s.id === studentId));
         if(!student && window._tempLevelStudents) {
             student = window._tempLevelStudents.find(s => s.id === studentId);
+        }
+        if(!student && state.adminData && state.adminData.allStudents) {
+            student = state.adminData.allStudents.find(s => s.id === studentId);
+        }
+    }
+
+    if (!student) {
+        try {
+            const stDoc = await window.firebaseOps.getDoc(window.firebaseOps.doc(window.db, "students", studentId));
+            if (stDoc && stDoc.exists()) {
+                student = { id: stDoc.id, ...stDoc.data() };
+            }
+        } catch (e) {
+            console.error("Error fetching student fallback in openStudentReport:", e);
         }
     }
 
@@ -6252,11 +6795,14 @@ async function openStudentReport(studentId) {
     const criteriaStats = {};
     const absenceRecordsWithExcuse = [];
     const absenceRecordsNoExcuse = [];
+    const activityDaysRecords = [];
 
     scores.forEach(s => {
         totalPoints += (s.points || 0);
 
-        if (s.criteriaId === 'ABSENCE_RECORD') {
+        if (s.criteriaId === 'ACTIVITY_DAY') {
+            activityDaysRecords.push({ date: s.date || 'غير محدد', points: s.points || 0, name: s.criteriaName || 'حضور يوم نشاط' });
+        } else if (s.criteriaId === 'ABSENCE_RECORD') {
             absenceDays++;
             if (s.criteriaName && s.criteriaName.indexOf('بعذر') !== -1) {
                 absenceWithExcuse++;
@@ -6273,6 +6819,8 @@ async function openStudentReport(studentId) {
             else criteriaStats[key].negative += s.points;
         }
     });
+
+    activityDaysRecords.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
     // Store absence records in window for modal access
     window._absenceRecordsWithExcuse = absenceRecordsWithExcuse.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -6474,6 +7022,13 @@ async function openStudentReport(studentId) {
                 العودة لقائمة ${getLabel('students')}
             </button>
         `;
+    } else if (state.isAdmin || state.currentLevel === 'admin') {
+        topButtonsHTML = `
+            <button onclick="renderAdminDashboard()" class="flex items-center gap-2 text-purple-600 hover:text-purple-800 dark:text-purple-400 mb-4 font-bold">
+                <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                العودة للوحة الإشراف العام
+            </button>
+        `;
     } else if (isStudent) {
         topButtonsHTML = ``;
     }
@@ -6498,18 +7053,39 @@ async function openStudentReport(studentId) {
 
             <!-- Quick Stats -->
             ${!_hideAgg ? `
-            <div class="grid grid-cols-2 gap-3 mb-4">
-                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 text-center shadow-sm border">
-                    <p class="text-2xl font-bold ${totalPoints >= 0 ? 'text-green-600' : 'text-red-600'}">${totalPoints}</p>
-                    <p class="text-xs text-gray-500">إجمالي النقاط</p>
+            <div class="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
+                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 text-center shadow-sm border border-gray-100 dark:border-gray-700">
+                    <p class="text-xl sm:text-2xl font-bold ${totalPoints >= 0 ? 'text-green-600' : 'text-red-600'}">${totalPoints}</p>
+                    <p class="text-[11px] text-gray-500">إجمالي النقاط</p>
                 </div>
-                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 text-center shadow-sm border">
-                    <p class="text-2xl font-bold text-orange-600">${absenceDays}</p>
-                    <p class="text-xs text-gray-500">أيام الغياب</p>
+                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 text-center shadow-sm border border-gray-100 dark:border-gray-700">
+                    <p class="text-xl sm:text-2xl font-bold text-orange-600">${absenceDays}</p>
+                    <p class="text-[11px] text-gray-500">أيام الغياب</p>
+                </div>
+                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 text-center shadow-sm border border-purple-100 dark:border-purple-900/30">
+                    <p class="text-xl sm:text-2xl font-bold text-purple-600 dark:text-purple-400">${activityDaysRecords.length}</p>
+                    <p class="text-[11px] text-purple-600 dark:text-purple-400 font-bold">أيام النشاط</p>
                 </div>
             </div>
             <div id="student-ranking-card" class="mb-6">
                 <div class="text-center py-2 text-gray-400 text-xs">جاري حساب الترتيب...</div>
+            </div>
+            ` : ''}
+
+            <!-- Assigned Readings for Ijazat -->
+            ${(student.readings && student.readings.length > 0) ? `
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border border-blue-100 dark:border-blue-800">
+                <h3 class="font-bold mb-3 flex items-center gap-2 text-blue-800 dark:text-blue-300">
+                    <i data-lucide="book-marked" class="w-4 h-4 text-blue-600"></i>
+                    القراءات والمتون المسندة للدارس
+                </h3>
+                <div class="flex flex-wrap gap-1.5">
+                    ${student.readings.map(r => `
+                        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200/50 dark:border-blue-700/50">
+                            📖 ${r}
+                        </span>
+                    `).join('')}
+                </div>
             </div>
             ` : ''}
 
@@ -6546,6 +7122,32 @@ async function openStudentReport(studentId) {
                         <p class="text-xs text-red-600">بدون عذر ▸</p>
                     </div>
                 </div>
+            </div>
+
+            <!-- Activity Days Details -->
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border border-purple-100 dark:border-purple-900/30">
+                <h3 class="font-bold mb-3 flex items-center justify-between text-purple-900 dark:text-purple-300">
+                    <span class="flex items-center gap-2">
+                        <i data-lucide="zap" class="w-4 h-4 text-purple-600"></i>
+                        أيام النشاط (${activityDaysRecords.length})
+                    </span>
+                    <span class="text-[11px] font-normal text-purple-600 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800">بدون نقاط</span>
+                </h3>
+                ${activityDaysRecords.length === 0 ? `
+                    <p class="text-xs text-gray-400 text-center py-3">لم يتم تسجيل حضور أيام نشاط</p>
+                ` : `
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                        ${activityDaysRecords.map(act => `
+                            <div class="flex items-center justify-between p-2.5 bg-purple-50/60 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800/40 text-xs">
+                                <span class="font-bold text-purple-800 dark:text-purple-300 flex items-center gap-1.5">
+                                    <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-purple-600"></i>
+                                    ${act.name}
+                                </span>
+                                <span class="text-gray-500 dark:text-gray-400 font-mono text-[11px]">${act.date}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `}
             </div>
 
             <!-- Contact Teacher -->
@@ -7240,83 +7842,25 @@ async function deleteGroup(groupId) {
 // =====================================================
 // FEATURE #7: Student Search/Filter
 // =====================================================
-function filterStudents(query) {
-    if (!query || query.trim() === '') {
-        updateStudentsListUI();
-        return;
+function filterStudents(query, returnOnly = false) {
+    window._studentAffairsVisibleCount = 5;
+    let filtered = state.students;
+    if (state.adminStudentHalqaFilter) {
+        filtered = filtered.filter(s => s.level === state.adminStudentHalqaFilter);
     }
-    const q = query.trim().toLowerCase();
-    const filtered = state.students.filter(s => {
-        const nameMatch = s.name && s.name.toLowerCase().includes(q);
-        const numMatch = s.studentNumber && s.studentNumber.includes(q);
-        return nameMatch || numMatch;
-    });
+    if (query && query.trim() !== '') {
+        const q = query.trim().toLowerCase();
+        filtered = filtered.filter(s => {
+            const nameMatch = s.name && s.name.toLowerCase().includes(q);
+            const numMatch = s.studentNumber && s.studentNumber.includes(q);
+            return nameMatch || numMatch;
+        });
+    }
+    if (returnOnly) return filtered;
     updateStudentsListUI(filtered);
 }
 
-// Override updateStudentsListUI to accept optional filtered list
-const _originalUpdateStudentsListUI = updateStudentsListUI;
-updateStudentsListUI = function (filteredList) {
-    const list = $('#students-list');
-    if (!list) return;
-
-    const students = filteredList || state.students;
-
-    if (students.length === 0 && filteredList) {
-        list.innerHTML = `
-            <div class="flex flex-col items-center justify-center py-12 text-gray-400">
-                <i data-lucide="search-x" class="w-12 h-12 mb-3 opacity-20"></i>
-                <p class="text-sm font-medium">لا توجد نتائج</p>
-            </div>
-        `;
-        lucide.createIcons();
-        return;
-    }
-
-    if (students.length === 0) {
-        list.innerHTML = `
-            <div class="flex flex-col items-center justify-center py-12 text-gray-400">
-                <i data-lucide="users" class="w-12 h-12 mb-3 opacity-20"></i>
-                <p class="text-sm font-medium">لا يوجد ${getLabel('students')} حتى الآن</p>
-                ${state.isTeacher ? `<p class="text-xs mt-1">اضغط على "جديد" لإضافة ${getLabel('students')}</p>` : ''}
-            </div>
-        `;
-        lucide.createIcons();
-        return;
-    }
-
-    list.innerHTML = students.map(student => {
-        const isImg = student.icon && student.icon.startsWith('data:image');
-        const iconHtml = isImg
-            ? `<img src="${student.icon}" class="w-full h-full object-cover">`
-            : (student.icon || '👤');
-
-        return `
-        <div class="p-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition group border-b border-gray-100 dark:border-gray-700 last:border-0">
-            <div onclick="openStudentReport('${student.id}')" class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-xl shadow-sm border border-gray-200 dark:border-gray-600 overflow-hidden cursor-pointer shrink-0">
-                ${iconHtml}
-            </div>
-            <div class="flex-1 min-w-0" onclick="openStudentReport('${student.id}')" style="cursor:pointer">
-                <h4 class="font-bold text-gray-800 dark:text-gray-100 truncate">${student.name}</h4>
-                <div class="flex flex-wrap gap-1 text-xs text-gray-500 mt-0.5">
-                    ${(state.isTeacher && student.studentNumber) ? `<span class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px] text-gray-500 tracking-wider">${student.studentNumber}</span>` : ''}
-                    ${student.password ? '<span class="text-green-500">🔐</span>' : '<span class="text-orange-400">⚠️ بدون كلمة مرور</span>'}
-                </div>
-            </div>
-            <div class="flex gap-1 shrink-0">
-                <button onclick="event.stopPropagation(); openEditStudent('${student.id}')" class="p-2 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition" title="تعديل">
-                    <i data-lucide="edit-2" class="w-4 h-4"></i>
-                </button>
-                ${state.isTeacher ? `
-                <button onclick="event.stopPropagation(); confirmDeleteStudent('${student.id}')" class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="حذف">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                </button>
-                ` : ''}
-            </div>
-        </div>
-    `}).join('');
-    lucide.createIcons();
-};
+// Note: updateStudentsListUI is handled with full pagination & absence sorting in the primary definition.
 
 // =====================================================
 // FEATURE #1: Export Data (XLSX — Professional Excel)
@@ -8211,7 +8755,7 @@ async function submitCustomPoints(e) {
         targetStudentIds.forEach(sid => {
             const scoreData = {
                 studentId: sid,
-                competitionId: compId,
+                competitionId: (compId === 'DIRECT_GRADING' || !compId) ? null : compId,
                 groupId: currentGradingGroupId || null,
                 criteriaId: criteriaIdStr,
                 criteriaName: 'تقييم مخصص: ' + reasonStr,
@@ -9668,9 +10212,11 @@ window.manualBackup = async function() {
 // واجهة الرصد المباشر (Direct Grading Board)
 // =========================================
 function renderDirectGrading() {
+    ensureGlobalModals();
     const container = $('#view-container');
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
     
-    if (!state.enableDirectGrading) {
+    if (!state.enableDirectGrading && !isSupervisor) {
         container.innerHTML = `
             <div class="flex flex-col items-center justify-center h-64 text-gray-400">
                 <i data-lucide="lock" class="w-12 h-12 mb-3"></i>
@@ -9682,14 +10228,43 @@ function renderDirectGrading() {
         return;
     }
 
+    const activeLevel = isSupervisor ? (state.adminDirectGradingLevel || 'abu_bakr') : state.currentLevel;
+    state.adminDirectGradingLevel = activeLevel;
+
+    const supervisorHalqaSelector = isSupervisor ? `
+        <div class="mb-4 bg-purple-50 dark:bg-purple-950/30 p-3 rounded-2xl border border-purple-100 dark:border-purple-800 flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2">
+                <i data-lucide="shield" class="w-5 h-5 text-purple-600"></i>
+                <span class="text-xs font-bold text-purple-900 dark:text-purple-200">وضع الإشراف العام - اختر الحلقة للرصد:</span>
+            </div>
+            <select id="direct-grading-admin-level" onchange="switchAdminDirectGradingHalqa(this.value)" class="bg-white dark:bg-gray-800 text-purple-900 dark:text-purple-200 text-xs font-bold px-3 py-2 rounded-xl border border-purple-200 dark:border-purple-700 focus:outline-none">
+                ${Object.entries(LEVELS).filter(([k, v]) => !v.hidden && k !== 'admin').map(([k, v]) => `
+                    <option value="${k}" ${activeLevel === k ? 'selected' : ''}>${v.name}</option>
+                `).join('')}
+            </select>
+        </div>
+    ` : '';
+
     container.innerHTML = `
         <div class="space-y-4 animate-fade-in">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">الرصد المباشر - ${(LEVELS[state.currentLevel] ? LEVELS[state.currentLevel].name : '')}</h2>
-                <button onclick="openCollectiveNoteModal()" class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/60 px-3 py-2 rounded-xl text-sm font-bold transition flex items-center gap-1 border border-purple-200 dark:border-purple-800">
-                    <i data-lucide="message-square" class="w-4 h-4"></i>
-                    ملاحظة جماعية
-                </button>
+            ${supervisorHalqaSelector}
+            <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                <h2 class="text-xl font-bold">الرصد المباشر - ${(LEVELS[activeLevel] ? LEVELS[activeLevel].name : '')}</h2>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button onclick="openActivityCheckModal('ALL')" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-xl text-sm font-bold transition flex items-center gap-1.5 shadow-sm">
+                        <i data-lucide="zap" class="w-4 h-4"></i>
+                        <span>يوم نشاط</span>
+                    </button>
+                    <button id="direct-undo-activity-btn" onclick="undoActivityDay('DIRECT_GRADING', new Date().toLocaleDateString('en-CA'))"
+                        class="hidden bg-red-100 text-red-700 border border-red-200 px-2.5 py-2 rounded-xl text-xs font-bold hover:bg-red-200 transition flex items-center gap-1 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300" title="إلغاء النشاط">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                        <span>إلغاء النشاط</span>
+                    </button>
+                    <button onclick="openCollectiveNoteModal()" class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/60 px-3 py-2 rounded-xl text-sm font-bold transition flex items-center gap-1 border border-purple-200 dark:border-purple-800">
+                        <i data-lucide="message-square" class="w-4 h-4"></i>
+                        <span>ملاحظة جماعية</span>
+                    </button>
+                </div>
             </div>
             
             <div class="relative mb-4">
@@ -9704,14 +10279,35 @@ function renderDirectGrading() {
     `;
 
     updateDirectStudentsList();
+    refreshActivityDayButton(new Date().toLocaleDateString('en-CA'));
     lucide.createIcons();
 }
+
+window.switchAdminDirectGradingHalqa = async function(level) {
+    state.adminDirectGradingLevel = level;
+    try {
+        const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"), window.firebaseOps.where("level", "==", level));
+        const snap = await window.firebaseOps.getDocs(q);
+        const studs = [];
+        snap.forEach(d => { var x = d.data(); x.id = d.id; studs.push(x); });
+        state.students = studs;
+    } catch(e) { console.error(e); }
+    renderDirectGrading();
+};
 
 function updateDirectStudentsList() {
     const list = $('#direct-students-list');
     if (!list) return;
 
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
     if (state.students.length === 0) {
+        if (isSupervisor) {
+            const activeLevel = state.adminDirectGradingLevel || 'abu_bakr';
+            list.innerHTML = '<div class="p-8 text-center"><i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto text-purple-600"></i></div>';
+            lucide.createIcons();
+            window.switchAdminDirectGradingHalqa(activeLevel);
+            return;
+        }
         list.innerHTML = '<p class="text-center text-gray-500 py-8">لا يوجد طلاب مسجلين</p>';
         return;
     }
@@ -9930,16 +10526,46 @@ async function submitAbsence(label, points) {
 // تسجيل الطالب الذاتي (Self-Registration)
 // =========================================
 function openRegistrationLinkModal() {
-    if (!state.currentLevel) return;
-    const url = window.location.origin + window.location.pathname + '?register=1&level=' + encodeURIComponent(state.currentLevel);
-    
-    // Set URL
-    const displayEl = document.getElementById('registration-link-display');
-    if (displayEl) {
-        displayEl.textContent = url;
+    const adminPicker = document.getElementById('admin-reg-level-container');
+    const adminSelect = document.getElementById('admin-reg-level-select');
+
+    let targetLevel = state.currentLevel;
+
+    if (state.isAdmin || state.currentLevel === 'admin') {
+        if (adminPicker && adminSelect) {
+            adminPicker.classList.remove('hidden');
+            let opts = '';
+            let firstLevel = '';
+            for (const [key, value] of Object.entries(LEVELS)) {
+                if (key !== 'admin' && !value.hidden) {
+                    if (!firstLevel) firstLevel = key;
+                    opts += `<option value="${key}">${value.name}</option>`;
+                }
+            }
+            adminSelect.innerHTML = opts;
+            targetLevel = firstLevel;
+        }
+    } else {
+        if (adminPicker) adminPicker.classList.add('hidden');
     }
-    
-    // Set Copy action
+
+    _updateRegistrationLinkUrl(targetLevel);
+    toggleModal('registration-link-modal', true);
+    lucide.createIcons();
+}
+
+function updateAdminRegistrationLink() {
+    const adminSelect = document.getElementById('admin-reg-level-select');
+    if (adminSelect && adminSelect.value) {
+        _updateRegistrationLinkUrl(adminSelect.value);
+    }
+}
+
+function _updateRegistrationLinkUrl(level) {
+    if (!level || level === 'admin') return;
+    const url = window.location.origin + window.location.pathname + '?register=1&level=' + encodeURIComponent(level);
+    const displayEl = document.getElementById('registration-link-display');
+    if (displayEl) displayEl.textContent = url;
     const copyBtn = document.getElementById('copy-registration-link-btn');
     if (copyBtn) {
         copyBtn.onclick = () => {
@@ -9949,9 +10575,6 @@ function openRegistrationLinkModal() {
             });
         };
     }
-    
-    toggleModal('registration-link-modal', true);
-    lucide.createIcons();
 }
 
 // =====================================================
@@ -10946,7 +11569,7 @@ async function submitCollectiveGradingScore(criteriaId, criteriaName, points, is
                     window.firebaseOps.collection(window.db, "scores"),
                     {
                         studentId: studentId,
-                        competitionId: currentGradingCompId,
+                        competitionId: (currentGradingCompId === 'DIRECT_GRADING' || !currentGradingCompId) ? null : currentGradingCompId,
                         groupId: currentGradingGroupId || null,
                         criteriaId: criteriaId,
                         criteriaName: finalLabel,
@@ -10977,7 +11600,7 @@ async function submitCollectiveGradingScore(criteriaId, criteriaName, points, is
                         window.firebaseOps.collection(window.db, "scores"),
                         {
                             studentId: studentId,
-                            competitionId: currentGradingCompId,
+                            competitionId: (currentGradingCompId === 'DIRECT_GRADING' || !currentGradingCompId) ? null : currentGradingCompId,
                             groupId: currentGradingGroupId || null,
                             criteriaId: criteriaId,
                             criteriaName: finalLabel,
@@ -11291,7 +11914,17 @@ async function saveStudentPlanToDB(planData, dailyRecords) {
             end_page: dailyRecords[dailyRecords.length - 1]?.endPage || 604,
             active_week_days: state.activeWeekDays || ['sun', 'mon', 'tue', 'wed', 'thu'],
             pages_per_day: planData.pagesPerDay,
-            level: state.currentLevel,
+            level: (function() {
+                let lvl = planData.level;
+                if (!lvl || lvl === 'admin') {
+                    const st = (state.students && state.students.find(s => s.id === planData.studentId)) ||
+                               (state.adminData && state.adminData.allStudents && state.adminData.allStudents.find(s => s.id === planData.studentId)) ||
+                               (window._cpLoadedStudents && window._cpLoadedStudents.find(s => s.id === planData.studentId));
+                    if (st && st.level) lvl = st.level;
+                    else lvl = state.currentLevel;
+                }
+                return lvl;
+            })(),
             status: 'active',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
@@ -11499,14 +12132,37 @@ async function redistributeStudentPlan(planId, fromDate, actualEndSura, actualEn
 
 // === 4. PLANS VIEW ===
 
+window._activePlanFilter = 'all';
+window._filterPlansByHalqa = function(halqa) {
+    window._activePlanFilter = halqa;
+    document.querySelectorAll('.plan-filter-btn').forEach(btn => {
+        btn.className = 'plan-filter-btn px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 transition shrink-0';
+    });
+    const activeBtn = document.getElementById('plan-filter-' + halqa);
+    if (activeBtn) activeBtn.className = 'plan-filter-btn px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white shadow-sm transition shrink-0';
+    _loadAllPlans(halqa);
+};
+
 async function renderPlans() {
     const container = $('#view-container');
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+    const halqaFilterHTML = isSupervisor ? `
+        <div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+            <span class="text-xs font-bold text-gray-400 shrink-0">تصفية حسب الحلقة:</span>
+            <button onclick="window._filterPlansByHalqa('all')" id="plan-filter-all" class="plan-filter-btn px-3 py-1.5 rounded-xl text-xs font-bold ${window._activePlanFilter === 'all' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200'} transition shrink-0">الكل</button>
+            ${Object.entries(LEVELS).filter(([k,v]) => !v.hidden && k !== 'admin').map(([k,v]) => `
+                <button onclick="window._filterPlansByHalqa('${k}')" id="plan-filter-${k}" class="plan-filter-btn px-3 py-1.5 rounded-xl text-xs font-bold ${window._activePlanFilter === k ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200'} transition shrink-0">${v.name}</button>
+            `).join('')}
+        </div>
+    ` : '';
+
     container.innerHTML = `
         <div class="space-y-4 animate-fade-in">
-            <div class="flex justify-between items-center gap-2">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <h2 class="text-xl font-bold flex items-center gap-2">
                     <i data-lucide="book-marked" class="w-6 h-6 text-emerald-600 dark:text-emerald-400"></i>
-                    الخطط <span class="text-[10px] font-bold tracking-wider text-emerald-800 bg-emerald-100/80 border border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-800/50 px-2 py-0.5 rounded-lg ml-2 relative -top-1 shadow-sm">بيتا</span>
+                    الخطط ${isSupervisor ? '- جميع الحلقات' : ''}
+                    <span class="text-[10px] font-bold tracking-wider text-emerald-800 bg-emerald-100/80 border border-emerald-200 dark:text-emerald-300 dark:bg-emerald-900/30 dark:border-emerald-800/50 px-2 py-0.5 rounded-lg ml-2 relative -top-1 shadow-sm">بيتا</span>
                 </h2>
                 ${state.isTeacher ? `
                 <div class="flex gap-2">
@@ -11518,6 +12174,7 @@ async function renderPlans() {
                     </button>
                 </div>` : ''}
             </div>
+            ${halqaFilterHTML}
             <div id="plans-list" class="space-y-3">
                 <div class="flex justify-center py-10">
                     <i data-lucide="loader-2" class="w-8 h-8 animate-spin text-emerald-600"></i>
@@ -11525,21 +12182,37 @@ async function renderPlans() {
             </div>
         </div>`;
     lucide.createIcons();
-    await _loadAllPlans();
+    await _loadAllPlans(window._activePlanFilter || 'all');
 }
 
-async function _loadAllPlans() {
+async function _loadAllPlans(filterHalqa = (window._activePlanFilter || 'all')) {
     const container = document.getElementById('plans-list');
     if (!container) return;
     try {
-        const q = window.firebaseOps.query(
-            window.firebaseOps.collection(window.db, 'student_plans'),
-            window.firebaseOps.where('level', '==', state.currentLevel),
-            window.firebaseOps.where('status', '==', 'active')
-        );
+        const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
+        const q = isSupervisor
+            ? window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, 'student_plans'),
+                window.firebaseOps.where('status', '==', 'active')
+            )
+            : window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, 'student_plans'),
+                window.firebaseOps.where('level', '==', state.currentLevel),
+                window.firebaseOps.where('status', '==', 'active')
+            );
         const snap = await window.firebaseOps.getDocs(q);
-        const plans = [];
+        let plans = [];
         snap.forEach(doc => { const d = doc.data(); d.id = doc.id; plans.push(d); });
+
+        if (isSupervisor && filterHalqa && filterHalqa !== 'all') {
+            plans = plans.filter(p => {
+                if (p.level) return p.level === filterHalqa;
+                const sid = p.student_id || p.studentId;
+                const st = (state.students && state.students.find(s => s.id === sid)) ||
+                           (state.adminData && state.adminData.allStudents && state.adminData.allStudents.find(s => s.id === sid));
+                return st && st.level === filterHalqa;
+            });
+        }
 
         if (plans.length === 0) {
             container.innerHTML = `
@@ -11563,7 +12236,12 @@ async function _loadAllPlans() {
 
         let html = '';
         for (const [sid, sPlans] of Object.entries(byStudent)) {
-            const st = state.students.find(s => s.id === sid);
+            let st = state.students ? state.students.find(s => s.id === sid) : null;
+            if (!st && state.adminData && state.adminData.allStudents) {
+                st = state.adminData.allStudents.find(s => s.id === sid);
+            }
+            const studentLevel = st?.level || sPlans[0]?.level;
+            const levelName = LEVELS[studentLevel] ? LEVELS[studentLevel].name : '';
             const iconHtml = st && isImgSrc(st.icon)
                 ? `<img src="${st.icon}" class="w-full h-full object-cover rounded-full">`
                 : (st?.icon || '👤');
@@ -11572,8 +12250,11 @@ async function _loadAllPlans() {
             <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                 <div class="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700">
                     <div class="w-9 h-9 bg-emerald-100 dark:bg-emerald-900/40 rounded-full flex items-center justify-center text-base overflow-hidden shrink-0">${iconHtml}</div>
-                    <p class="font-bold flex-1 text-sm">${st?.name || 'طالب'}</p>
-                    ${state.isTeacher ? `<button onclick="openCreatePlanModal('individual','${sid}')" class="text-emerald-600 p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition"><i data-lucide="plus-circle" class="w-4 h-4"></i></button>` : ''}
+                    <div class="flex-1 min-w-0">
+                        <p class="font-bold text-sm truncate">${st?.name || sPlans[0]?.studentName || 'طالب'}</p>
+                        ${levelName ? `<span class="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-bold px-2 py-0.5 rounded text-[10px] inline-block mt-0.5">${levelName}</span>` : ''}
+                    </div>
+                    ${state.isTeacher ? `<button onclick="openCreatePlanModal('individual','${sid}')" class="text-emerald-600 p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition" title="إضافة خطة"><i data-lucide="plus-circle" class="w-4 h-4"></i></button>` : ''}
                 </div>
                 ${sPlans.map(p => {
                     const startSuraName = suras.find(s => s.number === p.startSura)?.name || `سورة ${p.startSura}`;
@@ -11613,7 +12294,7 @@ async function _loadAllPlans() {
 
 // === 5. CREATE PLAN MODAL ===
 
-window.openCreatePlanModal = function(mode, preSelectedStudentId) {
+window.openCreatePlanModal = async function(mode, preSelectedStudentId) {
     if (!window.QuranService || !window.QuranService.isLoaded()) {
         showToast('يرجى الانتظار لتحميل بيانات المصحف', 'error');
         if (window.QuranService) window.QuranService.loadData().then(() => openCreatePlanModal(mode, preSelectedStudentId));
@@ -11622,21 +12303,62 @@ window.openCreatePlanModal = function(mode, preSelectedStudentId) {
     const suras = window.QuranService.getSuras();
     const suraOpts = suras.map(s => `<option value="${s.number}">${s.name}</option>`).join('');
     const today = new Date().toISOString().split('T')[0];
+    const isSupervisor = (state.isAdmin || state.currentLevel === 'admin');
 
-    const studentPickerHTML = mode === 'individual'
-        ? `<div>
-            <label class="block text-sm font-bold mb-2">الطالب</label>
-            <select id="cp-student" class="w-full bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
-                <option value="">-- اختر الطالب --</option>
-                ${state.students.map(s => `<option value="${s.id}" ${s.id === preSelectedStudentId ? 'selected' : ''}>${s.name}</option>`).join('')}
+    let currentPlanHalqa = isSupervisor ? (window._cpSelectedHalqa || 'abu_bakr') : state.currentLevel;
+    window._cpSelectedHalqa = currentPlanHalqa;
+
+    let halqaStudents = (state.students || []).filter(s => s.level === currentPlanHalqa);
+    if (halqaStudents.length === 0) {
+        if (state.adminData && state.adminData.allStudents) {
+            halqaStudents = state.adminData.allStudents.filter(s => s.level === currentPlanHalqa);
+        }
+        if (halqaStudents.length === 0) {
+            try {
+                const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"), window.firebaseOps.where("level", "==", currentPlanHalqa));
+                const snap = await window.firebaseOps.getDocs(q);
+                halqaStudents = [];
+                snap.forEach(d => { var x = d.data(); x.id = d.id; halqaStudents.push(x); });
+            } catch(e) { console.error(e); }
+        }
+    }
+    halqaStudents.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    window._cpLoadedStudents = halqaStudents;
+
+    const halqaSelectorHTML = isSupervisor ? `
+        <div class="mb-3">
+            <label class="block text-xs font-bold mb-1.5 text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                <i data-lucide="shield" class="w-3.5 h-3.5"></i> اختر الحلقة المستهدفة
+            </label>
+            <select id="cp-halqa-select" onchange="_cpChangeHalqa(this.value, '${mode}')" class="w-full bg-purple-50 dark:bg-purple-900/30 border-2 border-purple-200 dark:border-purple-800 rounded-xl px-3 py-2.5 text-sm font-bold text-purple-900 dark:text-purple-100 focus:outline-none focus:border-purple-500">
+                ${Object.entries(LEVELS).filter(([k,v]) => !v.hidden && k !== 'admin').map(([k,v]) => `
+                    <option value="${k}" ${k === currentPlanHalqa ? 'selected' : ''}>${v.name}</option>
+                `).join('')}
             </select>
-        </div>`
-        : `<div>
-            <label class="block text-sm font-bold mb-2">اختر الطلاب</label>
-            <div class="bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl p-3 max-h-36 overflow-y-auto space-y-2">
-                ${state.students.map(s => `<label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" class="cp-stud-cb w-4 h-4 accent-emerald-600" value="${s.id}"><span class="text-sm">${s.name}</span></label>`).join('')}
-            </div>
-        </div>`;
+        </div>
+    ` : '';
+
+    const renderStudentPicker = (studs) => {
+        if (mode === 'individual') {
+            return `
+                <label class="block text-sm font-bold mb-2">الطالب</label>
+                <select id="cp-student" class="w-full bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+                    <option value="">-- اختر الطالب --</option>
+                    ${studs.map(s => `<option value="${s.id}" ${s.id === preSelectedStudentId ? 'selected' : ''}>${s.name}</option>`).join('')}
+                </select>
+            `;
+        } else {
+            return `
+                <div class="flex justify-between items-center mb-2">
+                    <label class="block text-sm font-bold">اختر الطلاب (${studs.length})</label>
+                    <button type="button" onclick="_cpToggleAllStudents(this)" class="text-xs text-emerald-600 font-bold hover:underline">تحديد الكل</button>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl p-3 max-h-36 overflow-y-auto space-y-2">
+                    ${studs.length === 0 ? '<p class="text-xs text-gray-400 text-center py-2">لا يوجد طلاب في هذه الحلقة</p>' : studs.map(s => `<label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" class="cp-stud-cb w-4 h-4 accent-emerald-600" value="${s.id}"><span class="text-sm font-bold">${s.name}</span></label>`).join('')}
+                </div>
+            `;
+        }
+    };
 
     let modal = document.getElementById('create-plan-modal');
     if (!modal) { modal = document.createElement('div'); modal.id = 'create-plan-modal'; document.body.appendChild(modal); }
@@ -11653,7 +12375,10 @@ window.openCreatePlanModal = function(mode, preSelectedStudentId) {
                 </button>
             </div>
             <div class="p-5 overflow-y-auto flex-1 space-y-4">
-                ${studentPickerHTML}
+                ${halqaSelectorHTML}
+                <div id="cp-student-picker-container">
+                    ${renderStudentPicker(halqaStudents)}
+                </div>
                 <div>
                     <label class="block text-sm font-bold mb-2">نوع الخطة</label>
                     <div class="grid grid-cols-3 gap-2">
@@ -11774,6 +12499,61 @@ window.openCreatePlanModal = function(mode, preSelectedStudentId) {
     document.getElementById('cp-end-sura').value = "114";
 };
 
+window._cpChangeHalqa = async function(halqa, mode) {
+    window._cpSelectedHalqa = halqa;
+    const container = document.getElementById('cp-student-picker-container');
+    if (!container) return;
+    container.innerHTML = '<div class="p-4 text-center"><i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto text-emerald-600"></i></div>';
+    if (window.lucide) window.lucide.createIcons();
+    try {
+        let studs = [];
+        if (state.students && state.students.length > 0) {
+            studs = state.students.filter(s => s.level === halqa);
+        }
+        if (studs.length === 0 && state.adminData && state.adminData.allStudents) {
+            studs = state.adminData.allStudents.filter(s => s.level === halqa);
+        }
+        if (studs.length === 0) {
+            const q = window.firebaseOps.query(window.firebaseOps.collection(window.db, "students"), window.firebaseOps.where("level", "==", halqa));
+            const snap = await window.firebaseOps.getDocs(q);
+            studs = [];
+            snap.forEach(d => { var x = d.data(); x.id = d.id; studs.push(x); });
+        }
+        studs.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        window._cpLoadedStudents = studs;
+        if (mode === 'individual') {
+            container.innerHTML = `
+                <label class="block text-sm font-bold mb-2">الطالب</label>
+                <select id="cp-student" class="w-full bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+                    <option value="">-- اختر الطالب --</option>
+                    ${studs.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+                </select>
+            `;
+        } else {
+            container.innerHTML = `
+                <div class="flex justify-between items-center mb-2">
+                    <label class="block text-sm font-bold">اختر الطلاب (${studs.length})</label>
+                    <button type="button" onclick="_cpToggleAllStudents(this)" class="text-xs text-emerald-600 font-bold hover:underline">تحديد الكل</button>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl p-3 max-h-36 overflow-y-auto space-y-2">
+                    ${studs.length === 0 ? '<p class="text-xs text-gray-400 text-center py-2">لا يوجد طلاب في هذه الحلقة</p>' : studs.map(s => `<label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" class="cp-stud-cb w-4 h-4 accent-emerald-600" value="${s.id}"><span class="text-sm font-bold">${s.name}</span></label>`).join('')}
+                </div>
+            `;
+        }
+        if (window.lucide) window.lucide.createIcons();
+    } catch(e) {
+        console.error(e);
+        container.innerHTML = '<p class="text-red-500 text-xs py-2">خطأ في تحميل الطلاب</p>';
+    }
+};
+
+window._cpToggleAllStudents = function(btn) {
+    const cbs = document.querySelectorAll('.cp-stud-cb');
+    const allChecked = Array.from(cbs).every(cb => cb.checked);
+    cbs.forEach(cb => cb.checked = !allChecked);
+    btn.textContent = allChecked ? 'تحديد الكل' : 'إلغاء التحديد';
+};
+
 window._cpSelectType = function(type) {
     document.getElementById('cp-type').value = type;
     const mem = document.getElementById('cp-btn-mem');
@@ -11889,7 +12669,8 @@ window._cpPreview = function(mode) {
         pagesLabel = `متوسط ${pagesPerDay} صفحة يومياً`;
     }
 
-    window._planPreviewData = { mode, startDate, endDate, startSura, startAyah, endSura: days[days.length-1].endSura, endAyah: days[days.length-1].endAyah, pagesPerDay, planType, studyDates, days, gaps, studentIds, pagesLabel };
+    const planHalqa = (state.isAdmin || state.currentLevel === 'admin') ? (window._cpSelectedHalqa || 'abu_bakr') : state.currentLevel;
+    window._planPreviewData = { mode, startDate, endDate, startSura, startAyah, endSura: days[days.length-1].endSura, endAyah: days[days.length-1].endAyah, pagesPerDay, planType, studyDates, days, gaps, studentIds, pagesLabel, level: planHalqa };
     _showPlanPreviewModal(days, gaps, planType, pagesLabel);
 };
 
@@ -11982,7 +12763,8 @@ window._cpSavePlan = async function() {
                 startDate: data.startDate, endDate: data.endDate,
                 startSura: data.startSura, startAyah: data.startAyah,
                 endSura: data.endSura, endAyah: data.endAyah,
-                pagesPerDay: data.pagesPerDay
+                pagesPerDay: data.pagesPerDay,
+                level: data.level
             }, data.days);
         }
         const n = data.studentIds.length;
@@ -13419,3 +14201,1696 @@ function exportFormPDF(formId) {
         console.error(e);
     });
 }
+
+// =====================================================
+// 🏢 ADMIN DASHBOARD ENGINE — الإدارة العامة والمشرف
+// =====================================================
+
+// Chart instances (global for safe destroy)
+let _adminChartDiscipline = null;
+let _adminChartStudents = null;
+let _adminChartComparison = null;
+
+// --- Date helpers ---
+function _adminFormatLocalDate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
+function _adminGetDateRange() {
+    const now = new Date();
+    const todayStr = _adminFormatLocalDate(now);
+    let start, end;
+    switch (state.adminDateRange) {
+        case 'today':
+            start = end = todayStr;
+            break;
+        case 'this_week': {
+            const day = now.getDay(); // 0=Sun
+            const diff = day === 0 ? 0 : day;
+            const sun = new Date(now);
+            sun.setDate(now.getDate() - diff);
+            start = _adminFormatLocalDate(sun);
+            end = todayStr;
+            break;
+        }
+        case 'this_month': {
+            const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            start = _adminFormatLocalDate(firstOfMonth);
+            end = todayStr;
+            break;
+        }
+        case 'last_30_days': {
+            const d = new Date(now);
+            d.setDate(d.getDate() - 30);
+            start = _adminFormatLocalDate(d);
+            end = todayStr;
+            break;
+        }
+        case 'custom':
+            start = state.adminCustomStart || todayStr;
+            end = state.adminCustomEnd || todayStr;
+            break;
+        default:
+            start = `${now.getFullYear()}-01-01`;
+            end = todayStr;
+    }
+    return { start, end };
+}
+
+// --- Fetch all data from Supabase for admin ---
+async function fetchAdminDashboardData(forceRefresh = false) {
+    const { start, end } = _adminGetDateRange();
+    if (!forceRefresh && state.adminData && state.adminData.start === start && state.adminData.end === end) {
+        return state.adminData;
+    }
+    try {
+        const fOps = window.firebaseOps;
+        // Fetch all levels data in parallel
+        const [studentsSnap, teachersSnap, scoresSnap, activitySnap] = await Promise.all([
+            fOps.getDocs(fOps.collection(window.db, 'students')),
+            fOps.getDocs(fOps.collection(window.db, 'teachers')),
+            fOps.getDocs(fOps.collection(window.db, 'scores')),
+            fOps.getDocs(fOps.collection(window.db, 'activity_days'))
+        ]);
+
+        const allStudents = [];
+        studentsSnap.forEach(d => { const data = d.data(); data.id = d.id; allStudents.push(data); });
+
+        const allTeachers = [];
+        teachersSnap.forEach(d => { const data = d.data(); data.id = d.id; allTeachers.push(data); });
+
+        const allScores = [];
+        scoresSnap.forEach(d => { const data = d.data(); data.id = d.id; allScores.push(data); });
+
+        const allActivityDays = [];
+        activitySnap.forEach(d => { const data = d.data(); data.id = d.id; allActivityDays.push(data); });
+
+        // Filter scores by date range
+        const filteredScores = allScores.filter(s => s.date && s.date >= start && s.date <= end);
+
+        // Build per-level stats
+        const levelKeys = Object.keys(LEVELS).filter(k => !LEVELS[k].hidden);
+        const levelStats = {};
+
+        for (const lk of levelKeys) {
+            const lvlStudents = allStudents.filter(s => s.level === lk);
+            const lvlTeachers = allTeachers.filter(t => t.level === lk);
+            const lvlScores = filteredScores.filter(s => s.level === lk);
+            const lvlActivity = allActivityDays.filter(a => true);
+
+            // Absence counts
+            const absenceScores = lvlScores.filter(s => s.criteriaId === 'ABSENCE_RECORD');
+            const excusedAbsences = absenceScores.filter(s => {
+                const cName = s.criteriaName || s.criteria_name || '';
+                return cName.includes('بعذر') && !cName.includes('بدون');
+            });
+            const unexcusedAbsences = absenceScores.filter(s => {
+                const cName = s.criteriaName || s.criteria_name || '';
+                return cName.includes('بدون عذر');
+            });
+            const totalAbsences = absenceScores.length;
+
+            // Quran grades
+            const quranScores = lvlScores.filter(s => 
+                (s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW') && 
+                (s.quranGrade || s.quran_grade || s.grade)
+            );
+            const gradeMap = { 'ممتاز': 5, 'جيد جداً': 4, 'جيد': 3, 'مقبول': 2, 'ضعيف': 1 };
+            let avgGrade = 0;
+            if (quranScores.length > 0) {
+                const sum = quranScores.reduce((acc, s) => {
+                    const g = s.quranGrade || s.quran_grade || s.grade;
+                    return acc + (gradeMap[g] || 0);
+                }, 0);
+                avgGrade = sum / quranScores.length;
+            }
+            const avgGradeLabel = avgGrade >= 4.5 ? 'ممتاز' : avgGrade >= 3.5 ? 'جيد جداً' : avgGrade >= 2.5 ? 'جيد' : avgGrade >= 1.5 ? 'مقبول' : avgGrade > 0 ? 'ضعيف' : '-';
+
+
+
+            // Period days calculation
+            const d1 = new Date(start);
+            const d2 = new Date(end);
+            const periodDays = Math.max(1, Math.round(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
+
+            // True activity days (specifically days where an activity was held: رحلة، ملعب، نشاط جماعي)
+            const activityScores = lvlScores.filter(s => s.criteriaId === 'ACTIVITY_DAY');
+            const activityDates = new Set(activityScores.map(s => s.date).filter(Boolean));
+            const totalActivityDays = activityDates.size;
+            let sumDiscipline = 0;
+
+            // Per-student absence breakdown
+            const studentAbsenceMap = {};
+            for (const st of lvlStudents) {
+                const stAbsences = absenceScores.filter(s => s.studentId === st.id);
+                const stExcused = stAbsences.filter(s => {
+                    const cName = s.criteriaName || s.criteria_name || '';
+                    return cName.includes('بعذر') && !cName.includes('بدون');
+                }).length;
+                const stUnexcused = stAbsences.filter(s => {
+                    const cName = s.criteriaName || s.criteria_name || '';
+                    return cName.includes('بدون عذر');
+                }).length;
+
+                let sDisc = 100;
+                if (periodDays > 0) {
+                    sDisc = 100 - ((stAbsences.length / periodDays) * 100);
+                    if (sDisc < 0) sDisc = 0;
+                }
+                sumDiscipline += sDisc;
+
+                // Quran grades per student
+                const stQuranScores = lvlScores.filter(s =>
+                    s.studentId === st.id && 
+                    (s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW') && 
+                    (s.quranGrade || s.quran_grade || s.grade)
+                );
+                let stAvgGrade = 0;
+                if (stQuranScores.length > 0) {
+                    const stSum = stQuranScores.reduce((acc, s) => {
+                        const g = s.quranGrade || s.quran_grade || s.grade;
+                        return acc + (gradeMap[g] || 0);
+                    }, 0);
+                    stAvgGrade = stSum / stQuranScores.length;
+                }
+                const stAvgGradeLabel = stAvgGrade >= 4.5 ? 'ممتاز' : stAvgGrade >= 3.5 ? 'جيد جداً' : stAvgGrade >= 2.5 ? 'جيد' : stAvgGrade >= 1.5 ? 'مقبول' : stAvgGrade > 0 ? 'ضعيف' : '-';
+
+                // Calculate weekly absence rate
+                const diffMs = new Date(end) - new Date(start);
+                const diffDays = Math.max(1, diffMs / (1000 * 60 * 60 * 24));
+                const numWeeks = Math.max(1, diffDays / 7);
+                const weeklyAbsenceRate = (stExcused + stUnexcused) / numWeeks;
+
+                studentAbsenceMap[st.id] = {
+                    name: st.name,
+                    phone: st.parentPhone || st.studentNumber || '',
+                    level: lk,
+                    excused: stExcused,
+                    unexcused: stUnexcused,
+                    total: stExcused + stUnexcused,
+                    weeklyRate: weeklyAbsenceRate,
+                    isAlert: weeklyAbsenceRate > 2,
+                    avgGrade: stAvgGradeLabel,
+                    discipline: sDisc.toFixed(1)
+                };
+            }
+
+            const disciplineRate = lvlStudents.length > 0 ? (sumDiscipline / lvlStudents.length) : 100;
+
+            levelStats[lk] = {
+                name: LEVELS[lk].name,
+                emoji: LEVELS[lk].emoji || '',
+                isAdult: LEVELS[lk].isAdult || false,
+                isIjazat: LEVELS[lk].isIjazat || false,
+                studentCount: lvlStudents.length,
+                teacherCount: lvlTeachers.length,
+                teachers: lvlTeachers,
+                students: lvlStudents,
+                avgGrade: avgGradeLabel,
+                disciplineRate: disciplineRate.toFixed(1),
+                activeDays: totalActivityDays,
+                totalAbsences,
+                excusedAbsences: excusedAbsences.length,
+                unexcusedAbsences: unexcusedAbsences.length,
+                studentAbsenceMap
+            };
+        }
+
+        state.adminData = { levelStats, allStudents, allTeachers, allScores: filteredScores, start, end };
+        return state.adminData;
+    } catch (err) {
+        console.error('Admin fetch error:', err);
+        showToast('حدث خطأ أثناء جلب بيانات الإدارة', 'error');
+        return null;
+    }
+}
+
+// --- Set date range ---
+function setAdminDateRange(range) {
+    state.adminDateRange = range;
+    state.adminData = null; // Invalidate cache so new range is fetched
+    renderAdminDashboard();
+}
+
+function setAdminCustomDateRange() {
+    const startInput = document.getElementById('admin-custom-start');
+    const endInput = document.getElementById('admin-custom-end');
+    if (startInput && endInput) {
+        state.adminCustomStart = startInput.value;
+        state.adminCustomEnd = endInput.value;
+        state.adminDateRange = 'custom';
+        state.adminData = null; // Invalidate cache
+        renderAdminDashboard();
+    }
+}
+
+// --- Halqa Switch for Admin ---
+function switchAdminToHalqa(levelKey) {
+    if (!LEVELS[levelKey]) return;
+    state.currentLevel = levelKey;
+    state.isTeacher = true;
+    saveAuth();
+    updateUIMode(true);
+    startGlobalDataSync();
+    router.navigate('home');
+    showToast(`تم الانتقال إلى ${LEVELS[levelKey].name} كمشرف 👑`);
+}
+
+// --- Main Render ---
+let _isAdminRendering = false;
+
+async function renderAdminDashboard() {
+    if (_isAdminRendering) return;
+    _isAdminRendering = true;
+
+    try {
+        if (state.isAdmin && state.currentLevel !== 'admin') {
+            state.currentLevel = 'admin';
+            state.isTeacher = true;
+            saveAuth();
+            updateUIMode(true);
+        }
+
+        const container = $('#view-container');
+        if (!state.adminData) {
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center p-12 gap-4">
+                    <div class="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p class="text-sm text-gray-400 font-bold">جارٍ تحميل لوحة الإدارة...</p>
+                </div>
+            `;
+        }
+
+        const data = await fetchAdminDashboardData();
+        if (!data) return;
+
+    const { levelStats, allStudents, allTeachers } = data;
+    const levelKeys = Object.keys(levelStats);
+    const { start, end } = _adminGetDateRange();
+
+    // Date range buttons
+    const ranges = [
+        { key: 'today', label: 'اليوم' },
+        { key: 'this_week', label: 'هذا الأسبوع' },
+        { key: 'this_month', label: 'هذا الشهر' },
+        { key: 'last_30_days', label: 'آخر 30 يوم' },
+        { key: 'custom', label: 'مخصص' }
+    ];
+    const rangeButtonsHtml = ranges.map(r => `
+        <button onclick="setAdminDateRange('${r.key}')" 
+            class="px-3 py-1.5 rounded-lg text-xs font-bold transition ${state.adminDateRange === r.key 
+                ? 'bg-purple-600 text-white shadow-lg' 
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-purple-100 dark:hover:bg-purple-900/30'}">${r.label}</button>
+    `).join('');
+
+    // Custom date inputs
+    const customRangeHtml = state.adminDateRange === 'custom' ? `
+        <div class="flex items-center gap-2 mt-2 flex-wrap">
+            <input type="date" id="admin-custom-start" value="${state.adminCustomStart || start}" 
+                class="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-xs" />
+            <span class="text-gray-400 text-xs">إلى</span>
+            <input type="date" id="admin-custom-end" value="${state.adminCustomEnd || end}" 
+                class="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-xs" />
+            <button onclick="setAdminCustomDateRange()" 
+                class="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 transition">تطبيق</button>
+        </div>
+    ` : '';
+
+    // Summary cards
+    const totalStudents = allStudents.length;
+    const totalTeachers = allTeachers.length;
+    const totalLevels = levelKeys.length;
+    const avgDiscipline = levelKeys.length > 0 
+        ? (levelKeys.reduce((acc, k) => acc + parseFloat(levelStats[k].disciplineRate), 0) / levelKeys.length).toFixed(1) 
+        : 0;
+
+    // Halaqat cards
+    const halaqatCardsHtml = levelKeys.map(lk => {
+        const ls = levelStats[lk];
+        const discColor = parseFloat(ls.disciplineRate) >= 80 ? 'text-emerald-500' : parseFloat(ls.disciplineRate) >= 60 ? 'text-yellow-500' : 'text-red-500';
+        return `
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">${ls.emoji || '📖'}</span>
+                    <h3 class="font-bold text-sm text-gray-800 dark:text-gray-100">${ls.name}</h3>
+                </div>
+                <span class="text-xs px-2 py-0.5 rounded-full ${ls.isIjazat ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' : ls.isAdult ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'}">${ls.isIjazat ? 'إجازات' : ls.isAdult ? 'كبار' : 'صغار'}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <button type="button" onclick="openHalqaStudentsModal('${lk}')" class="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-xl text-center hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:scale-[1.02] active:scale-95 transition border border-transparent hover:border-purple-200 dark:hover:border-purple-800 shadow-sm" title="اضغط لعرض تفاصيل الطلاب">
+                    <div class="text-lg font-black text-purple-600 dark:text-purple-400">${ls.studentCount}</div>
+                    <div class="text-gray-500 font-bold flex items-center justify-center gap-1">
+                        <span>${ls.isAdult ? 'دارسين' : 'طلاب'}</span>
+                        <i data-lucide="chevron-down" class="w-3 h-3 text-purple-400"></i>
+                    </div>
+                </button>
+                <button type="button" onclick="openHalqaTeachersModal('${lk}')" class="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-xl text-center hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:scale-[1.02] active:scale-95 transition border border-transparent hover:border-blue-200 dark:hover:border-blue-800 shadow-sm" title="اضغط لعرض تفاصيل المعلمين">
+                    <div class="text-lg font-black text-blue-600 dark:text-blue-400">${ls.teacherCount}</div>
+                    <div class="text-gray-500 font-bold flex items-center justify-center gap-1">
+                        <span>معلمين</span>
+                        <i data-lucide="chevron-down" class="w-3 h-3 text-blue-400"></i>
+                    </div>
+                </button>
+                <button type="button" onclick="openHalqaDisciplineModal('${lk}', 'discipline')" class="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-xl text-center hover:bg-emerald-50 dark:hover:bg-emerald-900/30 hover:scale-[1.02] active:scale-95 transition border border-transparent hover:border-emerald-200 dark:hover:border-emerald-800 shadow-sm" title="اضغط لعرض تفاصيل الانضباط والغياب">
+                    <div class="text-lg font-black ${discColor}">${ls.disciplineRate}%</div>
+                    <div class="text-gray-500 font-bold flex items-center justify-center gap-1">
+                        <span>الانضباط</span>
+                        <i data-lucide="chevron-down" class="w-3 h-3 text-emerald-400"></i>
+                    </div>
+                </button>
+                <button type="button" onclick="openHalqaGradesModal('${lk}')" class="bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-xl text-center hover:bg-amber-50 dark:hover:bg-amber-900/30 hover:scale-[1.02] active:scale-95 transition border border-transparent hover:border-amber-200 dark:hover:border-amber-800 shadow-sm" title="اضغط لعرض تفاصيل التقديرات">
+                    <div class="text-lg font-black text-amber-600 dark:text-amber-400">${ls.avgGrade}</div>
+                    <div class="text-gray-500 font-bold flex items-center justify-center gap-1">
+                        <span>متوسط التقدير</span>
+                        <i data-lucide="chevron-down" class="w-3 h-3 text-amber-400"></i>
+                    </div>
+                </button>
+            </div>
+            <div class="mt-2.5 flex items-center justify-between gap-2 pt-2 border-t border-gray-100 dark:border-gray-700/60 text-xs">
+                <button type="button" onclick="openHalqaDisciplineModal('${lk}', 'activity')" class="flex-1 py-1.5 px-2 bg-blue-50/70 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50 rounded-lg font-bold flex items-center justify-center gap-1 transition text-[11px] shadow-sm">
+                    <span>📅 أيام النشاط:</span>
+                    <span class="bg-blue-200/60 dark:bg-blue-800 px-1.5 py-0.5 rounded font-black">${ls.activeDays}</span>
+                </button>
+                <button type="button" onclick="openHalqaDisciplineModal('${lk}', 'absences')" class="flex-1 py-1.5 px-2 bg-rose-50/70 hover:bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 dark:hover:bg-rose-900/50 rounded-lg font-bold flex items-center justify-center gap-1 transition text-[11px] shadow-sm">
+                    <span>⚠️ الغياب:</span>
+                    <span class="bg-rose-200/60 dark:bg-rose-800 px-1.5 py-0.5 rounded font-black">${ls.totalAbsences}</span>
+                </button>
+            </div>
+            <button onclick="switchAdminToHalqa('${lk}')" class="mt-3 w-full py-2 px-3 bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 dark:hover:bg-purple-900/50 text-purple-700 dark:text-purple-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-purple-100 dark:border-purple-800">
+                <span>دخول الحلقة كمشرف</span>
+                <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            </button>
+        </div>`;
+    }).join('');
+
+    // Students table
+    const allStudentRows = [];
+    for (const lk of levelKeys) {
+        const ls = levelStats[lk];
+        for (const stId in ls.studentAbsenceMap) {
+            allStudentRows.push({ ...ls.studentAbsenceMap[stId], levelKey: lk, levelName: ls.name });
+        }
+    }
+
+    // Filter by level and search
+    let filteredStudents = allStudentRows;
+    if (state.adminLevelFilter && state.adminLevelFilter !== 'all') {
+        filteredStudents = filteredStudents.filter(s => s.levelKey === state.adminLevelFilter);
+    }
+    if (state.adminStudentSearch) {
+        const q = state.adminStudentSearch.trim().toLowerCase();
+        filteredStudents = filteredStudents.filter(s => s.name.toLowerCase().includes(q));
+    }
+
+    // Sort: alert students first, then by total absences desc
+    filteredStudents.sort((a, b) => {
+        if (a.isAlert !== b.isAlert) return a.isAlert ? -1 : 1;
+        return b.total - a.total;
+    });
+
+    const levelFilterOptions = levelKeys.map(k => 
+        `<option value="${k}" ${state.adminLevelFilter === k ? 'selected' : ''}>${levelStats[k].name}</option>`
+    ).join('');
+
+    const studentsTableHtml = filteredStudents.map(st => {
+        const alertClass = st.isAlert ? 'bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500' : '';
+        return `
+        <tr class="${alertClass}">
+            <td class="px-2 py-2 text-xs font-bold cursor-pointer hover:text-purple-600 transition" onclick="openStudentReport('${st.id}')" title="فتح الملف الشخصي">${st.name}</td>
+            <td class="px-2 py-2 text-xs text-gray-500">${st.levelName}</td>
+            <td class="px-2 py-2 text-xs text-center">${st.excused}</td>
+            <td class="px-2 py-2 text-xs text-center">${st.unexcused}</td>
+            <td class="px-2 py-2 text-xs text-center font-bold ${st.isAlert ? 'text-red-600' : ''}">${st.total} ${st.isAlert ? '⚠️' : ''}</td>
+            <td class="px-2 py-2 text-xs text-center">${st.avgGrade}</td>
+            <td class="px-2 py-2 text-xs text-center">
+                <div class="flex items-center justify-center gap-1">
+                    <button onclick="openStudentReport('${st.id}')" class="p-1 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-lg transition" title="فتح الملف الشخصي">
+                        <i data-lucide="user" class="w-4 h-4"></i>
+                    </button>
+                    ${st.phone ? `<button onclick="openWhatsApp('${st.phone}', '')" class="text-green-600 hover:text-green-800 transition p-1" title="مراسلة واتساب"><i data-lucide="message-circle" class="w-4 h-4 inline"></i></button>` : ''}
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+    <div class="space-y-5 animate-fade-in pb-6">
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 bg-white/10 w-40 h-40 rounded-full blur-2xl"></div>
+            <div class="absolute -left-10 -bottom-10 bg-black/10 w-40 h-40 rounded-full blur-2xl"></div>
+            <div class="relative z-10 text-center">
+                <h2 class="text-xl font-black mb-1">🏢 لوحة الإدارة العامة</h2>
+                <p class="text-xs text-purple-200 mb-3">المشرف العام — نظرة شاملة على كافة الحلقات</p>
+                <div class="grid grid-cols-4 gap-2">
+                    <div class="bg-white/15 rounded-xl p-2 backdrop-blur-sm">
+                        <div class="text-xl font-black">${totalLevels}</div>
+                        <div class="text-[10px] text-purple-200">حلقات</div>
+                    </div>
+                    <div class="bg-white/15 rounded-xl p-2 backdrop-blur-sm">
+                        <div class="text-xl font-black">${totalStudents}</div>
+                        <div class="text-[10px] text-purple-200">طلاب</div>
+                    </div>
+                    <div class="bg-white/15 rounded-xl p-2 backdrop-blur-sm">
+                        <div class="text-xl font-black">${totalTeachers}</div>
+                        <div class="text-[10px] text-purple-200">معلمين</div>
+                    </div>
+                    <div class="bg-white/15 rounded-xl p-2 backdrop-blur-sm">
+                        <div class="text-xl font-black">${avgDiscipline}%</div>
+                        <div class="text-[10px] text-purple-200">انضباط</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Date Range Filter -->
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm">
+            <h3 class="font-bold text-sm mb-2 text-gray-700 dark:text-gray-200">📅 الفترة الزمنية</h3>
+            <div class="flex flex-wrap gap-2">${rangeButtonsHtml}</div>
+            ${customRangeHtml}
+            <p class="text-[10px] text-gray-400 mt-2">📊 البيانات من ${start} إلى ${end}</p>
+        </div>
+
+        <!-- Halaqat Cards -->
+        <div>
+            <h3 class="font-bold text-sm mb-3 text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                <i data-lucide="layers" class="w-4 h-4 text-purple-500"></i> ملخص الحلقات
+            </h3>
+            <div class="grid grid-cols-1 gap-3">${halaqatCardsHtml}</div>
+        </div>
+
+        <!-- Charts -->
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm">
+            <h3 class="font-bold text-sm mb-3 text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                <i data-lucide="bar-chart-3" class="w-4 h-4 text-purple-500"></i> إحصائيات بيانية
+            </h3>
+            <div class="space-y-5">
+                <div>
+                    <p class="text-xs text-gray-500 mb-2 font-bold">📊 نسبة الانضباط لكل حلقة</p>
+                    <div class="relative w-full h-[180px]">
+                        <canvas id="admin-chart-discipline"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 mb-2 font-bold">📈 مقارنة عدد الطلاب والمعلمين</p>
+                    <div class="relative w-full h-[180px]">
+                        <canvas id="admin-chart-students"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 mb-2 font-bold text-center">📉 مقارنة الغياب بين الحلقات</p>
+                    <div class="relative w-full max-w-[220px] h-[190px] mx-auto flex items-center justify-center">
+                        <canvas id="admin-chart-comparison"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Teachers Section -->
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-bold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                    <i data-lucide="users" class="w-4 h-4 text-blue-500"></i> المعلمون المسجلون
+                </h3>
+                <button onclick="openAdminTeachersModal()" class="text-xs px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-bold hover:bg-blue-100 transition">
+                    عرض الكل (${totalTeachers})
+                </button>
+            </div>
+            <div class="space-y-2">
+                ${allTeachers.slice(0, 5).map(t => `
+                    <div class="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg">
+                        <div>
+                            <span class="text-xs font-bold">${t.name}</span>
+                            <span class="text-[10px] text-gray-400 mr-2">(${LEVELS[t.level] ? LEVELS[t.level].name : t.level})</span>
+                        </div>
+                        <button onclick="openWhatsApp('${t.phone || ''}', '')" class="text-green-600 hover:text-green-800 transition">
+                            <i data-lucide="message-circle" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                `).join('')}
+                ${allTeachers.length > 5 ? `<p class="text-center text-xs text-gray-400">... و ${allTeachers.length - 5} معلم آخر</p>` : ''}
+            </div>
+        </div>
+
+        <!-- Students Table -->
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm">
+            <h3 class="font-bold text-sm mb-3 text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                <i data-lucide="graduation-cap" class="w-4 h-4 text-amber-500"></i> شؤون الطلاب والغياب
+            </h3>
+            <div class="flex flex-wrap gap-2 mb-3">
+                <input type="text" id="admin-student-search" placeholder="🔍 بحث بالاسم..." 
+                    value="${state.adminStudentSearch || ''}"
+                    oninput="state.adminStudentSearch = this.value; filterAdminStudents();"
+                    class="flex-1 min-w-[120px] bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-xs" />
+                <select id="admin-level-filter" onchange="state.adminLevelFilter = this.value; filterAdminStudents();"
+                    class="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-xs">
+                    <option value="all" ${state.adminLevelFilter === 'all' ? 'selected' : ''}>كل الحلقات</option>
+                    ${levelFilterOptions}
+                </select>
+            </div>
+            <p class="text-[10px] text-red-500 mb-2 font-bold">⚠️ الطلاب المحددون بالأحمر = معدل غيابهم أكثر من يومين أسبوعياً</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 dark:bg-gray-700/50">
+                            <th class="px-2 py-2 text-xs font-bold text-gray-600 dark:text-gray-300">الاسم</th>
+                            <th class="px-2 py-2 text-xs font-bold text-gray-600 dark:text-gray-300">الحلقة</th>
+                            <th class="px-2 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 text-center">بعذر</th>
+                            <th class="px-2 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 text-center">بدون</th>
+                            <th class="px-2 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 text-center">المجموع</th>
+                            <th class="px-2 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 text-center">التقدير</th>
+                            <th class="px-2 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 text-center">تواصل</th>
+                        </tr>
+                    </thead>
+                    <tbody>${studentsTableHtml}</tbody>
+                </table>
+            </div>
+            <p class="text-[10px] text-gray-400 mt-2 text-center">إجمالي: ${filteredStudents.length} ${filteredStudents.some(s => s.isAlert) ? `| ⚠️ ${filteredStudents.filter(s => s.isAlert).length} طالب يحتاج متابعة` : ''}</p>
+        </div>
+
+        <!-- Export & Reports -->
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm">
+            <h3 class="font-bold text-sm mb-3 text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                <i data-lucide="file-output" class="w-4 h-4 text-emerald-500"></i> التقارير والتصدير
+            </h3>
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="exportAdminPDF()" class="flex items-center justify-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-800 hover:bg-red-100 transition text-sm font-bold text-red-700 dark:text-red-400">
+                    <i data-lucide="file-text" class="w-5 h-5"></i> PDF
+                </button>
+                <button onclick="exportAdminXLSX()" class="flex items-center justify-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 transition text-sm font-bold text-emerald-700 dark:text-emerald-400">
+                    <i data-lucide="table" class="w-5 h-5"></i> Excel
+                </button>
+                <button onclick="openAdminWhatsAppModal()" class="col-span-2 flex items-center justify-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800 hover:bg-green-100 transition text-sm font-bold text-green-700 dark:text-green-400">
+                    <i data-lucide="send" class="w-5 h-5"></i> تقرير واتساب
+                </button>
+            </div>
+        </div>
+    </div>`;
+
+    if (window.lucide) lucide.createIcons();
+    setTimeout(() => initAdminCharts(levelStats, levelKeys), 100);
+    } finally {
+        _isAdminRendering = false;
+    }
+}
+
+// --- Filter students (re-render table only) ---
+function filterAdminStudents() {
+    // Full re-render (lightweight since data is cached)
+    renderAdminDashboard();
+}
+
+// --- Charts ---
+function initAdminCharts(levelStats, levelKeys) {
+    if (typeof Chart === 'undefined') {
+        console.warn('Chart.js not loaded');
+        return;
+    }
+
+    const labels = levelKeys.map(k => levelStats[k].name);
+    const palette = ['#10b981', '#8b5cf6', '#f59e0b', '#3b82f6', '#ef4444', '#ec4899', '#06b6d4'];
+    const bgColors = levelKeys.map((_, i) => palette[i % palette.length] + '33');
+    const borderColors = levelKeys.map((_, i) => palette[i % palette.length]);
+
+    // Destroy old instances
+    if (_adminChartDiscipline) { _adminChartDiscipline.destroy(); _adminChartDiscipline = null; }
+    if (_adminChartStudents) { _adminChartStudents.destroy(); _adminChartStudents = null; }
+    if (_adminChartComparison) { _adminChartComparison.destroy(); _adminChartComparison = null; }
+
+    const isDark = document.documentElement.classList.contains('dark');
+    const textColor = isDark ? '#d1d5db' : '#374151';
+    const gridColor = isDark ? '#374151' : '#f3f4f6';
+
+    // 1. Discipline chart
+    const ctxD = document.getElementById('admin-chart-discipline');
+    if (ctxD) {
+        _adminChartDiscipline = new Chart(ctxD, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'نسبة الانضباط %',
+                    data: levelKeys.map(k => parseFloat(levelStats[k].disciplineRate)),
+                    backgroundColor: bgColors,
+                    borderColor: borderColors,
+                    borderWidth: 2,
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, max: 100, ticks: { color: textColor }, grid: { color: gridColor } },
+                    x: { ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    // 2. Students & Teachers comparison
+    const ctxS = document.getElementById('admin-chart-students');
+    if (ctxS) {
+        _adminChartStudents = new Chart(ctxS, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'طلاب',
+                        data: levelKeys.map(k => levelStats[k].studentCount),
+                        backgroundColor: '#8b5cf633',
+                        borderColor: '#8b5cf6',
+                        borderWidth: 2,
+                        borderRadius: 8
+                    },
+                    {
+                        label: 'معلمين',
+                        data: levelKeys.map(k => levelStats[k].teacherCount),
+                        backgroundColor: '#3b82f633',
+                        borderColor: '#3b82f6',
+                        borderWidth: 2,
+                        borderRadius: 8
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: textColor, font: { size: 10 } } } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { color: textColor }, grid: { color: gridColor } },
+                    x: { ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    // 3. Absence comparison
+    const ctxC = document.getElementById('admin-chart-comparison');
+    if (ctxC) {
+        _adminChartComparison = new Chart(ctxC, {
+            type: 'doughnut',
+            data: {
+                labels,
+                datasets: [{
+                    data: levelKeys.map(k => levelStats[k].totalAbsences),
+                    backgroundColor: borderColors,
+                    borderWidth: 2,
+                    borderColor: isDark ? '#1f2937' : '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: textColor, font: { size: 10 }, boxWidth: 10, padding: 8 } }
+                }
+            }
+        });
+    }
+}
+
+// --- Interactive Drill-Down Modals for Halqa Cards ---
+
+function openHalqaStudentsModal(halqaKey) {
+    if (!state.adminData || !state.adminData.levelStats || !state.adminData.levelStats[halqaKey]) return;
+    const ls = state.adminData.levelStats[halqaKey];
+    const halqaStudents = (state.adminData.allStudents || []).filter(s => s.level === halqaKey);
+    const absenceMap = ls.studentAbsenceMap || {};
+
+    const studentRows = halqaStudents.map(st => {
+        const abs = absenceMap[st.id] || { excused: 0, unexcused: 0, total: 0, avgGrade: '-', isAlert: false };
+        const alertClass = abs.isAlert ? 'bg-red-50 dark:bg-red-900/20' : '';
+        return `
+        <tr class="${alertClass} border-b border-gray-100 dark:border-gray-700/50">
+            <td class="p-2.5">
+                <div onclick="closeCustomModal(); openStudentReport('${st.id}')" class="font-bold text-xs text-gray-800 dark:text-gray-100 cursor-pointer hover:text-purple-600 transition" title="فتح الملف الشخصي">${st.name}</div>
+                ${abs.isAlert ? '<span class="text-[10px] text-red-500 font-bold">⚠️ غياب مرتفع</span>' : ''}
+            </td>
+            <td class="p-2.5 text-center text-xs font-bold ${abs.isAlert ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}">${abs.total}</td>
+            <td class="p-2.5 text-center text-xs text-gray-600 dark:text-gray-300 font-bold">${abs.avgGrade || '-'}</td>
+            <td class="p-2.5 text-center">
+                <div class="flex items-center justify-center gap-1.5">
+                    <button onclick="closeCustomModal(); openStudentReport('${st.id}')" class="p-1 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-lg transition" title="الملف الشخصي">
+                        <i data-lucide="user" class="w-4 h-4"></i>
+                    </button>
+                    ${st.studentNumber ? `
+                        <button onclick="closeCustomModal(); openStudentReport('${st.id}')" class="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition" title="فتح الملف الشخصي">
+                            <i data-lucide="message-circle" class="w-4 h-4"></i>
+                        </button>
+                    ` : ''}
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    const content = `
+    <div class="space-y-4">
+        <div class="flex items-center justify-between bg-purple-50 dark:bg-purple-900/30 p-3 rounded-2xl border border-purple-100 dark:border-purple-800">
+            <div class="flex items-center gap-2">
+                <span class="text-2xl">${ls.emoji || '📖'}</span>
+                <div>
+                    <h4 class="font-black text-sm text-purple-900 dark:text-purple-200">${ls.name}</h4>
+                    <p class="text-[11px] text-purple-600 dark:text-purple-300">إجمالي ${ls.isAdult ? 'الدارسين' : 'الطلاب'}: ${halqaStudents.length}</p>
+                </div>
+            </div>
+            <button onclick="closeCustomModal(); switchAdminToHalqa('${halqaKey}')" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-1">
+                <span>دخول الحلقة</span>
+                <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+            </button>
+        </div>
+
+        <div class="max-h-80 overflow-y-auto custom-scrollbar border border-gray-100 dark:border-gray-700 rounded-2xl">
+            <table class="w-full text-right text-xs">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
+                    <tr>
+                        <th class="p-2.5 font-bold text-gray-600 dark:text-gray-300">الاسم</th>
+                        <th class="p-2.5 font-bold text-gray-600 dark:text-gray-300 text-center">الغياب</th>
+                        <th class="p-2.5 font-bold text-gray-600 dark:text-gray-300 text-center">التقدير</th>
+                        <th class="p-2.5 font-bold text-gray-600 dark:text-gray-300 text-center">إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${studentRows || '<tr><td colspan="4" class="p-4 text-center text-gray-400">لا يوجد طلاب مسجلون</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+    </div>`;
+
+    showCustomModal(`📋 قائمة ${ls.isAdult ? 'الدارسين' : 'الطلاب'} — ${ls.name}`, content);
+}
+
+function openHalqaTeachersModal(halqaKey) {
+    if (!state.adminData || !state.adminData.levelStats || !state.adminData.levelStats[halqaKey]) return;
+    const ls = state.adminData.levelStats[halqaKey];
+    const teachers = (state.adminData.allTeachers || []).filter(t => t.level === halqaKey);
+
+    const listHtml = teachers.map(t => {
+        const safeName = (t.name || '').replace(/'/g, "\\'");
+        return `
+        <div class="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
+            <div>
+                <div class="font-bold text-xs text-gray-800 dark:text-gray-100">${t.name}</div>
+                <div class="text-[11px] text-gray-400 dir-ltr text-right">${t.phone || 'بدون رقم'}</div>
+            </div>
+            <div class="flex items-center gap-1.5">
+                ${t.phone ? `
+                    <button onclick="openWhatsApp('${t.phone}', '')" class="p-1.5 bg-green-50 dark:bg-green-900/30 text-green-600 rounded-lg hover:bg-green-100 transition" title="واتساب">
+                        <i data-lucide="message-circle" class="w-4 h-4"></i>
+                    </button>
+                    <a href="tel:${t.phone}" class="p-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 rounded-lg hover:bg-blue-100 transition" title="اتصال">
+                        <i data-lucide="phone" class="w-4 h-4"></i>
+                    </a>
+                ` : ''}
+                <button onclick="deleteAdminTeacher('${t.id}', '${safeName}')" class="p-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 rounded-lg hover:bg-red-100 transition" title="حذف">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+
+    const content = `
+    <div class="space-y-4">
+        <div class="flex items-center justify-between bg-blue-50 dark:bg-blue-900/30 p-3 rounded-2xl border border-blue-100 dark:border-blue-800">
+            <div>
+                <h4 class="font-black text-sm text-blue-900 dark:text-blue-200">${ls.name}</h4>
+                <p class="text-[11px] text-blue-600 dark:text-blue-300">إجمالي المعلمين: ${teachers.length}</p>
+            </div>
+            <button onclick="closeCustomModal(); openAdminAddTeacherModal('${halqaKey}')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-1">
+                <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+                <span>إضافة معلم</span>
+            </button>
+        </div>
+
+        <div class="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+            ${listHtml || '<p class="text-center text-gray-400 py-6 text-xs">لا يوجد معلمون مسجلون في هذه الحلقة</p>'}
+        </div>
+    </div>`;
+
+    showCustomModal(`👨‍🏫 معلمين ${ls.name}`, content);
+}
+
+function openHalqaDisciplineModal(halqaKey, activeTab = 'discipline') {
+    if (!state.adminData || !state.adminData.levelStats || !state.adminData.levelStats[halqaKey]) return;
+    const ls = state.adminData.levelStats[halqaKey];
+    const { start, end } = _adminGetDateRange();
+    const d1 = new Date(start);
+    const d2 = new Date(end);
+    const diffDays = Math.max(1, Math.round(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
+
+    const absenceMap = ls.studentAbsenceMap || {};
+    let excusedTotal = 0;
+    let unexcusedTotal = 0;
+    const alertStudents = [];
+
+    for (const sid in absenceMap) {
+        const item = absenceMap[sid];
+        excusedTotal += item.excused || 0;
+        unexcusedTotal += item.unexcused || 0;
+        if (item.isAlert) alertStudents.push(item);
+    }
+
+    // Activity dates array (only days where an activity was held: رحلة، ملعب، نشاط جماعي)
+    const lvlScores = (state.adminData.allScores || []).filter(s => s.level === halqaKey);
+    const actScores = lvlScores.filter(s => s.criteriaId === 'ACTIVITY_DAY');
+    const actDateMap = {};
+    actScores.forEach(s => {
+        const d = s.date;
+        if (d) {
+            if (!actDateMap[d]) actDateMap[d] = { date: d, attendees: new Set(), absences: 0 };
+            actDateMap[d].attendees.add(s.studentId);
+        }
+    });
+    lvlScores.filter(s => s.criteriaId === 'ABSENCE_RECORD').forEach(s => {
+        if (s.date && actDateMap[s.date]) {
+            actDateMap[s.date].absences++;
+        }
+    });
+    const activeDatesList = Object.values(actDateMap).sort((a,b) => b.date.localeCompare(a.date));
+
+    // Detailed absences
+    const detailedAbsences = [];
+    lvlScores.filter(s => s.criteriaId === 'ABSENCE_RECORD').forEach(s => {
+        const st = ls.students.find(x => x.id === s.studentId);
+        detailedAbsences.push({
+            date: s.date || '',
+            name: st ? st.name : 'غير معروف',
+            type: (s.criteriaName || s.criteria_name || '').includes('بدون عذر') ? 'بدون عذر' : 'بعذر'
+        });
+    });
+    detailedAbsences.sort((a,b) => b.date.localeCompare(a.date));
+
+    const discColor = parseFloat(ls.disciplineRate) >= 80 ? 'text-emerald-500' : parseFloat(ls.disciplineRate) >= 60 ? 'text-yellow-500' : 'text-red-500';
+
+    // Tab contents
+    const disciplineTabHtml = `
+        <!-- Main Stats Grid -->
+        <div class="grid grid-cols-3 gap-2">
+            <div class="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-2xl text-center border border-gray-100 dark:border-gray-700">
+                <div class="text-2xl font-black ${discColor}">${ls.disciplineRate}%</div>
+                <div class="text-[10px] text-gray-500 font-bold mt-0.5">الانضباط</div>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-2xl text-center border border-gray-100 dark:border-gray-700">
+                <div class="text-2xl font-black text-purple-600 dark:text-purple-400">${ls.activeDays}</div>
+                <div class="text-[10px] text-gray-500 font-bold mt-0.5">أيام النشاط</div>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-2xl text-center border border-gray-100 dark:border-gray-700">
+                <div class="text-2xl font-black text-red-500">${ls.totalAbsences}</div>
+                <div class="text-[10px] text-gray-500 font-bold mt-0.5">إجمالي الغياب</div>
+            </div>
+        </div>
+
+        <!-- Absence Details Breakdown -->
+        <div class="bg-white dark:bg-gray-800 p-3.5 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-2">
+            <h5 class="text-xs font-bold text-gray-700 dark:text-gray-200">📊 تفصيل حالات الغياب للفترة (${start} إلى ${end}) — (${diffDays}) يوم:</h5>
+            <div class="flex justify-between items-center text-xs p-2 bg-gray-50 dark:bg-gray-700/40 rounded-xl">
+                <span class="text-gray-600 dark:text-gray-300">غياب بعذر:</span>
+                <span class="font-bold text-blue-600 dark:text-blue-400">${excusedTotal} حالة</span>
+            </div>
+            <div class="flex justify-between items-center text-xs p-2 bg-gray-50 dark:bg-gray-700/40 rounded-xl">
+                <span class="text-gray-600 dark:text-gray-300">غياب بدون عذر:</span>
+                <span class="font-bold text-red-600 dark:text-red-400">${unexcusedTotal} حالة</span>
+            </div>
+        </div>
+
+        <!-- Calculation Formula Info -->
+        <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800/50 text-[11px] text-blue-800 dark:text-blue-300">
+            <p class="font-bold mb-1">📐 طريقة احتساب نسبة الانضباط:</p>
+            <p class="text-right font-semibold text-[11px] bg-white/60 dark:bg-gray-800/60 p-2 rounded">
+                متوسط انضباط الطلاب، حيث يُحسب انضباط كل طالب بشكل مستقل:<br>
+                <span class="font-mono text-xs text-purple-700 dark:text-purple-300">انضباط الطالب = 100 - ((أيام غيابه ÷ ${diffDays}) × 100)</span>
+            </p>
+            <p class="mt-1 text-[10px]">يقيس هذا المؤشر نسبة حضور الطلاب والتزامهم خلال الفترة المحددة (${diffDays} يوم).</p>
+        </div>
+
+        <!-- Alert Students if any -->
+        ${alertStudents.length > 0 ? `
+        <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-100 dark:border-red-800/50">
+            <p class="text-xs font-bold text-red-800 dark:text-red-300 mb-2">⚠️ دارسين بحاجة لمتابعة (معدل غيابهم > يومين/أسبوع):</p>
+            <div class="space-y-1">
+                ${alertStudents.map(s => `
+                    <div class="flex justify-between items-center text-xs bg-white dark:bg-gray-800 p-2 rounded-lg">
+                        <span class="font-bold text-gray-800 dark:text-gray-200">${s.name}</span>
+                        <span class="text-red-600 font-bold">${s.total} غياب (${s.excused} عذر / ${s.unexcused} بدون)</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+        ` : '<p class="text-center text-emerald-600 text-xs font-bold bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-xl">✨ لا يوجد طلاب تجاوزوا حد الغياب الحرج في هذه الفترة</p>'}
+    `;
+
+    const activityTabHtml = `
+        <div class="bg-white dark:bg-gray-800 p-3 rounded-2xl border border-gray-100 dark:border-gray-700 max-h-72 overflow-y-auto custom-scrollbar">
+            <table class="w-full text-right text-xs">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
+                    <tr>
+                        <th class="p-2.5 font-bold text-gray-600 dark:text-gray-300">التاريخ</th>
+                        <th class="p-2.5 font-bold text-gray-600 dark:text-gray-300 text-center">الحضور</th>
+                        <th class="p-2.5 font-bold text-gray-600 dark:text-gray-300 text-center">الغياب</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${activeDatesList.length > 0 ? activeDatesList.map(d => `
+                    <tr class="border-b border-gray-100 dark:border-gray-700/50">
+                        <td class="p-2.5 font-bold text-gray-800 dark:text-gray-100">${d.date}</td>
+                        <td class="p-2.5 text-center text-emerald-600 font-bold">${d.attendees.size}</td>
+                        <td class="p-2.5 text-center text-red-500 font-bold">${d.absences}</td>
+                    </tr>`).join('') : '<tr><td colspan="3" class="p-4 text-center text-gray-400">لا توجد أيام نشاط مسجلة</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    const absencesTabHtml = `
+        <div class="bg-white dark:bg-gray-800 p-3 rounded-2xl border border-gray-100 dark:border-gray-700 max-h-72 overflow-y-auto custom-scrollbar">
+            <table class="w-full text-right text-[11px]">
+                <thead class="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
+                    <tr>
+                        <th class="p-2 font-bold text-gray-600 dark:text-gray-300">الاسم</th>
+                        <th class="p-2 font-bold text-gray-600 dark:text-gray-300">التاريخ</th>
+                        <th class="p-2 font-bold text-gray-600 dark:text-gray-300">النوع</th>
+                        
+                    </tr>
+                </thead>
+                <tbody>
+                    ${detailedAbsences.length > 0 ? detailedAbsences.map(a => `
+                    <tr class="border-b border-gray-100 dark:border-gray-700/50">
+                        <td class="p-2 font-bold text-gray-800 dark:text-gray-100">${a.name}</td>
+                        <td class="p-2 text-gray-600 dark:text-gray-400">${a.date}</td>
+                        <td class="p-2 font-bold ${a.type === 'بعذر' ? 'text-blue-600' : 'text-red-500'}">${a.type}</td>
+                        
+                    </tr>`).join('') : '<tr><td colspan="4" class="p-4 text-center text-gray-400">لا توجد حالات غياب مسجلة</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    const content = `
+    <div class="space-y-4" id="halqa-discipline-modal-content" data-halqakey="${halqaKey}">
+        <div class="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
+            <button onclick="switchHalqaDisciplineTab('discipline')" id="tab-btn-discipline" class="flex-1 py-1.5 text-xs font-bold rounded-lg transition ${activeTab === 'discipline' ? 'bg-white dark:bg-gray-700 text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}">معدل الانضباط</button>
+            <button onclick="switchHalqaDisciplineTab('activity')" id="tab-btn-activity" class="flex-1 py-1.5 text-xs font-bold rounded-lg transition ${activeTab === 'activity' ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}">أيام النشاط</button>
+            <button onclick="switchHalqaDisciplineTab('absences')" id="tab-btn-absences" class="flex-1 py-1.5 text-xs font-bold rounded-lg transition ${activeTab === 'absences' ? 'bg-white dark:bg-gray-700 text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}">الطلاب الغائبون</button>
+        </div>
+        
+        <div id="tab-content-discipline" class="${activeTab === 'discipline' ? '' : 'hidden'} space-y-4">${disciplineTabHtml}</div>
+        <div id="tab-content-activity" class="${activeTab === 'activity' ? '' : 'hidden'} space-y-4">${activityTabHtml}</div>
+        <div id="tab-content-absences" class="${activeTab === 'absences' ? '' : 'hidden'} space-y-4">${absencesTabHtml}</div>
+    </div>`;
+
+    showCustomModal(`📈 تفاصيل الانضباط والغياب — ${ls.name}`, content);
+}
+
+window.switchHalqaDisciplineTab = function(tab) {
+    const container = document.getElementById('halqa-discipline-modal-content');
+    if (!container) return;
+    const halqaKey = container.getAttribute('data-halqakey');
+    openHalqaDisciplineModal(halqaKey, tab);
+};
+
+function openHalqaGradesModal(halqaKey) {
+    if (!state.adminData || !state.adminData.levelStats || !state.adminData.levelStats[halqaKey]) return;
+    const ls = state.adminData.levelStats[halqaKey];
+    const absenceMap = ls.studentAbsenceMap || {};
+
+    const gradesList = [];
+    for (const sid in absenceMap) {
+        const item = absenceMap[sid];
+        if (item.avgGrade && item.avgGrade !== '-') {
+            gradesList.push({ name: item.name, grade: item.avgGrade, totalAbs: item.total });
+        }
+    }
+
+    gradesList.sort((a, b) => {
+        const numA = parseFloat(a.grade) || 0;
+        const numB = parseFloat(b.grade) || 0;
+        return numB - numA;
+    });
+
+    const content = `
+    <div class="space-y-4">
+        <div class="bg-gradient-to-r from-amber-500 to-orange-500 text-white p-4 rounded-2xl shadow-sm text-center">
+            <div class="text-3xl font-black mb-0.5">${ls.avgGrade}</div>
+            <div class="text-xs font-bold text-amber-100">متوسط التقدير العام للحلقة</div>
+            <p class="text-[10px] text-amber-200 mt-1">المعدل المحسوب من تقييمات التسميع والمراجعة خلال الفترة المحددة</p>
+        </div>
+
+        <div class="space-y-2">
+            <h5 class="text-xs font-bold text-gray-700 dark:text-gray-200 flex items-center justify-between">
+                <span>🌟 التقديرات المسجلة للطلاب:</span>
+                <span class="text-[10px] text-gray-400">(${gradesList.length} طالب مقيّم)</span>
+            </h5>
+            <div class="max-h-72 overflow-y-auto custom-scrollbar space-y-1.5">
+                ${gradesList.map((g, idx) => `
+                    <div class="flex items-center justify-between p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl text-xs">
+                        <div class="flex items-center gap-2">
+                            <span class="w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-gray-300 text-gray-800' : idx === 2 ? 'bg-amber-600 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-600'}">${idx + 1}</span>
+                            <span class="font-bold text-gray-800 dark:text-gray-100">${g.name}</span>
+                        </div>
+                        <span class="px-2.5 py-1 rounded-lg font-black text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40">${g.grade}</span>
+                    </div>
+                `).join('') || '<p class="text-center text-gray-400 py-6 text-xs">لا توجد تقييمات مسجلة في هذه الفترة</p>'}
+            </div>
+        </div>
+    </div>`;
+
+    showCustomModal(`🏆 تفاصيل التقديرات — ${ls.name}`, content);
+}
+
+// --- Teachers Management for Admin ---
+function openAdminTeachersModal() {
+    if (!state.adminData) return;
+    const { allTeachers } = state.adminData;
+
+    const grouped = {};
+    for (const t of allTeachers) {
+        if (!grouped[t.level]) grouped[t.level] = [];
+        grouped[t.level].push(t);
+    }
+
+    let listHtml = '';
+    const groupKeys = Object.keys(grouped);
+    if (groupKeys.length === 0) {
+        listHtml = `<div class="text-center py-6 text-gray-400 text-xs">لا يوجد معلمون مسجلون حالياً. اضغط "إضافة معلم جديد" لتسجيل معلم.</div>`;
+    } else {
+        for (const lk of groupKeys) {
+            const lvlName = LEVELS[lk] ? LEVELS[lk].name : lk;
+            listHtml += `<div class="font-bold text-xs text-purple-600 dark:text-purple-400 mt-3 mb-1">${lvlName}</div>`;
+            for (const t of grouped[lk]) {
+                const safeName = (t.name || '').replace(/'/g, "\\'");
+                listHtml += `
+                <div class="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-2.5 rounded-lg mb-1">
+                    <div>
+                        <span class="text-xs font-bold text-gray-800 dark:text-gray-100">${t.name}</span>
+                        <span class="text-[10px] text-gray-400 mr-2">${t.phone || 'بدون رقم'}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        ${t.phone ? `<button onclick="openWhatsApp('${t.phone}', '')" class="text-green-600 hover:text-green-800 transition p-1" title="مراسلة واتساب"><i data-lucide="message-circle" class="w-4 h-4"></i></button>` : ''}
+                        ${t.phone ? `<a href="tel:${t.phone}" class="text-blue-600 hover:text-blue-800 transition p-1" title="اتصال هاتف"><i data-lucide="phone" class="w-4 h-4"></i></a>` : ''}
+                        <button onclick="deleteAdminTeacher('${t.id}', '${safeName}')" class="text-red-500 hover:text-red-700 transition p-1" title="حذف المعلم"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </div>
+                </div>`;
+            }
+        }
+    }
+
+    const modalContent = `
+        <div class="space-y-3">
+            <button onclick="openAdminAddTeacherModal()" class="w-full py-2 px-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-xs font-bold hover:brightness-110 transition flex items-center justify-center gap-1.5 shadow-sm">
+                <i data-lucide="user-plus" class="w-4 h-4"></i>
+                <span>إضافة معلم جديد</span>
+            </button>
+            <div class="max-h-[55vh] overflow-y-auto custom-scrollbar">${listHtml}</div>
+        </div>
+    `;
+
+    showCustomModal('👨‍🏫 المعلمون المسجلون', modalContent);
+}
+
+function openAdminAddTeacherModal(preselectedLevel) {
+    const levelOptions = Object.entries(LEVELS)
+        .filter(([k, cfg]) => !cfg.hidden && k !== 'admin')
+        .map(([k, cfg]) => `<option value="${k}" ${(preselectedLevel && preselectedLevel === k) ? 'selected' : ''}>${cfg.name}</option>`)
+        .join('');
+
+    const formHtml = `
+        <form onsubmit="event.preventDefault(); submitAdminAddTeacher();" class="space-y-3">
+            <div>
+                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">اسم المعلم *</label>
+                <input type="text" id="admin-new-teacher-name" required placeholder="مثال: الشيخ أحمد"
+                    class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-purple-500" />
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">رقم الجوال / الواتساب</label>
+                <input type="tel" id="admin-new-teacher-phone" placeholder="مثال: 0501234567"
+                    class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-purple-500" />
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">الحلقة *</label>
+                <select id="admin-new-teacher-level" required
+                    class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-purple-500">
+                    ${levelOptions}
+                </select>
+            </div>
+            <div class="flex gap-2 pt-2">
+                <button type="submit" class="flex-1 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 transition">حفظ المعلم</button>
+                <button type="button" onclick="openAdminTeachersModal()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-xs font-bold hover:bg-gray-300 transition">إلغاء</button>
+            </div>
+        </form>
+    `;
+    showCustomModal('➕ إضافة معلم جديد', formHtml);
+}
+
+async function submitAdminAddTeacher() {
+    const nameInput = document.getElementById('admin-new-teacher-name');
+    const phoneInput = document.getElementById('admin-new-teacher-phone');
+    const levelInput = document.getElementById('admin-new-teacher-level');
+    if (!nameInput || !levelInput) return;
+
+    const name = nameInput.value.trim();
+    const phone = phoneInput ? phoneInput.value.trim() : '';
+    const level = levelInput.value;
+
+    if (!name || !level) {
+        showToast('يرجى كتابة اسم المعلم واختيار الحلقة', 'error');
+        return;
+    }
+
+    try {
+        const fOps = window.firebaseOps;
+        await fOps.addDoc(fOps.collection(window.db, 'teachers'), {
+            name,
+            phone: phone ? normalizePhone(phone) : '',
+            level,
+            createdAt: new Date().toISOString()
+        });
+        showToast('تمت إضافة المعلم بنجاح! 👨‍🏫');
+        state.adminData = null;
+        await renderAdminDashboard();
+        openAdminTeachersModal();
+    } catch (e) {
+        console.error('Error adding teacher:', e);
+        showToast('حدث خطأ أثناء حفظ المعلم', 'error');
+    }
+}
+
+async function deleteAdminTeacher(teacherId, teacherName) {
+    if (!confirm(`هل أنت متأكد من حذف المعلم "${teacherName}"؟`)) return;
+
+    try {
+        const fOps = window.firebaseOps;
+        await fOps.deleteDoc(fOps.doc(window.db, 'teachers', teacherId));
+        showToast('تم حذف المعلم بنجاح');
+        state.adminData = null;
+        await renderAdminDashboard();
+        openAdminTeachersModal();
+    } catch (e) {
+        console.error('Error deleting teacher:', e);
+        showToast('حدث خطأ أثناء الحذف', 'error');
+    }
+}
+
+// --- PDF Export ---
+function exportAdminPDF() {
+    if (!state.adminData) { showToast('لا توجد بيانات للتصدير', 'error'); return; }
+    const { levelStats, start, end, allTeachers } = state.adminData;
+    const levelKeys = Object.keys(levelStats);
+
+    const div = document.createElement('div');
+    div.style.cssText = 'direction: rtl; font-family: sans-serif; padding: 20px; color: #1f2937;';
+
+    let html = `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="font-size: 22px; font-weight: 900; color: #7c3aed;">🏢 تقرير الإدارة العامة</h1>
+            <p style="font-size: 12px; color: #6b7280;">الفترة: ${start} إلى ${end}</p>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead><tr style="background: #f3e8ff;">
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الحلقة</th>
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الطلاب</th>
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">المعلمون</th>
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الانضباط</th>
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">التقدير</th>
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الغياب</th>
+            </tr></thead><tbody>`;
+
+    for (const lk of levelKeys) {
+        const ls = levelStats[lk];
+        html += `<tr>
+            <td style="border: 1px solid #e5e7eb; padding: 8px; font-weight: bold; font-size: 11px;">${ls.name}</td>
+            <td style="border: 1px solid #e5e7eb; padding: 8px; text-align: center; font-size: 11px;">${ls.studentCount}</td>
+            <td style="border: 1px solid #e5e7eb; padding: 8px; text-align: center; font-size: 11px;">${ls.teacherCount}</td>
+            <td style="border: 1px solid #e5e7eb; padding: 8px; text-align: center; font-size: 11px;">${ls.disciplineRate}%</td>
+            <td style="border: 1px solid #e5e7eb; padding: 8px; text-align: center; font-size: 11px;">${ls.avgGrade}</td>
+            <td style="border: 1px solid #e5e7eb; padding: 8px; text-align: center; font-size: 11px;">${ls.totalAbsences}</td>
+        </tr>`;
+    }
+    html += `</tbody></table>`;
+
+    // Teachers section
+    html += `<h2 style="font-size: 16px; font-weight: 900; color: #3b82f6; margin-top: 20px;">👨‍🏫 المعلمون</h2>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+        <thead><tr style="background: #dbeafe;">
+            <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الاسم</th>
+            <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الحلقة</th>
+            <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الرقم</th>
+        </tr></thead><tbody>`;
+    for (const t of allTeachers) {
+        html += `<tr>
+            <td style="border: 1px solid #e5e7eb; padding: 6px; font-size: 11px;">${t.name}</td>
+            <td style="border: 1px solid #e5e7eb; padding: 6px; font-size: 11px;">${LEVELS[t.level] ? LEVELS[t.level].name : t.level}</td>
+            <td style="border: 1px solid #e5e7eb; padding: 6px; font-size: 11px;">${t.phone || '-'}</td>
+        </tr>`;
+    }
+    html += `</tbody></table>`;
+
+    // Students with high absence
+    const alertStudents = [];
+    for (const lk of levelKeys) {
+        for (const stId in levelStats[lk].studentAbsenceMap) {
+            const st = levelStats[lk].studentAbsenceMap[stId];
+            if (st.isAlert) alertStudents.push({ ...st, levelName: levelStats[lk].name });
+        }
+    }
+    if (alertStudents.length > 0) {
+        html += `<h2 style="font-size: 16px; font-weight: 900; color: #ef4444; margin-top: 20px;">⚠️ طلاب يحتاجون متابعة (غياب > يومين/أسبوع)</h2>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead><tr style="background: #fee2e2;">
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الاسم</th>
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الحلقة</th>
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">الغياب</th>
+                <th style="border: 1px solid #d1d5db; padding: 8px; font-size: 12px;">التقدير</th>
+            </tr></thead><tbody>`;
+        for (const st of alertStudents) {
+            html += `<tr>
+                <td style="border: 1px solid #e5e7eb; padding: 6px; font-size: 11px; font-weight: bold;">${st.name}</td>
+                <td style="border: 1px solid #e5e7eb; padding: 6px; font-size: 11px;">${st.levelName}</td>
+                <td style="border: 1px solid #e5e7eb; padding: 6px; text-align: center; font-size: 11px;">${st.total} (${st.excused} بعذر / ${st.unexcused} بدون)</td>
+                <td style="border: 1px solid #e5e7eb; padding: 6px; text-align: center; font-size: 11px;">${st.avgGrade}</td>
+            </tr>`;
+        }
+        html += `</tbody></table>`;
+    }
+
+    div.innerHTML = html;
+
+    const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `تقرير_الإدارة_${start}_${end}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, scrollY: 0, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+
+    html2pdf().set(opt).from(div).save().then(() => {
+        showToast('تم تصدير التقرير بنجاح! 📄');
+    }).catch(e => {
+        showToast('حدث خطأ أثناء التصدير', 'error');
+        console.error(e);
+    });
+}
+
+// --- Excel Export ---
+function exportAdminXLSX() {
+    if (!state.adminData || typeof XLSX === 'undefined') {
+        showToast('لا توجد بيانات أو مكتبة XLSX غير متوفرة', 'error');
+        return;
+    }
+    const { levelStats, allTeachers, start, end } = state.adminData;
+    const levelKeys = Object.keys(levelStats);
+
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: ملخص الحلقات
+    const summaryRows = [['الحلقة', 'عدد الطلاب', 'عدد المعلمين', 'نسبة الانضباط %', 'متوسط التقدير', 'أيام النشاط', 'إجمالي الغياب', 'بعذر', 'بدون عذر']];
+    for (const lk of levelKeys) {
+        const ls = levelStats[lk];
+        summaryRows.push([ls.name, ls.studentCount, ls.teacherCount, ls.disciplineRate, ls.avgGrade, ls.activeDays, ls.totalAbsences, ls.excusedAbsences, ls.unexcusedAbsences]);
+    }
+    const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+    ws1['!cols'] = [{ wch: 25 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws1, 'ملخص الحلقات');
+
+    // Sheet 2: قائمة المعلمين
+    const teacherRows = [['الاسم', 'الحلقة', 'الرقم']];
+    for (const t of allTeachers) {
+        teacherRows.push([t.name, LEVELS[t.level] ? LEVELS[t.level].name : t.level, t.phone || '-']);
+    }
+    const ws2 = XLSX.utils.aoa_to_sheet(teacherRows);
+    ws2['!cols'] = [{ wch: 25 }, { wch: 25 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'قائمة المعلمين');
+
+    // Sheet 3: شؤون الطلاب والغياب
+    const studentRows = [['الاسم', 'الحلقة', 'رقم التواصل', 'غياب بعذر', 'غياب بدون عذر', 'إجمالي الغياب', 'المعدل الأسبوعي', 'تنبيه', 'متوسط التقدير']];
+    for (const lk of levelKeys) {
+        for (const stId in levelStats[lk].studentAbsenceMap) {
+            const st = levelStats[lk].studentAbsenceMap[stId];
+            studentRows.push([st.name, levelStats[lk].name, st.phone, st.excused, st.unexcused, st.total, st.weeklyRate.toFixed(1), st.isAlert ? '⚠️ يحتاج متابعة' : '✅', st.avgGrade]);
+        }
+    }
+    const ws3 = XLSX.utils.aoa_to_sheet(studentRows);
+    ws3['!cols'] = [{ wch: 25 }, { wch: 25 }, { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, ws3, 'شؤون الطلاب والغياب');
+
+    XLSX.writeFile(wb, `تقرير_الإدارة_${start}_${end}.xlsx`);
+    showToast('تم تصدير ملف Excel بنجاح! 📊');
+}
+
+// --- WhatsApp Report Modal ---
+function openAdminWhatsAppModal() {
+    if (!state.adminData) { showToast('لا توجد بيانات', 'error'); return; }
+    const { levelStats } = state.adminData;
+    const levelKeys = Object.keys(levelStats);
+
+    let content = `
+        <div class="space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <p class="text-xs text-gray-500 mb-2">اختر نوع التقرير المراد إرساله عبر الواتساب:</p>
+            
+            <!-- General Supervisor Report -->
+            <button onclick="sendAdminWhatsAppReport('general')" 
+                class="w-full flex items-center gap-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800 hover:bg-purple-100 transition text-right">
+                <div class="text-2xl">📊</div>
+                <div>
+                    <div class="text-sm font-bold text-purple-700 dark:text-purple-400">تقرير المشرف العام</div>
+                    <div class="text-[10px] text-gray-500">ملخص شامل لكافة الحلقات</div>
+                </div>
+            </button>
+
+            <!-- Teachers Report -->
+            <button onclick="sendAdminWhatsAppReport('teachers')" 
+                class="w-full flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 hover:bg-blue-100 transition text-right">
+                <div class="text-2xl">👨‍🏫</div>
+                <div>
+                    <div class="text-sm font-bold text-blue-700 dark:text-blue-400">تقرير المعلمين</div>
+                    <div class="text-[10px] text-gray-500">أداء وإحصائيات المعلمين</div>
+                </div>
+            </button>
+
+            <!-- Per-Halqa Reports -->
+            <div class="font-bold text-xs text-gray-600 dark:text-gray-300 mt-2">📋 تقارير حسب الحلقة:</div>
+            ${levelKeys.map(lk => {
+                const ls = levelStats[lk];
+                const typeLabel = ls.isIjazat ? '(إجازات)' : ls.isAdult ? '(جامعيين/كبار)' : '(طلاب)';
+                return `
+                <button onclick="sendAdminWhatsAppReport('halqa', '${lk}')" 
+                    class="w-full flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition text-right">
+                    <div class="text-xl">${ls.emoji || '📖'}</div>
+                    <div>
+                        <div class="text-xs font-bold">${ls.name} ${typeLabel}</div>
+                        <div class="text-[10px] text-gray-400">${ls.studentCount} ${ls.isAdult ? 'دارسين' : 'طلاب'} • ${ls.teacherCount} معلمين</div>
+                    </div>
+                </button>`;
+            }).join('')}
+        </div>
+    `;
+
+    showCustomModal('📱 تقرير واتساب', content);
+}
+
+// --- Send WhatsApp Report ---
+function sendAdminWhatsAppReport(type, halqaKey) {
+    if (!state.adminData) return;
+    const { levelStats, start, end, allTeachers } = state.adminData;
+    const levelKeys = Object.keys(levelStats);
+
+    let reportText = '';
+
+    if (type === 'general') {
+        reportText = `🏢 *تقرير الإدارة العامة*\n`;
+        reportText += `📅 الفترة: ${start} إلى ${end}\n`;
+        reportText += `━━━━━━━━━━━━━━━\n\n`;
+
+        for (const lk of levelKeys) {
+            const ls = levelStats[lk];
+            const typeEmoji = ls.isIjazat ? '🟡' : ls.isAdult ? '🔵' : '🟢';
+            reportText += `${typeEmoji} *${ls.name}*\n`;
+            reportText += `   👥 ${ls.isAdult ? 'الدارسون' : 'الطلاب'}: ${ls.studentCount}\n`;
+            reportText += `   👨‍🏫 المعلمون: ${ls.teacherCount}\n`;
+            reportText += `   ✅ الانضباط: ${ls.disciplineRate}%\n`;
+            reportText += `   📊 متوسط التقدير: ${ls.avgGrade}\n`;
+            reportText += `   📅 أيام النشاط: ${ls.activeDays}\n`;
+            reportText += `   ⚠️ الغياب: ${ls.totalAbsences} (${ls.excusedAbsences} بعذر / ${ls.unexcusedAbsences} بدون)\n\n`;
+        }
+
+        // Alert students
+        const alertStudents = [];
+        for (const lk of levelKeys) {
+            for (const stId in levelStats[lk].studentAbsenceMap) {
+                const st = levelStats[lk].studentAbsenceMap[stId];
+                if (st.isAlert) alertStudents.push({ ...st, levelName: levelStats[lk].name });
+            }
+        }
+        if (alertStudents.length > 0) {
+            reportText += `🚨 *طلاب يحتاجون متابعة:*\n`;
+            for (const st of alertStudents) {
+                reportText += `   ⚠️ ${st.name} (${st.levelName}) — غياب ${st.total} يوم\n`;
+            }
+        }
+
+        reportText += `\n━━━━━━━━━━━━━━━\n`;
+        reportText += `🏢 _تقرير آلي — الإدارة العامة_`;
+
+    } else if (type === 'teachers') {
+        reportText = `👨‍🏫 *تقرير المعلمين*\n`;
+        reportText += `📅 الفترة: ${start} إلى ${end}\n`;
+        reportText += `━━━━━━━━━━━━━━━\n\n`;
+
+        for (const lk of levelKeys) {
+            const ls = levelStats[lk];
+            reportText += `📖 *${ls.name}*\n`;
+            reportText += `   📊 انضباط الحلقة: ${ls.disciplineRate}%\n`;
+            reportText += `   👥 ${ls.isAdult ? 'دارسين' : 'طلاب'}: ${ls.studentCount}\n`;
+            const lvlTeachers = allTeachers.filter(t => t.level === lk);
+            if (lvlTeachers.length > 0) {
+                reportText += `   👨‍🏫 المعلمون:\n`;
+                for (const t of lvlTeachers) {
+                    reportText += `      • ${t.name} (${t.phone || 'بدون رقم'})\n`;
+                }
+            } else {
+                reportText += `   👨‍🏫 لا يوجد معلمون مسجلون\n`;
+            }
+            reportText += `\n`;
+        }
+
+        reportText += `━━━━━━━━━━━━━━━\n`;
+        reportText += `🏢 _تقرير آلي — الإدارة العامة_`;
+
+    } else if (type === 'halqa' && halqaKey && levelStats[halqaKey]) {
+        const ls = levelStats[halqaKey];
+        const studentLabel = ls.isAdult ? 'دارس' : 'طالب';
+        const studentsLabel = ls.isAdult ? 'الدارسون' : 'الطلاب';
+        const typeDesc = ls.isIjazat ? 'حلقة الإجازات والقراءات' : ls.isAdult ? 'حلقة الكبار والجامعيين' : 'حلقة الطلاب';
+
+        reportText = `📖 *تقرير ${ls.name}*\n`;
+        reportText += `📋 النوع: ${typeDesc}\n`;
+        reportText += `📅 الفترة: ${start} إلى ${end}\n`;
+        reportText += `━━━━━━━━━━━━━━━\n\n`;
+
+        reportText += `👥 عدد ${studentsLabel}: ${ls.studentCount}\n`;
+        reportText += `👨‍🏫 المعلمون: ${ls.teacherCount}\n`;
+        reportText += `✅ نسبة الانضباط: ${ls.disciplineRate}%\n`;
+        reportText += `📊 متوسط التقدير: ${ls.avgGrade}\n`;
+        reportText += `📅 أيام النشاط: ${ls.activeDays}\n`;
+        reportText += `⚠️ إجمالي الغياب: ${ls.totalAbsences}\n`;
+        reportText += `   • بعذر: ${ls.excusedAbsences}\n`;
+        reportText += `   • بدون عذر: ${ls.unexcusedAbsences}\n\n`;
+
+        // Alert students for this halqa
+        const alertStudents = [];
+        for (const stId in ls.studentAbsenceMap) {
+            if (ls.studentAbsenceMap[stId].isAlert) {
+                alertStudents.push(ls.studentAbsenceMap[stId]);
+            }
+        }
+        if (alertStudents.length > 0) {
+            reportText += `🚨 *${studentsLabel} الذين يحتاجون متابعة:*\n`;
+            for (const st of alertStudents) {
+                reportText += `   ⚠️ ${st.name} — غياب ${st.total} يوم (${st.weeklyRate.toFixed(1)} يوم/أسبوع)\n`;
+                reportText += `      📊 التقدير: ${st.avgGrade}\n`;
+            }
+        }
+
+        // Top students by grade
+        const studentEntries = Object.values(ls.studentAbsenceMap);
+        const excellentStudents = studentEntries.filter(s => s.avgGrade === 'ممتاز' || s.avgGrade === 'جيد جداً');
+        if (excellentStudents.length > 0) {
+            reportText += `\n⭐ *${studentsLabel} المتميزون:*\n`;
+            for (const st of excellentStudents.slice(0, 5)) {
+                reportText += `   🌟 ${st.name} — ${st.avgGrade}\n`;
+            }
+        }
+
+        reportText += `\n━━━━━━━━━━━━━━━\n`;
+        reportText += `🏢 _تقرير آلي — ${ls.name}_`;
+    }
+
+    if (!reportText) return;
+
+    // Copy to clipboard + open WhatsApp
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(reportText).then(() => {
+            showToast('تم نسخ التقرير! 📋 يمكنك لصقه في أي محادثة');
+        }).catch(() => {});
+    }
+
+    openWhatsApp(null, reportText);
+}
+
+// --- Custom Modal Helper (used by admin) ---
+function closeCustomModal() {
+    const modal = document.getElementById('admin-custom-modal');
+    if (modal) modal.remove();
+}
+window.closeCustomModal = closeCustomModal;
+
+function showCustomModal(title, contentHtml) {
+    // Remove existing
+    const existing = document.getElementById('admin-custom-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'admin-custom-modal';
+    modal.className = 'fixed inset-0 z-[200] flex items-center justify-center p-4';
+    modal.innerHTML = `
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('admin-custom-modal').remove()"></div>
+        <div class="relative bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-700 z-10 animate-fade-in">
+            <div class="bg-gradient-to-r from-purple-700 to-indigo-700 p-4 text-white">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-bold text-sm">${title}</h3>
+                    <button onclick="document.getElementById('admin-custom-modal').remove()" class="p-1 bg-white/20 rounded-full hover:bg-white/30 transition">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="p-4">${contentHtml}</div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    if (window.lucide) lucide.createIcons();
+}
+
+async function generateAndSendStudentWhatsAppReport(studentId, halqaKey) {
+    let student = null;
+    if (state.adminData && state.adminData.allStudents) {
+        student = state.adminData.allStudents.find(s => s.id === studentId);
+    }
+    if (!student && state.students) {
+        student = state.students.find(s => s.id === studentId);
+    }
+    if (!student) {
+        try {
+            const stDoc = await window.firebaseOps.getDoc(window.firebaseOps.doc(window.db, "students", studentId));
+            if (stDoc && stDoc.exists()) {
+                student = { id: stDoc.id, ...stDoc.data() };
+            }
+        } catch (e) {
+            console.error("Error fetching student:", e);
+        }
+    }
+
+    if (!student) {
+        showToast("الطالب غير موجود", "error");
+        return;
+    }
+
+    const phone = student.studentNumber || student.parentPhone || student.phone;
+    if (!phone) {
+        showToast(isAdultLevel(halqaKey || student.level) ? "لا يوجد رقم جوال مسجل للدارس" : "لا يوجد رقم هاتف مسجل لولي الأمر", "error");
+        return;
+    }
+
+    showToast("جاري إعداد تقرير الواتساب...");
+
+    const halqaName = (LEVELS[halqaKey || student.level] && LEVELS[halqaKey || student.level].name) || 'الحلقة';
+    const isAdult = isAdultLevel(halqaKey || student.level);
+
+    // Get date range
+    const { start, end } = _adminGetDateRange();
+
+    // Get scores for this student in range
+    let scores = [];
+    if (state.adminData && state.adminData.allScores) {
+        scores = state.adminData.allScores.filter(s => s.studentId === studentId);
+    } else {
+        try {
+            const q = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, "scores"),
+                window.firebaseOps.where("studentId", "==", studentId)
+            );
+            const snap = await window.firebaseOps.getDocs(q);
+            snap.forEach(d => {
+                const data = d.data();
+                if (data.date && data.date >= start && data.date <= end) {
+                    scores.push(data);
+                }
+            });
+        } catch (e) {
+            console.error("Error loading scores:", e);
+        }
+    }
+
+    let reportText = `📊 *تقرير متابعة ${isAdult ? 'الدارس' : 'الطالب'}* 📊\n`;
+    reportText += `👤 الاسم: *${student.name}*\n`;
+    reportText += `🕌 الحلقة: ${halqaName}\n`;
+    reportText += `📅 الفترة: من ${start} إلى ${end}\n`;
+    reportText += `------------------\n`;
+
+    // Absence stats
+    const absences = scores.filter(s => s.criteriaId === 'ABSENCE_RECORD');
+    const excused = absences.filter(s => {
+        const cName = s.criteriaName || s.criteria_name || '';
+        return cName.includes('بعذر') && !cName.includes('بدون');
+    });
+    const unexcused = absences.filter(s => {
+        const cName = s.criteriaName || s.criteria_name || '';
+        return cName.includes('بدون عذر');
+    });
+
+    if (absences.length > 0) {
+        reportText += `⚠️ *حالات الغياب:* ${absences.length} يوم\n`;
+        if (excused.length > 0) reportText += `  • بعذر: ${excused.length} (${excused.map(a => a.date).filter(Boolean).join('، ')})\n`;
+        if (unexcused.length > 0) reportText += `  • بدون عذر: ${unexcused.length} (${unexcused.map(a => a.date).filter(Boolean).join('، ')})\n`;
+    } else {
+        reportText += `✅ *حالات الغياب:* 0 (حضور كامل ما شاء الله)\n`;
+    }
+
+    // Quran memorization & review
+    const quranScores = scores.filter(s => s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW');
+    if (quranScores.length > 0) {
+        const gradeCounts = {};
+        quranScores.forEach(s => {
+            const g = s.quranGrade || s.quran_grade || s.grade;
+            if (g) gradeCounts[g] = (gradeCounts[g] || 0) + 1;
+        });
+        const gradesSummary = Object.entries(gradeCounts).map(([g, c]) => `${c} ${c === 1 ? 'يوم' : 'أيام'} ${g}`).join('، ');
+        if (gradesSummary) {
+            reportText += `📖 *تقييم القرآن:* ${gradesSummary}\n`;
+        }
+    }
+
+    // Readings for Ijazat
+    const readingScores = scores.filter(s => s.criteriaId && s.criteriaId.startsWith('READING_'));
+    if (readingScores.length > 0) {
+        const readingMap = {};
+        readingScores.forEach(s => {
+            const name = s.criteriaName || s.criteriaId;
+            if (!readingMap[name]) readingMap[name] = {};
+            const grade = s.quranGrade || 'بدون تقييم';
+            readingMap[name][grade] = (readingMap[name][grade] || 0) + 1;
+        });
+        reportText += `\n📚 *ملخص القراءات:*\n`;
+        for (const [reading, grades] of Object.entries(readingMap)) {
+            const gradeStr = Object.entries(grades).map(([g, c]) => `${c} ${g}`).join('، ');
+            reportText += `  • ${reading}: ${gradeStr}\n`;
+        }
+    } else if (student.readings && student.readings.length > 0) {
+        reportText += `📚 *القراءات المسندة:* ${student.readings.join('، ')}\n`;
+    }
+
+    // Late & notes
+    const lateRecords = scores.filter(s => s.criteriaId === 'LATE_RECORD');
+    if (lateRecords.length > 0) {
+        reportText += `⏰ *التأخير:* ${lateRecords.length} مرة\n`;
+    }
+    const notes = scores.filter(s => s.criteriaId === 'TEACHER_NOTE' && (s.noteText || s.note_text));
+    if (notes.length > 0) {
+        reportText += `💬 *ملاحظات المعلم:*\n`;
+        notes.forEach(n => {
+            reportText += `  - ${n.noteText || n.note_text}\n`;
+        });
+    }
+
+    reportText += `------------------\n`;
+    reportText += `${isAdult ? 'شاكرين جهودكم وحرصكم 🌹' : 'شاكرين ومقدرين حسن تعاونكم 🌹'}`;
+
+    openWhatsApp(phone, reportText);
+}
+window.generateAndSendStudentWhatsAppReport = generateAndSendStudentWhatsAppReport;

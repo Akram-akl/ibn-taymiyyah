@@ -125,7 +125,7 @@
 
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./js/supabase.js?v=1.0"></script>
+    <script>document.write('<scr'+'ipt src="./js/supabase.js?v='+Date.now()+'"><\/scr'+'ipt>');</script>
 </head>
 
 
@@ -166,10 +166,11 @@
                     <div id="demo-hints-container" class="hidden text-xs text-gray-500 mb-6 p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800 text-right leading-relaxed">
                         <div class="font-bold mb-2 text-emerald-800 dark:text-emerald-400">🔑 كلمات المرور للتجربة:</div>
                         <ul class="list-disc list-inside mb-3 space-y-1">
+                            <li>🏢 <strong>الإدارة العامة (المشرف):</strong> <strong class="font-mono text-purple-700 dark:text-purple-300">112233</strong> (الكود الماستر)</li>
                             <li>حلقة عبدالله بن عمر: <strong class="font-mono text-gray-700 dark:text-gray-300">1234</strong></li>
                             <li>حلقة أبو بكر الصديق: <strong class="font-mono text-gray-700 dark:text-gray-300">5678</strong></li>
                             <li>حلقة إجازات: <strong class="font-mono text-gray-700 dark:text-gray-300">3456</strong></li>
-                            <li>كلمة المرور الرئيسية: <strong class="font-mono text-gray-700 dark:text-gray-300">112233</strong></li>
+                            <li>الرمز الرئيسي (Master): <strong class="font-mono text-gray-700 dark:text-gray-300">112233</strong></li>
                         </ul>
                         <div class="font-bold mb-1 text-emerald-800 dark:text-emerald-400">ℹ️ ملاحظة عن الحلقات:</div>
                         <ul class="list-disc list-inside space-y-1 text-[10px]">
@@ -251,21 +252,23 @@
                                 </select>
                             </div>
 
-                            <div>
-                                <label class="block text-sm font-bold mb-2">كلمة مرورك الشخصية</label>
-                                <input type="password" id="student-personal-password-input"
-                                    class="w-full bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-center text-lg focus:outline-none focus:border-emerald-500"
-                                    placeholder="كلمة المرور الشخصية">
-                            </div>
+                            <form onsubmit="event.preventDefault(); performStudentLogin();" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-bold mb-2">كلمة مرورك الشخصية</label>
+                                    <input type="password" id="student-personal-password-input"
+                                        class="w-full bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-center text-lg focus:outline-none focus:border-emerald-500"
+                                        placeholder="كلمة المرور الشخصية">
+                                </div>
 
-                            <button onclick="performStudentLogin()"
-                                class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg mt-4 transition">
-                                دخول
-                            </button>
-                            <button onclick="document.getElementById('student-step-2').classList.add('hidden'); document.getElementById('student-step-1').classList.remove('hidden');"
-                                class="w-full py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 font-bold rounded-xl mt-2 transition text-sm">
-                                عودة
-                            </button>
+                                <button type="submit"
+                                    class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg transition">
+                                    دخول
+                                </button>
+                                <button type="button" onclick="document.getElementById('student-step-2').classList.add('hidden'); document.getElementById('student-step-1').classList.remove('hidden');"
+                                    class="w-full py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 font-bold rounded-xl transition text-sm">
+                                    عودة
+                                </button>
+                            </form>
                         </div>
                     </div>
 
@@ -277,7 +280,7 @@
                             رجوع
                         </button>
 
-                        <div id="teacher-password-section" class="space-y-4">
+                        <form onsubmit="event.preventDefault(); performTeacherLogin();" id="teacher-password-section" class="space-y-4">
                             <div class="text-center mb-6">
                                 <p class="text-sm text-gray-500">اختر الحلقة ثم ادخل كلمة المرور</p>
                             </div>
@@ -287,6 +290,7 @@
                                 <select id="teacher-level-select" title="اختر الحلقة" aria-label="اختر الحلقة"
                                     class="w-full bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 appearance-none focus:outline-none focus:border-purple-500">
                                     <option value="" disabled selected>-- اختر الحلقة --</option>
+                                    <option value="admin">🏢 الإدارة العامة (المشرف)</option>
                                 </select>
                             </div>
 
@@ -294,11 +298,11 @@
                                 class="w-full bg-gray-50 dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-center text-2xl tracking-widest focus:outline-none focus:border-purple-500"
                                 placeholder="******" inputmode="numeric">
 
-                            <button onclick="performTeacherLogin()"
+                            <button type="submit"
                                 class="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-lg mt-4 transition">
                                 تحقق
                             </button>
-                        </div>
+                        </form>
 
                         <!-- Step 3: Teacher Level Selection (Only if Master Pass) -->
                         <div id="teacher-level-selection" class="hidden space-y-4">
@@ -468,6 +472,12 @@
             <nav class="fixed bottom-0 left-0 w-full flex justify-center z-40 pointer-events-none">
                 <div class="pointer-events-auto w-full max-w-md bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 pb-safe rounded-t-2xl shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                     <div class="flex justify-start sm:justify-around items-center p-1.5 gap-2 overflow-x-auto hide-scrollbar whitespace-nowrap">
+                        <button id="nav-admin" onclick="router.navigate('admin')"
+                            class="nav-item flex flex-col items-center shrink-0 min-w-[4rem] p-2 text-gray-400 hover:text-purple-600 transition hidden"
+                            data-target="admin">
+                            <i data-lucide="shield" class="w-6 h-6 mb-1"></i>
+                            <span class="text-xs font-medium">الإدارة</span>
+                        </button>
                         <button onclick="router.navigate('home')"
                             class="nav-item flex flex-col items-center shrink-0 min-w-[4rem] p-2 text-emerald-600 dark:text-emerald-400 transition"
                             data-target="home">
@@ -518,14 +528,16 @@
                 <h3 class="font-bold text-lg mb-4 text-center">🔐 التحقق من الهوية</h3>
                 <p id="password-modal-msg" class="text-gray-500 text-sm text-center mb-4">يرجى إدخال كلمة المرور
                     للمتابعة</p>
-                <input type="password" id="modal-password-input"
-                    class="w-full bg-gray-50 border rounded-xl px-4 py-3 text-center text-lg mb-4" placeholder="******">
-                <div class="flex gap-2">
-                    <button onclick="resolvePasswordModal(null)"
-                        class="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700">إلغاء</button>
-                    <button onclick="submitPasswordModal()"
-                        class="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700">تأكيد</button>
-                </div>
+                <form onsubmit="event.preventDefault(); submitPasswordModal();">
+                    <input type="password" id="modal-password-input"
+                        class="w-full bg-gray-50 border rounded-xl px-4 py-3 text-center text-lg mb-4" placeholder="******">
+                    <div class="flex gap-2">
+                        <button type="button" onclick="resolvePasswordModal(null)"
+                            class="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700">إلغاء</button>
+                        <button type="submit"
+                            class="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700">تأكيد</button>
+                    </div>
+                </form>
             </div>
         </div>
 
@@ -547,6 +559,11 @@
                 </div>
 
                 <div class="relative z-10 space-y-4 text-center">
+                    <div id="admin-reg-level-container" class="hidden text-right">
+                        <label class="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">اختر الحلقة لإنشاء الرابط لها: <span class="text-red-500">*</span></label>
+                        <select id="admin-reg-level-select" onchange="updateAdminRegistrationLink()" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-xs font-bold text-gray-800 dark:text-gray-100 outline-none focus:border-purple-500 transition">
+                        </select>
+                    </div>
                     <div class="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
                         <p class="text-[11px] text-gray-500 mb-2 font-bold select-none">رابط الحلقة المخصص:</p>
                         <p id="registration-link-display" class="text-xs text-emerald-700 dark:text-emerald-400 font-mono break-all select-all dir-ltr"></p>
@@ -715,6 +732,7 @@
     </div>
 
     <!-- Application Logic -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js?v=3"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script src="./js/quranAnalyzer.js?v=3"></script>
