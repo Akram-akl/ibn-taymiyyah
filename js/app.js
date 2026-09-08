@@ -1,6 +1,75 @@
 // --- Constants ---
 const LEVELS = APP_CONFIG.levels;
 
+// =====================================================================
+// 🌙 Hijri Display Helper — VISUAL ONLY (no data/logic changes)
+// All internal calculations and storage remain in Gregorian ISO format.
+// This helper is used ONLY to display a Hijri label next to dates.
+// =====================================================================
+window.getHijriInfo = function(dateInput) {
+    if (!dateInput) return { day: '', month: '', year: '', monthYear: '', full: '', dual: '', compact: '' };
+    try {
+        const d = (dateInput instanceof Date)
+            ? dateInput
+            : new Date(dateInput + (typeof dateInput === 'string' && dateInput.length === 10 ? 'T00:00:00' : ''));
+        if (isNaN(d.getTime())) return { day: '', month: '', year: '', monthYear: '', full: String(dateInput), dual: String(dateInput), compact: String(dateInput) };
+        const locale = 'ar-SA-u-ca-islamic-umalqura-nu-latn';
+        const hDay   = new Intl.DateTimeFormat(locale, { day:   'numeric' }).format(d);
+        const hMonth = new Intl.DateTimeFormat(locale, { month: 'long'    }).format(d);
+        const hYear  = new Intl.DateTimeFormat(locale, { year:  'numeric' }).format(d);
+        const hFull  = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+        return {
+            day:       hDay,
+            month:     hMonth,
+            year:      hYear,
+            monthYear: `${hMonth} ${hYear}`,
+            full:      hFull,
+            dual:      `${hFull} · ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}م`,
+            compact:   `${hDay} ${hMonth}`
+        };
+    } catch(e) {
+        return { day: '', month: '', year: '', monthYear: '', full: String(dateInput), dual: String(dateInput), compact: String(dateInput) };
+    }
+};
+
+// Auto-insert a small Hijri badge BELOW every date input when its value changes.
+// The badge is purely decorative — input.value is NEVER modified.
+(function initHijriBadges() {
+    function syncBadge(input) {
+        if (!input || input.type !== 'date' || !input.value) return;
+        const h = window.getHijriInfo(input.value);
+        if (!h.full) return;
+        let badge = input.nextElementSibling;
+        if (!badge || !badge.classList.contains('hijri-badge')) {
+            badge = document.createElement('span');
+            badge.className = 'hijri-badge block text-[10px] text-center text-emerald-700 dark:text-emerald-400 font-bold mt-0.5 select-none pointer-events-none';
+            input.parentNode.insertBefore(badge, input.nextSibling);
+        }
+        badge.textContent = '🌙 ' + h.full;
+    }
+    function onDateChange(e) {
+        if (e.target && e.target.type === 'date') syncBadge(e.target);
+    }
+    // Listen on capture so it fires for dynamically-added inputs too
+    document.addEventListener('change', onDateChange, true);
+    document.addEventListener('input',  onDateChange, true);
+    // Sync any inputs that already have a value on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('input[type="date"]').forEach(syncBadge);
+    });
+    // Re-sync whenever the DOM changes (modals injected dynamically)
+    const _observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+            m.addedNodes.forEach(function(node) {
+                if (node.nodeType !== 1) return;
+                if (node.matches && node.matches('input[type="date"]')) { syncBadge(node); }
+                node.querySelectorAll && node.querySelectorAll('input[type="date"]').forEach(syncBadge);
+            });
+        });
+    });
+    _observer.observe(document.documentElement, { childList: true, subtree: true });
+})();
+
 // Helper: check if current level is an adult/dariseen level
 function isAdultLevel() {
     return state.currentLevel === 'ijazat' || state.currentLevel === 'abu_bakr';
@@ -3919,6 +3988,56 @@ async function undoScoreById(scoreId, btnEl, restoreLabel) {
                 if (sA) { sA.innerHTML = '<option value="">الآية..</option>'; sA.disabled = true; }
                 if (eA) { eA.innerHTML = '<option value="">الآية..</option>'; eA.disabled = true; }
                 if (gr) gr.value = '';
+
+                // إعادة حالة سجلات الخطة إلى pending
+                try {
+                    const uDate = document.getElementById('modal-grading-date')?.value || new Date().toISOString().split('T')[0];
+                    const uSid = window.currentRateStudentId || (typeof currentRateStudentId !== 'undefined' ? currentRateStudentId : null);
+                    if (uDate && uSid) {
+                        const prQ = window.firebaseOps.query(
+                            window.firebaseOps.collection(window.db, 'plan_daily_records'),
+                            window.firebaseOps.where('student_id', '==', uSid),
+                            window.firebaseOps.where('date', '==', uDate)
+                        );
+                        const prSnap = await window.firebaseOps.getDocs(prQ);
+                        for (const doc of prSnap.docs) {
+                            await window.firebaseOps.updateDoc(
+                                window.firebaseOps.doc(window.db, 'plan_daily_records', doc.id),
+                                { status: 'pending', actual_grade: null, actual_score_id: null, updatedAt: new Date().toISOString() }
+                            );
+                        }
+                        const tpQ = window.firebaseOps.query(
+                            window.firebaseOps.collection(window.db, 'tomorrow_plans'),
+                            window.firebaseOps.where('student_id', '==', uSid),
+                            window.firebaseOps.where('for_date', '==', uDate)
+                        );
+                        const tpSnap = await window.firebaseOps.getDocs(tpQ);
+                        for (const doc of tpSnap.docs) {
+                            await window.firebaseOps.updateDoc(
+                                window.firebaseOps.doc(window.db, 'tomorrow_plans', doc.id),
+                                { completed: false, grade: null, updatedAt: new Date().toISOString() }
+                            );
+                        }
+                        // تحديث الذاكرة الحية للتقويم عند التراجع
+                        if (window._currentStudentPlannedDays && Array.isArray(window._currentStudentPlannedDays)) {
+                            window._currentStudentPlannedDays.forEach(p => {
+                                if (p.date === uDate) {
+                                    p.status = 'pending';
+                                    p.actualGrade = null;
+                                    if (p.record) {
+                                        p.record.status = 'pending';
+                                        p.record.actual_grade = null;
+                                        p.record.actualGrade = null;
+                                    }
+                                }
+                            });
+                        }
+                        if (window._currentStudentScores && Array.isArray(window._currentStudentScores)) {
+                            const sIdx = window._currentStudentScores.findIndex(s => s.id === scoreId);
+                            if (sIdx >= 0) window._currentStudentScores.splice(sIdx, 1);
+                        }
+                    }
+                } catch(revertErr) { console.warn('revert plan daily error:', revertErr); }
             }
 
             btnEl.setAttribute('data-score-id', '');
@@ -4427,6 +4546,16 @@ function setupQuranGradingUI(s) {
     if (!quranSec) return;
     quranSec.classList.remove('hidden');
 
+    const planBlock = document.getElementById('rate-quran-plan-display');
+    if (planBlock) {
+        planBlock.classList.add('hidden');
+        planBlock.innerHTML = '';
+    }
+    const oldHTag = document.getElementById('rate-quran-hifz-plan-tag');
+    if (oldHTag) oldHTag.remove();
+    const oldRTag = document.getElementById('rate-quran-review-plan-tag');
+    if (oldRTag) oldRTag.remove();
+
     const reviewBox = document.getElementById('rate-quran-review-box');
     const hifzBox = document.getElementById('rate-quran-hifz-box');
     const hifzTitle = hifzBox ? hifzBox.querySelector('h4') : null;
@@ -4735,7 +4864,7 @@ async function refreshStudentGradingState(studentId, dateVal) {
     if (!studentId || !dateVal) return;
     const scoresStatus = await loadExistingQuranForDate(studentId, dateVal);
     if (typeof loadPlanTrackingForStudent === 'function') {
-        await loadPlanTrackingForStudent(studentId, dateVal);
+        await loadPlanTrackingForStudent(studentId, dateVal, scoresStatus);
     }
     if (typeof loadTomorrowPlanForStudent === 'function') {
         await loadTomorrowPlanForStudent(studentId, dateVal, scoresStatus);
@@ -5207,6 +5336,76 @@ window.submitQuranRecord = async (quranType) => {
             savedId = docRef.id;
             showToast(quranType === 'memorization' ? "تم التسجيل بنجاح ✨" : "تم التسجيل بنجاح ✨", "success");
         }
+
+        // تحديث حالة خطة اليوم في plan_daily_records إن وجدت
+        try {
+            const planPType = (quranType === 'memorization') ? 'memorization' : 'review';
+            const entries = await getStudentPlanEntriesForDate(currentRateStudentId, dateVal);
+            for (const { record: rec, plan } of entries) {
+                const pType = plan.planType || plan.plan_type;
+                const matches = (pType === planPType) || (planPType === 'review' && pType === 'minor_review');
+                if (matches && rec.id) {
+                    const statusVal = (quranGrade === 'لم يحفظ' || quranGrade === 'لم يراجع' || quranGrade === 'سيء') ? 'different' : 'completed';
+                    await window.firebaseOps.updateDoc(
+                        window.firebaseOps.doc(window.db, 'plan_daily_records', rec.id), {
+                            status: statusVal,
+                            actual_start_sura: Number(startSuraNo),
+                            actual_start_ayah: Number(startAyaNo),
+                            actual_end_sura: Number(endSuraNo),
+                            actual_end_ayah: Number(endAyaNo),
+                            actual_grade: quranGrade,
+                            actual_score_id: savedId,
+                            updatedAt: new Date().toISOString()
+                        }
+                    );
+                }
+            }
+        } catch(pe) {
+            console.warn('update plan daily record on submit:', pe);
+        }
+
+        // تحديث خطة الغد إذا كانت مسجلة لهذا التاريخ
+        try {
+            const tpQ = window.firebaseOps.query(
+                window.firebaseOps.collection(window.db, 'tomorrow_plans'),
+                window.firebaseOps.where('student_id', '==', currentRateStudentId),
+                window.firebaseOps.where('for_date', '==', dateVal)
+            );
+            const tpSnap = await window.firebaseOps.getDocs(tpQ);
+            for (const d of tpSnap.docs) {
+                await window.firebaseOps.updateDoc(
+                    window.firebaseOps.doc(window.db, 'tomorrow_plans', d.id),
+                    { completed: true, grade: quranGrade, updatedAt: new Date().toISOString() }
+                );
+            }
+        } catch(tpe) {
+            console.warn('update tomorrow plan completed:', tpe);
+        }
+
+        // تحديث الذاكرة الحية للمخطط وسجلات الطالب للتقويم المباشر
+        try {
+            const planPType = (quranType === 'memorization') ? 'memorization' : 'review';
+            const statusVal = (quranGrade === 'لم يحفظ' || quranGrade === 'لم يراجع' || quranGrade === 'سيء') ? 'different' : 'completed';
+            if (window._currentStudentPlannedDays && Array.isArray(window._currentStudentPlannedDays)) {
+                window._currentStudentPlannedDays.forEach(p => {
+                    if (p.date === dateVal && (p.planType === planPType || (planPType === 'review' && p.planType === 'minor_review'))) {
+                        p.status = statusVal;
+                        p.actualGrade = quranGrade;
+                        if (p.record) {
+                            p.record.status = statusVal;
+                            p.record.actual_grade = quranGrade;
+                            p.record.actualGrade = quranGrade;
+                        }
+                    }
+                });
+            }
+            if (window._currentStudentScores && Array.isArray(window._currentStudentScores)) {
+                const sObj = { id: savedId, ...data };
+                const existIdx = window._currentStudentScores.findIndex(s => s.id === savedId || (s.studentId === currentRateStudentId && s.date === dateVal && s.criteriaId === criteriaId));
+                if (existIdx >= 0) window._currentStudentScores[existIdx] = sObj;
+                else window._currentStudentScores.push(sObj);
+            }
+        } catch(memErr) { console.warn('sync in-memory calendar state:', memErr); }
         // تحديث زر التراجع للقرآن
         const undoBtnId = quranType === 'memorization' ? 'quran-memorization-undo-btn' : 'quran-review-undo-btn';
         const undoBtn = document.getElementById(undoBtnId);
@@ -6933,7 +7132,13 @@ async function openStudentReport(studentId) {
                 const d = doc.data(); d.id = doc.id;
                 d.planType = activePlanMap2[pid]?.plan_type || 'memorization';
                 window._currentStudentPlanRecords.push(d);
-                window._currentStudentPlannedDays.push({ date: d.date, planType: d.planType, record: d, status: d.status || 'pending' });
+                window._currentStudentPlannedDays.push({ 
+                    date: d.date, 
+                    planType: d.planType, 
+                    record: d, 
+                    status: d.status || 'pending',
+                    actualGrade: d.actual_grade || d.actualGrade || ''
+                });
             });
         }
     } catch(e) { console.warn('calendar plan load:', e); }
@@ -6973,6 +7178,7 @@ async function openStudentReport(studentId) {
                         planType: 'memorization',
                         isTomorrowPlan: true,
                         status: d.completed ? 'completed' : 'pending',
+                        actualGrade: d.grade || '',
                         record: {
                             plannedStartSura: hStartSura,
                             plannedStartAyah: hStartAyah,
@@ -7002,6 +7208,7 @@ async function openStudentReport(studentId) {
                         planType: 'review',
                         isTomorrowPlan: true,
                         status: d.completed ? 'completed' : 'pending',
+                        actualGrade: d.grade || '',
                         record: {
                             plannedStartSura: rStartSura,
                             plannedStartAyah: rStartAyah,
@@ -7366,7 +7573,10 @@ window.renderStudentCalendar = (year, month) => {
         const plannedTasks = (window._currentStudentPlannedDays || []).filter(p => p.date === dateStr);
 
         let dayClass = 'bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center';
-        let dayContent = `<span class="text-xs font-bold text-gray-400">${i}</span>`;
+        // 🌙 Visual-only Hijri day number for this cell
+        const _hDay = window.getHijriInfo ? window.getHijriInfo(dateStr) : null;
+        const hijriDayTag = _hDay && _hDay.day ? `<span class="text-[8px] font-semibold text-emerald-500 dark:text-emerald-400 leading-none opacity-80">${_hDay.day}هـ</span>` : '';
+        let dayContent = `<span class="text-xs font-bold text-gray-400">${i}</span>${hijriDayTag}`;
         
         let hasData = false;
         let dayContentTags = [];
@@ -7422,12 +7632,12 @@ window.renderStudentCalendar = (year, month) => {
         }
 
         if (dayData || plannedTasks.length > 0) {
-            dayContent = `<span class="text-xs font-bold ${hasData ? (dayClass.includes('red') ? 'text-red-700 dark:text-red-400' : (dayClass.includes('green') ? 'text-green-700 dark:text-green-400' : 'text-orange-700 dark:text-orange-400')) : 'text-emerald-800 dark:text-emerald-300'}">${i}</span>`;
+            dayContent = `<span class="text-xs font-bold ${hasData ? (dayClass.includes('red') ? 'text-red-700 dark:text-red-400' : (dayClass.includes('green') ? 'text-green-700 dark:text-green-400' : 'text-orange-700 dark:text-orange-400')) : 'text-emerald-800 dark:text-emerald-300'}">${i}</span>${hijriDayTag}`;
             dayContent += `<div class="flex flex-col items-center justify-center">` + dayContentTags.join('') + `</div>`;
             calendarDaysHTML += `<div class="${dayClass}" onclick="showDayDetails('${dateStr}')">${dayContent}</div>`;
         } else if (dateStr === todayDate.toISOString().split('T')[0]) {
              dayClass = 'bg-emerald-50 dark:bg-emerald-900/30 border-2 border-emerald-400 dark:border-emerald-600 rounded-lg p-1 text-center min-h-[45px] flex flex-col items-center justify-center relative';
-             dayContent = `<span class="text-xs font-bold text-emerald-700 dark:text-emerald-400">${i}</span>`;
+             dayContent = `<span class="text-xs font-bold text-emerald-700 dark:text-emerald-400">${i}</span>${hijriDayTag}`;
              calendarDaysHTML += `<div class="${dayClass}" onclick="showDayDetails('${dateStr}')">${dayContent}</div>`;
         } else {
              calendarDaysHTML += `<div class="${dayClass}">${dayContent}</div>`;
@@ -7436,13 +7646,19 @@ window.renderStudentCalendar = (year, month) => {
 
     const monthNames = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
     const monthName = monthNames[month];
+    // 🌙 Visual-only Hijri label for calendar header (uses first day of the displayed month)
+    const _hHeader = window.getHijriInfo ? window.getHijriInfo(`${year}-${String(month+1).padStart(2,'0')}-01`) : null;
+    const hijriHeaderLabel = _hHeader && _hHeader.monthYear ? `<span class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 block text-center mt-0.5">🌙 ${_hHeader.monthYear}</span>` : '';
 
     container.innerHTML = `
         <div class="flex justify-between items-center mb-4">
             <h3 class="font-bold flex items-center gap-2"><i data-lucide="calendar" class="w-4 h-4 text-emerald-600"></i> التقويم الشهري</h3>
             <div class="flex items-center gap-2">
                 <button onclick="changeCalendarMonth(-1)" class="w-6 h-6 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-emerald-100 text-emerald-700 transition"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
-                <span class="text-xs font-bold text-gray-500 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">${monthName} ${year}</span>
+                <div class="text-center">
+                    <span class="text-xs font-bold text-gray-500 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">${monthName} ${year}</span>
+                    ${hijriHeaderLabel}
+                </div>
                 <button onclick="changeCalendarMonth(1)" class="w-6 h-6 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-emerald-100 text-emerald-700 transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
             </div>
         </div>
@@ -7540,6 +7756,7 @@ window._openQuranForScore = async (scoreId) => {
             toAyah: endAya > 0 ? endAya : 1
         });
     }
+    const totalAyahs = sections.reduce((sum, sec) => sum + (sec.toAyah - sec.fromAyah + 1), 0);
     const ayahsHtml = window.QuranService.getTextForSections(sections);
     
     let viewerModal = document.getElementById('quran-ayah-viewer');
@@ -7551,11 +7768,14 @@ window._openQuranForScore = async (scoreId) => {
     viewerModal.className = 'fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in';
     viewerModal.innerHTML = `
         <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
-            <div class="flex justify-between items-center p-5 border-b border-gray-100 dark:border-gray-700">
-                <h3 class="font-bold text-lg text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                    <i data-lucide="book-open" class="w-5 h-5"></i>
-                    عرض السور والآيات
-                </h3>
+            <div class="flex justify-between items-center p-5 border-b border-gray-100 dark:border-gray-700 shrink-0">
+                <div>
+                    <h3 class="font-bold text-lg text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+                        <i data-lucide="book-open" class="w-5 h-5"></i>
+                        عرض السور والآيات
+                    </h3>
+                    <p class="text-xs text-gray-400 mt-0.5">${totalAyahs} آية</p>
+                </div>
                 <button onclick="document.getElementById('quran-ayah-viewer').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 p-2 rounded-full transition">
                     <i data-lucide="x" class="w-5 h-5"></i>
                 </button>
@@ -7573,7 +7793,8 @@ window.showDayDetails = (dateStr) => {
     const dayScores = scores.filter(s => s.date === dateStr);
     const dayPlanItems = (window._currentStudentPlannedDays || []).filter(p => p.date === dateStr);
     
-    // Plan info block
+    // Plan info block & tracking matched scores
+    const matchedScoreIds = new Set();
     let planHtml = '';
     if (dayPlanItems.length > 0) {
         planHtml = dayPlanItems.map(p => {
@@ -7583,37 +7804,126 @@ window.showDayDetails = (dateStr) => {
                 : (p.planType === 'memorization' ? '📝 خطة الحفظ' : p.planType === 'minor_review' ? '📗 مراجعة صغرى' : '🔄 خطة المراجعة');
             const typeColor = p.planType === 'memorization' ? 'emerald' : p.planType === 'minor_review' ? 'orange' : 'purple';
             const desc = p.record?.customDesc || (typeof formatPlanDayDesc === 'function' ? formatPlanDayDesc(p.record?.plannedSections || []) : 'ورد اليوم');
-            const statusMap = { pending: ['⏳ معلق','gray'], completed: ['✅ أنجز','green'], different: ['⚡ جزئي','amber'], absent: ['❌ غياب','red'] };
-            const [statusLabel, sc] = statusMap[p.status] || ['⏳ معلق','gray'];
+            
+            // المطابقة الذكية مع درجات الرصد لليوم الحالي
+            const matchingScore = dayScores.find(s => {
+                if (p.planType === 'memorization') {
+                    return s.criteriaId === 'QURAN_MEMORIZATION' || s.quranType === 'memorization' || s.type === 'memorization';
+                } else {
+                    return s.criteriaId === 'QURAN_REVIEW' || s.quranType === 'review' || s.type === 'review' || s.quranType === 'minor_review';
+                }
+            });
+
+            if (matchingScore && matchingScore.id) {
+                matchedScoreIds.add(matchingScore.id);
+            }
+
+            // استخراج التقدير وحالة الإنجاز
+            const actualGrade = matchingScore?.quranGrade || p.actualGrade || p.record?.actual_grade || p.record?.actualGrade || p.record?.grade || '';
+            const isDone = (p.status === 'completed') || !!matchingScore || (!!actualGrade && actualGrade !== 'لم يحفظ' && actualGrade !== 'لم يراجع');
+            
+            let statusLabel = '⏳ معلق';
+            let sc = 'gray';
+
+            if (actualGrade === 'لم يحفظ' || actualGrade === 'لم يراجع' || actualGrade === 'سيء') {
+                statusLabel = '⚡ جزئي';
+                sc = 'amber';
+            } else if (isDone) {
+                statusLabel = '✅ منجز';
+                sc = 'green';
+            } else if (p.status === 'absent') {
+                statusLabel = '❌ غياب';
+                sc = 'red';
+            } else if (p.status === 'different') {
+                statusLabel = '⚡ جزئي';
+                sc = 'amber';
+            }
+
+            const badgeColorCls = (sc === 'green')
+                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                : (sc === 'amber')
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                : (sc === 'red')
+                ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border border-red-300 dark:border-red-700'
+                : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+
             const r = p.record || {};
             const startSu = r.plannedStartSura || r.planned_start_sura || 1;
             const startAy = r.plannedStartAyah || r.planned_start_ayah || 1;
             const endSu = r.plannedEndSura || r.planned_end_sura || startSu;
             const endAy = r.plannedEndAyah || r.planned_end_ayah || 1;
 
+            let cardAyahsCount = 0;
+            if (window.QuranService && window.QuranService.isLoaded()) {
+                const qS = Number(matchingScore?.quranStartSura || startSu);
+                const qE = Number(matchingScore?.quranEndSura || endSu);
+                const qSA = Number(matchingScore?.quranStartAya || startAy) || 1;
+                const qEA = Number(matchingScore?.quranEndAya || endAy) || 1;
+                for (let si = qS; si <= qE; si++) {
+                    const allAy = window.QuranService.getAyahs(si).filter(a => a.aya_no > 0);
+                    const maxAy = allAy.length > 0 ? Math.max(...allAy.map(a => a.aya_no)) : 0;
+                    const fromA = (si === qS) ? qSA : 1;
+                    const toA = (si === qE) ? (qEA > 0 && qEA < 9000 ? Math.min(qEA, maxAy) : maxAy) : maxAy;
+                    if (toA >= fromA) cardAyahsCount += (toA - fromA + 1);
+                }
+            }
+
             return `
-            <div class="bg-${typeColor}-50 dark:bg-${typeColor}-900/20 border border-${typeColor}-200 dark:border-${typeColor}-700 rounded-xl p-3 mb-3">
+            <div class="bg-${typeColor}-50 dark:bg-${typeColor}-900/20 border border-${typeColor}-200 dark:border-${typeColor}-700 rounded-xl p-3 mb-3 shadow-xs">
                 <div class="flex justify-between items-center mb-1">
                     <span class="text-xs font-bold text-${typeColor}-700 dark:text-${typeColor}-400">${typeLabel}</span>
-                    <span class="text-xs font-bold px-2 py-0.5 bg-${sc}-100 text-${sc}-700 rounded-lg">${statusLabel}</span>
+                    <span class="text-xs font-bold px-2.5 py-0.5 rounded-lg ${badgeColorCls}">${statusLabel}</span>
                 </div>
                 <p class="text-sm font-bold text-gray-700 dark:text-gray-200">${desc}</p>
-                ${p.record?.plannedStartPage ? `<p class="text-[10px] text-gray-400 mt-0.5">ص${p.record.plannedStartPage} - ${p.record.plannedEndPage}</p>` : ''}
+                <div class="flex items-center gap-1.5 text-[10px] text-gray-400 mt-0.5 font-bold">
+                    ${p.record?.plannedStartPage ? `<span>ص${p.record.plannedStartPage} - ${p.record.plannedEndPage}</span>` : ''}
+                    ${cardAyahsCount ? `<span>${p.record?.plannedStartPage ? '· ' : ''}${cardAyahsCount} آية</span>` : ''}
+                </div>
                 
-                <button onclick="window.openWardReader('${startSu}','${startAy}','${endSu}','${endAy}')" class="mt-2 w-full py-1.5 bg-${typeColor}-600 hover:bg-${typeColor}-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm">
+                ${matchingScore?.quranSection && matchingScore.quranSection !== desc ? `
+                <div class="mt-2 text-xs text-emerald-800 dark:text-emerald-300 font-bold bg-white/70 dark:bg-gray-800/70 p-2 rounded-lg border border-emerald-200 dark:border-emerald-700">
+                    <p class="text-[10px] text-gray-400 font-normal mb-0.5">📖 المقطع المرصود:</p>
+                    <p>${matchingScore.quranSection}</p>
+                </div>
+                ` : ''}
+
+                ${actualGrade ? `
+                <div class="mt-2.5 p-2 bg-white/80 dark:bg-gray-800/80 border ${sc === 'green' ? 'border-emerald-200 dark:border-emerald-700' : 'border-amber-200 dark:border-amber-700'} rounded-lg flex items-center justify-between shadow-2xs">
+                    <span class="text-xs font-bold text-gray-700 dark:text-gray-200 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full ${sc === 'green' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}"></span>
+                        🏅 التقدير: <span class="font-extrabold ${sc === 'green' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}">${actualGrade}</span>
+                    </span>
+                    <span class="text-[10px] font-bold ${sc === 'green' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}">تم الإنجاز</span>
+                </div>
+                ` : (isDone ? `
+                <div class="mt-2.5 p-2 bg-emerald-50/70 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 rounded-lg flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 shadow-2xs">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    ✅ تم إنجاز الورد لهذا اليوم
+                </div>
+                ` : '')}
+
+                ${matchingScore?.id ? `
+                <button onclick="window._openQuranForScore('${matchingScore.id}')" class="mt-3 w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm">
+                    <i data-lucide="book-open" class="w-3.5 h-3.5"></i> عرض الآيات
+                </button>
+                ` : `
+                <button onclick="window.openWardReader('${startSu}','${startAy}','${endSu}','${endAy}')" class="mt-3 w-full py-2 bg-${typeColor}-600 hover:bg-${typeColor}-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm">
                     <i data-lucide="book-open" class="w-3.5 h-3.5"></i> قراءة الورد
                 </button>
+                `}
             </div>`;
         }).join('');
     }
 
     let html = `<div class="space-y-3">${planHtml}`;
 
-    if (dayScores.length > 0) {
-        const uniqueScores = dayScores;
-        window._currentDayUniqueScores = uniqueScores;
+    // حفظ كل السجلات لدوال عرض الآيات
+    window._currentDayUniqueScores = dayScores;
+    // استبعاد السجلات التي تم دمجها بالفعل داخل بطاقة الخطة لمنع التكرار
+    const otherScores = dayScores.filter(s => !matchedScoreIds.has(s.id));
 
-        uniqueScores.forEach(s => {
+    if (otherScores.length > 0) {
+        otherScores.forEach(s => {
             const isPositive = s.points > 0;
             const isAbsence = s.criteriaId === 'ABSENCE_RECORD';
             const isQuran = s.criteriaId === 'QURAN_MEMORIZATION' || s.criteriaId === 'QURAN_REVIEW';
@@ -7699,10 +8009,16 @@ window.showDayDetails = (dateStr) => {
         document.body.appendChild(modal);
     }
     modal.className = 'fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in';
+    // 🌙 Visual-only Hijri date for modal header
+    const _hModal = window.getHijriInfo ? window.getHijriInfo(dateStr) : null;
+    const hijriModalLabel = _hModal && _hModal.full ? `<span class="block text-xs text-emerald-500 dark:text-emerald-400 font-bold mt-0.5">🌙 ${_hModal.full}</span>` : '';
     modal.innerHTML = `
         <div class="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-700 pb-3">
-                <h3 class="font-bold text-lg text-emerald-700 dark:text-emerald-400">📅 تفاصيل يوم ${dateStr}</h3>
+                <div>
+                    <h3 class="font-bold text-lg text-emerald-700 dark:text-emerald-400">📅 ${dateStr}</h3>
+                    ${hijriModalLabel}
+                </div>
                 <button onclick="document.getElementById('day-scores-modal').remove()" class="text-gray-400 hover:text-gray-600 bg-gray-50 dark:bg-gray-700 rounded-full p-2">
                     <i data-lucide="x" class="w-4 h-4"></i>
                 </button>
@@ -12056,10 +12372,14 @@ async function getStudentPlanEntriesForDate(studentId, date) {
     for (const doc of snap.docs) {
         const rec = { id: doc.id, ...doc.data() };
         try {
+            const pid = rec.plan_id || rec.planId;
+            if (!pid) continue;
             const planDoc = await window.firebaseOps.getDoc(
-                window.firebaseOps.doc(window.db, 'student_plans', rec.planId));
+                window.firebaseOps.doc(window.db, 'student_plans', pid));
             if (planDoc.exists() && planDoc.data().status === 'active') {
-                entries.push({ record: rec, plan: { id: planDoc.id, ...planDoc.data() } });
+                const planData = { id: planDoc.id, ...planDoc.data() };
+                planData.planType = planData.plan_type || planData.planType;
+                entries.push({ record: rec, plan: planData });
             }
         } catch(e) { console.warn('plan fetch:', e); }
     }
@@ -12850,98 +13170,106 @@ window._cpSavePlan = async function() {
 
 // === 6. PLAN TRACKING IN RATE STUDENT MODAL ===
 
-async function loadPlanTrackingForStudent(studentId, dateStr) {
+async function loadPlanTrackingForStudent(studentId, dateStr, scoresStatus) {
     const planBlock = document.getElementById('rate-quran-plan-display');
+    if (planBlock) {
+        planBlock.classList.add('hidden');
+        planBlock.innerHTML = '';
+    }
+
     const quranSec = document.getElementById('rate-quran-section');
-    if (!planBlock) return;
-    planBlock.innerHTML = '<div class="flex justify-center py-2"><i data-lucide="loader-2" class="w-4 h-4 animate-spin text-emerald-600"></i></div>';
-    planBlock.classList.remove('hidden');
-    if (window.lucide) window.lucide.createIcons();
+    if (quranSec) quranSec.classList.remove('hidden');
+
+    const hBox = document.getElementById('rate-quran-hifz-box');
+    const rBox = document.getElementById('rate-quran-review-box');
+    const st = state.students ? state.students.find(x => x.id === studentId) : null;
+    const hasHafs = st && st.readings ? st.readings.includes('حفص عن عاصم') : true;
+
+    if (hBox) {
+        if (isIjazatLevel() && !hasHafs) hBox.classList.add('hidden');
+        else hBox.classList.remove('hidden');
+    }
+    if (rBox) {
+        if (isIjazatLevel()) rBox.classList.add('hidden');
+        else rBox.classList.remove('hidden');
+    }
+
+    // Clean up old tags
+    const oldHTag = document.getElementById('rate-quran-hifz-plan-tag');
+    if (oldHTag) oldHTag.remove();
+    const oldRTag = document.getElementById('rate-quran-review-plan-tag');
+    if (oldRTag) oldRTag.remove();
 
     try {
+        if (window.QuranService && !window.QuranService.isLoaded()) {
+            try { await window.QuranService.loadData(); } catch(e){}
+        }
+
         const entries = await getStudentPlanEntriesForDate(studentId, dateStr);
+        window._currentPlanEntries = entries || [];
 
-        const st = state.students.find(x => x.id === studentId);
-        const hasHafs = st && st.readings ? st.readings.includes('حفص عن عاصم') : true;
-        const hBox = document.getElementById('rate-quran-hifz-box');
-        const rBox = document.getElementById('rate-quran-review-box');
-        if (quranSec) {
-            quranSec.classList.remove('hidden');
-            if (hBox) {
-                if (isIjazatLevel() && !hasHafs) hBox.classList.add('hidden');
-                else hBox.classList.remove('hidden');
-            }
-            if (rBox) {
-                if (isIjazatLevel()) rBox.classList.add('hidden');
-                else rBox.classList.remove('hidden');
-            }
-        }
+        if (!entries || entries.length === 0) return;
 
-        if (entries.length === 0) {
-            planBlock.classList.add('hidden');
-            planBlock.innerHTML = '';
-            return;
-        }
-
-        window._currentPlanEntries = entries;
-
-        let html = '<div class="space-y-3">';
         for (const { record: rec, plan } of entries) {
-            const typeColor = plan.planType === 'memorization' ? 'emerald' : 'purple';
-            const typeLabel = plan.planType === 'memorization' ? '📝 خطة الحفظ' : '🔄 خطة المراجعة';
-            const desc = formatPlanDayDesc(rec.plannedSections || []);
-            const done = rec.status === 'completed';
-            const diff = rec.status === 'different';
-            const absent = rec.status === 'absent';
+            const isHifz = (plan.planType === 'memorization');
+            const qType = isHifz ? 'memorization' : 'review';
+            const boxEl = isHifz ? hBox : rBox;
+            const hasScore = isHifz ? scoresStatus?.hasHifzScore : scoresStatus?.hasReviewScore;
 
-            html += `
-            <div class="bg-${typeColor}-50 dark:bg-${typeColor}-900/20 border border-${typeColor}-200 dark:border-${typeColor}-700 rounded-xl p-3">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-bold text-${typeColor}-700 dark:text-${typeColor}-400">${typeLabel}</span>
-                    ${done ? '<span class="text-xs font-bold px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg">✅ تمت</span>' : ''}
-                    ${diff ? '<span class="text-xs font-bold px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg">⚡ جزئي</span>' : ''}
-                    ${absent ? '<span class="text-xs font-bold px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg">❌ غياب</span>' : ''}
-                </div>
-                <p class="text-sm font-bold text-gray-700 dark:text-gray-200 mb-1 leading-relaxed">${desc}</p>
-                <div class="flex justify-between items-center mb-3">
-                    <p class="text-[10px] text-gray-400">ص${rec.plannedStartPage || '?'} - ${rec.plannedEndPage || '?'}</p>
-                    <button onclick="window.openWardReader('${rec.plannedStartSura||1}','${rec.plannedStartAyah||1}','${rec.plannedEndSura||rec.plannedStartSura||1}','${rec.plannedEndAyah||1}')" class="text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i> قراءة الورد</button>
-                </div>
-                ${!done && !diff && !absent ? `
-                <div class="grid grid-cols-2 gap-2">
-                    <button onclick="_planMarkDone('${rec.id}','${plan.id}','${studentId}','${dateStr}')"
-                        class="py-2.5 rounded-xl bg-${typeColor}-600 hover:bg-${typeColor}-700 text-white font-bold text-xs transition flex items-center justify-center gap-1">
-                        <i data-lucide="check" class="w-3.5 h-3.5"></i> تمت الخطة
+            const sSura = rec.planned_start_sura || rec.plannedStartSura || 1;
+            const sAyah = rec.planned_start_ayah || rec.plannedStartAyah || 1;
+            const eSura = rec.planned_end_sura || rec.plannedEndSura || sSura;
+            const eAyah = rec.planned_end_ayah || rec.plannedEndAyah || 1;
+
+            // إذا لم يكن الطالب قد رُصد له حفظ/مراجعة اليوم، نملأ الحقول تلقائياً بالخطة المقررة كما في خطة الغد
+            if (!hasScore) {
+                await _fillQuranFields(qType, sSura, sAyah, eSura, eAyah);
+            }
+
+            // إظهار شارة خطة اليوم ورابط قراءة الورد داخل بطاقة الحفظ أو المراجعة مباشرة
+            if (boxEl) {
+                const tagId = isHifz ? 'rate-quran-hifz-plan-tag' : 'rate-quran-review-plan-tag';
+                const existingTag = document.getElementById(tagId);
+                if (existingTag) existingTag.remove();
+
+                const desc = (typeof formatPlanDayDesc === 'function')
+                    ? formatPlanDayDesc(rec.plannedSections || rec.planned_sections || [])
+                    : `من سورة ${sSura} (${sAyah}) إلى ${eSura} (${eAyah})`;
+
+                const planTag = document.createElement('div');
+                planTag.id = tagId;
+                planTag.className = isHifz
+                    ? 'bg-emerald-100/90 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700/60 rounded-xl p-2.5 text-xs font-bold flex items-center justify-between gap-2 shadow-sm'
+                    : 'bg-purple-100/90 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-700/60 rounded-xl p-2.5 text-xs font-bold flex items-center justify-between gap-2 shadow-sm';
+
+                const doneBadge = (rec.status === 'completed')
+                    ? '<span class="text-[10px] bg-green-200 dark:bg-green-800 text-green-900 dark:text-green-100 px-2 py-0.5 rounded-full shrink-0">✅ تم الإنجاز</span>'
+                    : (rec.status === 'different')
+                    ? '<span class="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-2 py-0.5 rounded-full shrink-0">⚡ جزئي</span>'
+                    : '';
+
+                planTag.innerHTML = `
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        <i data-lucide="book-marked" class="w-4 h-4 shrink-0 ${isHifz ? 'text-emerald-600 dark:text-emerald-400' : 'text-purple-600 dark:text-purple-400'}"></i>
+                        <span class="truncate">📖 خطة اليوم: ${desc} ${rec.planned_start_page ? `<span class="text-[10px] text-gray-500 dark:text-gray-400 font-normal">(ص${rec.planned_start_page}-${rec.planned_end_page || rec.planned_start_page})</span>` : ''}</span>
+                        ${doneBadge}
+                    </div>
+                    <button type="button" onclick="window.openWardReader('${sSura}','${sAyah}','${eSura}','${eAyah}')" class="text-xs ${isHifz ? 'text-emerald-700 dark:text-emerald-300' : 'text-purple-700 dark:text-purple-300'} hover:underline flex items-center gap-1 shrink-0 font-bold">
+                        <i data-lucide="book-open" class="w-3.5 h-3.5"></i> قراءة الورد
                     </button>
-                    <button onclick="_planShowIncomplete('${rec.id}','${plan.id}','${studentId}','${dateStr}')"
-                        class="py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-600 text-amber-700 dark:text-amber-400 font-bold text-xs transition hover:bg-amber-100 dark:hover:bg-amber-900/30">
-                        لم تتم
-                    </button>
-                </div>` : `
-                <button onclick="_planUndoDone('${rec.id}','${studentId}','${dateStr}')" class="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline">تراجع عن الحالة</button>`}
-            </div>`;
+                `;
+
+                const fieldsContainer = document.getElementById(isHifz ? 'rate-quran-hifz-fields' : 'rate-quran-review-fields');
+                if (fieldsContainer) {
+                    boxEl.insertBefore(planTag, fieldsContainer);
+                } else {
+                    boxEl.appendChild(planTag);
+                }
+            }
         }
-        html += '</div>';
-        planBlock.innerHTML = html;
         if (window.lucide) window.lucide.createIcons();
     } catch(e) {
-        console.error('plan tracking:', e);
-        planBlock.classList.add('hidden');
-        if (quranSec) {
-            quranSec.classList.remove('hidden');
-            const st = state.students.find(x => x.id === studentId);
-            const hasHafs = st && st.readings ? st.readings.includes('حفص عن عاصم') : true;
-            const hBox = document.getElementById('rate-quran-hifz-box');
-            const rBox = document.getElementById('rate-quran-review-box');
-            if (hBox) {
-                if (isIjazatLevel() && !hasHafs) hBox.classList.add('hidden');
-                else hBox.classList.remove('hidden');
-            }
-            if (rBox) {
-                if (isIjazatLevel()) rBox.classList.add('hidden');
-                else rBox.classList.remove('hidden');
-            }
-        }
+        console.error('loadPlanTrackingForStudent:', e);
     }
 }
 
@@ -13269,10 +13597,14 @@ window.viewPlanSchedule = async function(planId) {
             const desc = formatPlanDayDesc(r.plannedSections || []);
             const [icon, color] = statusMap[r.status] || ['⏳','text-gray-400'];
             const isToday = r.date === today;
+            // 🌙 Visual-only Hijri day for schedule rows
+            const _hRow = window.getHijriInfo ? window.getHijriInfo(r.date) : null;
+            const hijriRowDay = _hRow && _hRow.compact ? `<span class="text-[9px] text-emerald-500 dark:text-emerald-400 font-bold block">🌙 ${_hRow.compact}</span>` : '';
             return `<div class="flex gap-3 py-2.5 border-b border-gray-50 dark:border-gray-700/50 last:border-0 ${isToday ? 'bg-emerald-50/50 dark:bg-emerald-900/10 -mx-1 px-1 rounded' : ''}">
                 <div class="text-center shrink-0 w-14">
                     <p class="text-[10px] font-bold text-gray-400">${dn}</p>
                     <p class="text-xs font-bold ${isToday ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-600 dark:text-gray-300'}">${r.date.slice(5)}</p>
+                    ${hijriRowDay}
                 </div>
                 <div class="flex-1 min-w-0">
                     <p class="text-xs text-gray-700 dark:text-gray-200 leading-relaxed">${desc}</p>
@@ -13280,6 +13612,7 @@ window.viewPlanSchedule = async function(planId) {
                 </div>
                 <div class="flex flex-col items-center gap-1 shrink-0 self-center">
                     <span class="${color} text-sm">${icon}</span>
+                    ${r.actual_grade ? `<span class="text-[9px] font-bold px-1 rounded bg-green-100 text-green-700">🏅 ${r.actual_grade}</span>` : ''}
                     <button onclick="window.openWardReader('${r.plannedStartSura||1}','${r.plannedStartAyah||1}','${r.plannedEndSura||r.plannedStartSura||1}','${r.plannedEndAyah||1}')" class="text-[10px] text-emerald-600 hover:text-emerald-800 leading-none p-0.5 font-bold" title="قراءة الورد">📖 قراءة</button>
                 </div>
             </div>`;
