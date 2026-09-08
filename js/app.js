@@ -2341,7 +2341,22 @@ function applyTheme() {
     } else {
         document.documentElement.classList.remove('dark');
     }
+    const themeBtn = document.getElementById('theme-toggle-btn');
+    if (themeBtn) {
+        themeBtn.title = state.darkMode ? 'الوضع النهاري' : 'الوضع الليلي';
+        themeBtn.innerHTML = `<i data-lucide="${state.darkMode ? 'sun' : 'moon'}" class="w-5 h-5"></i>`;
+    }
+    const adminThemeBtn = document.getElementById('admin-dark-mode-btn');
+    if (adminThemeBtn) {
+        adminThemeBtn.title = state.darkMode ? 'الوضع النهاري' : 'الوضع الليلي';
+        adminThemeBtn.innerHTML = `<i data-lucide="${state.darkMode ? 'sun' : 'moon'}" class="w-4 h-4 text-yellow-300"></i><span>${state.darkMode ? 'نهاري' : 'ليلي'}</span>`;
+    }
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
 }
+window.toggleTheme = toggleTheme;
+window.applyTheme = applyTheme;
 
 
 
@@ -14729,6 +14744,17 @@ async function renderAdminDashboard() {
             <div class="absolute -right-10 -top-10 bg-white/10 w-40 h-40 rounded-full blur-2xl"></div>
             <div class="absolute -left-10 -bottom-10 bg-black/10 w-40 h-40 rounded-full blur-2xl"></div>
             <div class="relative z-10 text-center">
+                <div class="flex items-center justify-between gap-2 mb-3">
+                    <button id="admin-dark-mode-btn" onclick="toggleTheme()" class="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-xl text-xs font-bold transition flex items-center gap-1.5 backdrop-blur-sm shadow-sm border border-white/10" title="تبديل الوضع الليلي">
+                        <i data-lucide="${state.darkMode ? 'sun' : 'moon'}" class="w-4 h-4 text-yellow-300"></i>
+                        <span>${state.darkMode ? 'نهاري' : 'ليلي'}</span>
+                    </button>
+                    <span class="text-xs text-purple-200 font-bold">لوحة المشرف العام</span>
+                    <button onclick="openAdminAddTeacherModal()" class="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5 backdrop-blur-sm shadow-sm border border-white/20" title="إضافة معلم جديد">
+                        <i data-lucide="user-plus" class="w-4 h-4 text-emerald-300"></i>
+                        <span>إضافة معلم</span>
+                    </button>
+                </div>
                 <h2 class="text-xl font-black mb-1">🏢 لوحة الإدارة العامة</h2>
                 <p class="text-xs text-purple-200 mb-3">المشرف العام — نظرة شاملة على كافة الحلقات</p>
                 <div class="grid grid-cols-4 gap-2">
@@ -14801,9 +14827,15 @@ async function renderAdminDashboard() {
                 <h3 class="font-bold text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2">
                     <i data-lucide="users" class="w-4 h-4 text-blue-500"></i> المعلمون المسجلون
                 </h3>
-                <button onclick="openAdminTeachersModal()" class="text-xs px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-bold hover:bg-blue-100 transition">
-                    عرض الكل (${totalTeachers})
-                </button>
+                <div class="flex items-center gap-1.5">
+                    <button onclick="openAdminAddTeacherModal()" class="text-xs px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold transition flex items-center gap-1 shadow-sm" title="إضافة معلم جديد">
+                        <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+                        <span>إضافة معلم</span>
+                    </button>
+                    <button onclick="openAdminTeachersModal()" class="text-xs px-2.5 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-bold hover:bg-blue-100 transition">
+                        عرض الكل (${totalTeachers})
+                    </button>
+                </div>
             </div>
             <div class="space-y-2">
                 ${allTeachers.slice(0, 5).map(t => `
@@ -15428,18 +15460,22 @@ function openAdminAddTeacherModal(preselectedLevel) {
             <div>
                 <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">رقم الجوال / الواتساب</label>
                 <input type="tel" id="admin-new-teacher-phone" placeholder="مثال: 0501234567"
-                    class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-purple-500" />
+                    class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-purple-500 text-left" dir="ltr" />
             </div>
             <div>
                 <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">الحلقة *</label>
                 <select id="admin-new-teacher-level" required
                     class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-purple-500">
+                    <option value="" disabled ${!preselectedLevel ? 'selected' : ''}>-- اختر الحلقة --</option>
                     ${levelOptions}
                 </select>
             </div>
             <div class="flex gap-2 pt-2">
-                <button type="submit" class="flex-1 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 transition">حفظ المعلم</button>
-                <button type="button" onclick="openAdminTeachersModal()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-xs font-bold hover:bg-gray-300 transition">إلغاء</button>
+                <button type="submit" class="flex-1 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 transition flex items-center justify-center gap-1">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    <span>حفظ المعلم</span>
+                </button>
+                <button type="button" onclick="closeCustomModal()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-xs font-bold hover:bg-gray-300 transition">إلغاء</button>
             </div>
         </form>
     `;
@@ -15469,10 +15505,10 @@ async function submitAdminAddTeacher() {
             level,
             createdAt: new Date().toISOString()
         });
-        showToast('تمت إضافة المعلم بنجاح! 👨‍🏫');
+        showToast('تمت إضافة المعلم بنجاح! 👨‍🏫', 'success');
+        closeCustomModal();
         state.adminData = null;
         await renderAdminDashboard();
-        openAdminTeachersModal();
     } catch (e) {
         console.error('Error adding teacher:', e);
         showToast('حدث خطأ أثناء حفظ المعلم', 'error');
@@ -15494,6 +15530,10 @@ async function deleteAdminTeacher(teacherId, teacherName) {
         showToast('حدث خطأ أثناء الحذف', 'error');
     }
 }
+window.openAdminAddTeacherModal = openAdminAddTeacherModal;
+window.submitAdminAddTeacher = submitAdminAddTeacher;
+window.deleteAdminTeacher = deleteAdminTeacher;
+window.openAdminTeachersModal = openAdminTeachersModal;
 
 // --- PDF Export ---
 function exportAdminPDF() {
